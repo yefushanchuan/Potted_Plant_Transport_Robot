@@ -23,6 +23,7 @@ uint8 charging_on_cmd
 #一次性下发参数
 
 #花盆架索引
+uint8 rack_index_set   # 0:不下发 1:下发
 int8 rack_index
 ---
 # Response

@@ -263,7 +263,6 @@ hardware_interface::CallbackReturn AgrobotHardwareInterface::on_init(
          return;
       }
 
-      // 
       this->rack_index_cmd_.store(request->rack_index);
       this->has_rack_index_cmd_.store(true);
 

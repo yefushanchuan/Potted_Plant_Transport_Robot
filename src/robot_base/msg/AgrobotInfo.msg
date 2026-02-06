@@ -7,9 +7,6 @@ float32 speed_z
 # 电池电量（%）
 float32 power
 
-#花盆架索引
-int8 rack_index
-
 # 预留字段（历史兼容）
 uint8 flag_1
 
