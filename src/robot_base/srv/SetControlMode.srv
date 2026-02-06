@@ -1,5 +1,5 @@
 # Request
-# 说明：本服务用于生成协议中的 status_mask/status_value（TAG 0x11/0x12）以及一次性下发参数（如滑台高度/浇水量）。
+# 说明：本服务用于生成协议中的 status_mask/status_value（TAG 0x11/0x12）以及一次性下发参数。
 # - 所有“*_cmd”字段：0 表示不修改；非 0 表示本次需要修改对应位。
 # - status_word 位定义以最新版通讯协议为准。
 
@@ -11,19 +11,19 @@ uint8 left_wheel_enable_cmd
 uint8 right_wheel_reset_cmd
 uint8 left_wheel_reset_cmd
 
-# 浇水/排水/充电/夹爪（bit12-bit15）：0不修改 1打开/夹紧 2关闭/松开
-uint8 spray_on_cmd
-uint8 drain_on_cmd
+# 使能搬运/卸载动作（bit9） : 0不使能 1使能
+uint8_t action_enable_cmd
+
+# 搬运/卸载状态（bit11） ： 0不修改 1搬运 2卸载
+uint8 action_status
+
+# 充电（bit14）：0不修改 1打开/夹紧 2关闭/松开
 uint8 charging_on_cmd
-uint8 gripper_closed_cmd
 
-# 一次性下发浇水量（mL）：z_lift/spray_volume 是否下发由 set 标志控制
-uint8 spray_volume_set   # 0:不下发 1:下发
-uint16 spray_volume_ml   # 单位：mL（允许为 0）
+#一次性下发参数
 
-# 一次性下发滑台高度（mm）
-uint8 z_lift_set         # 0:不下发 1:下发
-int32 z_lift_mm          # 单位：mm
+#花盆架索引
+int8 rack_index
 ---
 # Response
 bool success

@@ -26,11 +26,9 @@ void AgrobotHardwareInterface::resetCommandParams()
 {
   hw_mode1_.store(0);
   hw_mode2_.store(0);
-  z_lift_on_.store(0);
-  z_lift_offset_.store(0);
   has_mode_update_.store(false);
-  pending_spray_volume_ml_.store(0);
-  has_pending_spray_volume_.store(false);
+  rack_index_cmd_.store(0);
+  has_rack_index_cmd_.store(false);
 }
 
 namespace
@@ -46,15 +44,13 @@ constexpr uint8_t UART_TYPE_ACK = 0x02;        // 帧类型：ACK
 
 constexpr uint8_t TAG_V_LINEAR_MM_S = 0x01;     // int32: 线速度 mm/s
 constexpr uint8_t TAG_W_ANGULAR_MRAD_S = 0x02;  // int32: 角速度 mrad/s
-constexpr uint8_t TAG_Z_LIFT_MM = 0x03;         // int32: 滑台高度 1mm
-constexpr uint8_t TAG_BUCKET_VOLUME_ML = 0x04;  // u16: 水箱余量 mL
+constexpr int8_t  TAG_RACK_INDEX = 0x05;        // int8: 花盆架索引
 constexpr uint8_t TAG_STATUS_MASK = 0x11;       // u16
 constexpr uint8_t TAG_STATUS_VALUE = 0x12;      // u16
 constexpr uint8_t TAG_STATUS_WORD = 0x13;       // u16
 constexpr uint8_t TAG_HEALTH_WORD = 0x14;       // u16
 constexpr uint8_t TAG_ALARM_INFO = 0x15;        // u16
 constexpr uint8_t TAG_BATT_SOC_X100 = 0x21;     // u16: 电池百分比*100
-constexpr uint8_t TAG_SPRAY_VOLUME_ML = 0x22;   // u16: 浇水量 mL（下发；部分固件可能也用于上报桶余量）
 constexpr uint8_t TAG_ACK_RESULT = 0x30;        // u8: 0=OK，其它=错误码
 constexpr uint8_t TAG_ACK_REQUEST = 0x40;       // u8: 请求 ACK
 
@@ -134,10 +130,9 @@ hardware_interface::CallbackReturn AgrobotHardwareInterface::on_init(
   last_health_word_ = 0;
   last_alarm_info_ = 0;
   last_battery_soc_x100_ = 0;
-  last_bucket_volume_ml_ = 0;
   last_robot_vx_ = 0.0;
   last_robot_vth_ = 0.0;
-  last_lift_z_ = 0.0;
+  last_rack_index_ = 0;
   // resetCommandParams() 已清理控制类一次性标记，这里仅保留 Telemetry 缓存初始化
 
   // 创建非实时节点
@@ -166,11 +161,9 @@ hardware_interface::CallbackReturn AgrobotHardwareInterface::on_init(
       constexpr uint16_t RIGHT_WHEEL_RESET_BIT = 2;              // bit2
       constexpr uint16_t LEFT_WHEEL_ENABLE_SHIFT = 3;            // bit3-bit4
       constexpr uint16_t LEFT_WHEEL_RESET_BIT = 5;               // bit5
-      constexpr uint16_t SLIDE_TABLE_ENABLE_SHIFT = 6;           // bit6-bit7（2bit：0默认 1使能 2失能）
-      constexpr uint16_t SPRAY_ON_BIT = 12;                      // bit12
-      constexpr uint16_t DRAIN_ON_BIT = 13;                      // bit13
+      constexpr uint16_t ACTION_ENABLE_BIT = 9;                  // bit9: 动作使能
+      constexpr uint16_t ACTION_STATUS_BIT = 11;                 // bit11: 动作状态(搬运/卸载)
       constexpr uint16_t CHARGING_ON_BIT = 14;                   // bit14
-      constexpr uint16_t GRIPPER_CLOSED_BIT = 15;                // bit15
 
       auto applyTriStateBit = [&](uint16_t bit, uint8_t cmd, const char * name) -> bool {
           if (cmd == 0) {
@@ -248,78 +241,40 @@ hardware_interface::CallbackReturn AgrobotHardwareInterface::on_init(
         response->success = false;
         return;
       }
-      if (!applyResetBit(LEFT_WHEEL_RESET_BIT, request->left_wheel_reset_cmd, "left_wheel_reset")) {
+      if (!applyResetBit(
+        LEFT_WHEEL_RESET_BIT, request->left_wheel_reset_cmd, "left_wheel_reset"))
+      {
         this->resetCommandParams();
         response->success = false;
         return;
+      }
+      if (!applyResetBit(
+        ACTION_ENABLE_BIT, request->action_enable_cmd, "action_enable"))
+      {
+        this->resetCommandParams(); 
+        response->success = false;
+        return;
+      }
+      if (!applyTriStateBit(
+        ACTION_STATUS_BIT, request->action_status, "action_status"))
+      {
+         this->resetCommandParams();
+         response->success = false;
+         return;
       }
 
-      // 喷水/排水/充电/夹爪（按需修改）
-      if (!applyTriStateBit(SPRAY_ON_BIT, request->spray_on_cmd, "spray_on")) {
-        this->resetCommandParams();
-        response->success = false;
-        return;
-      }
-      if (!applyTriStateBit(DRAIN_ON_BIT, request->drain_on_cmd, "drain_on")) {
-        this->resetCommandParams();
-        response->success = false;
-        return;
-      }
-      if (!applyTriStateBit(CHARGING_ON_BIT, request->charging_on_cmd, "charging_on")) {
-        this->resetCommandParams();
-        response->success = false;
-        return;
-      }
-      if (!applyTriStateBit(GRIPPER_CLOSED_BIT, request->gripper_closed_cmd, "gripper_closed")) {
-        this->resetCommandParams();
-        response->success = false;
-        return;
-      }
-
-      // 一次性下发浇水量（允许为 0，因此使用 spray_volume_set 控制是否下发）
-      if (request->spray_volume_set != 0) {
-        this->pending_spray_volume_ml_.store(request->spray_volume_ml);
-        this->has_pending_spray_volume_.store(true);
-      }
-
-      // 一次性下发滑台高度（单位 mm）
-      if (request->z_lift_set != 0) {
-        this->z_lift_on_.store(1);
-        this->z_lift_offset_.store(request->z_lift_mm);
-        if (z_lift_offset_.load() < 0 || z_lift_offset_.load() > 230) {
-          RCLCPP_ERROR(rclcpp::get_logger("AgrobotHardwareInterface"), "z_lift_mm out of range");
-          this->resetCommandParams();
-          response->success = false;
-          return;
-        }
-
-        // 按协议建议：下发滑台高度时，确保滑台电机使能（bit6-bit7 = 1）
-        status_mask |= static_cast<uint16_t>(0x03u << SLIDE_TABLE_ENABLE_SHIFT);
-        status_value |= static_cast<uint16_t>(0x01u << SLIDE_TABLE_ENABLE_SHIFT);
-      } else {
-        this->z_lift_on_.store(0);
-        this->z_lift_offset_.store(0);
-      }
+      // 
+      this->rack_index_cmd_.store(request->rack_index);
+      this->has_rack_index_cmd_.store(true);
 
       // 更新状态开关（一次性下发，发送后清空标记）
       this->hw_mode1_.store(status_mask);
       this->hw_mode2_.store(status_value);
 
-      // 只要有需要一次性下发的控制内容，就置位发送标记
-      this->has_mode_update_.store(
-        (status_mask != 0) ||
-        (this->z_lift_on_.load() != 0) ||
-        (this->has_pending_spray_volume_.load()));
-
       RCLCPP_INFO(
         rclcpp::get_logger("AgrobotHardwareInterface"),
-        "SetControlMode: status_mask=0x%04X status_value=0x%04X z_lift_set=%u z_lift_mm=%d spray_volume_set=%u spray_volume_ml=%u",
-        status_mask,
-        status_value,
-        static_cast<unsigned>(request->z_lift_set),
-        request->z_lift_mm,
-        static_cast<unsigned>(request->spray_volume_set),
-        static_cast<unsigned>(request->spray_volume_ml));
+        "SetControlMode: status_mask=0x%04X status_value=0x%04X rack_index=%d",
+        status_mask, status_value, request->rack_index);
 
       response->success = true;
     };
@@ -381,6 +336,7 @@ export_command_interfaces()
       "velocity", &hw_command_velocity_right_));
   return command_interfaces;
 }
+
 // 激活阶段：打开串口并准备通信
 hardware_interface::CallbackReturn AgrobotHardwareInterface::on_activate(
   const rclcpp_lifecycle::State & /*previous_state*/)
@@ -578,11 +534,10 @@ hardware_interface::return_type AgrobotHardwareInterface::read(
             // 使用上一帧的数值做默认值，缺失标签时维持上一次状态
             double robot_vx = last_robot_vx_;
             double robot_vth = last_robot_vth_;
-            double lift_z_ = last_lift_z_;
             uint16_t health_word = last_health_word_;
             uint16_t alarm_info = last_alarm_info_;
             uint16_t battery_soc_x100 = last_battery_soc_x100_;
-            uint16_t bucket_volume = last_bucket_volume_ml_;
+            int8_t rack_index = last_rack_index_;
 
             size_t offset = 0;  // 负载偏移
             bool tlv_error = false;
@@ -614,9 +569,9 @@ hardware_interface::return_type AgrobotHardwareInterface::read(
                   if (len != 4) {tlv_error = true; break;}
                   robot_vth = static_cast<double>(uart::readInt32LE(data_ptr)) / 1000.0;
                   break;
-                case TAG_Z_LIFT_MM:
-                  if (len != 4) {tlv_error = true; break;}
-                  lift_z_ = static_cast<double>(uart::readInt32LE(data_ptr));
+                case TAG_RACK_INDEX:
+                  if (len != 1) {tlv_error = true; break;}
+                  rack_index = static_cast<int8_t>(data_ptr[0]);
                   break;
                 case TAG_HEALTH_WORD:
                   if (len != 2) {tlv_error = true; break;}
@@ -629,14 +584,6 @@ hardware_interface::return_type AgrobotHardwareInterface::read(
                 case TAG_BATT_SOC_X100:
                   if (len != 2) {tlv_error = true; break;}
                   battery_soc_x100 = uart::readUint16LE(data_ptr);
-                  break;
-                case TAG_BUCKET_VOLUME_ML:
-                  if (len != 2) {tlv_error = true; break;}
-                  bucket_volume = uart::readUint16LE(data_ptr);
-                  break;
-                case TAG_SPRAY_VOLUME_ML:
-                  if (len != 2) {tlv_error = true; break;}
-                  bucket_volume = uart::readUint16LE(data_ptr);
                   break;
                 default:
                   // 未知标签按长度跳过，保证向后兼容
@@ -664,9 +611,8 @@ hardware_interface::return_type AgrobotHardwareInterface::read(
               auto msg = std::make_unique<robot_base::msg::AgrobotInfo>();
               msg->speed_x = robot_vx;
               msg->speed_z = robot_vth;
-              msg->z_lift = lift_z_;
               msg->power = static_cast<float>(battery_soc_x100) / 100.0f;
-              msg->bucket_volume = bucket_volume;
+              msg->rack_index = rack_index;
               msg->flag_1 = static_cast<uint8_t>(0x00);
 
               // 原始协议字段
@@ -685,10 +631,8 @@ hardware_interface::return_type AgrobotHardwareInterface::read(
                 msg->tx_frame_hex = last_tx_info_.frame_hex;
                 msg->cmd_v_linear_mm_s = last_tx_info_.v_linear_mm_s;
                 msg->cmd_w_angular_mrad_s = last_tx_info_.w_angular_mrad_s;
-                msg->cmd_z_lift_mm = last_tx_info_.z_lift_mm;
                 msg->cmd_status_mask = last_tx_info_.status_mask;
                 msg->cmd_status_value = last_tx_info_.status_value;
-                msg->cmd_spray_volume_ml = last_tx_info_.spray_volume_ml;
                 msg->ack_seq = last_ack_info_.seq;
                 msg->ack_result = last_ack_info_.result;
               }
@@ -698,14 +642,9 @@ hardware_interface::return_type AgrobotHardwareInterface::read(
               msg->right_wheel_alarm = (health_word & (1u << 2)) != 0;                 // right_motor_alarm
               msg->left_wheel_enabled = (health_word & (1u << 3)) != 0;                // left_motor_enable
               msg->left_wheel_alarm = (health_word & (1u << 4)) != 0;                  // left_motor_alarm
-              msg->slide_table_enabled = (health_word & (1u << 5)) != 0;               // slide_table_enable
-              msg->slide_table_alarm = (health_word & (1u << 6)) != 0;                  // slide_table_alarm
               msg->battery_comm_fault = (health_word & (1u << 8)) != 0;                // battery_comm_fault
               msg->remote_connected = (health_word & (1u << 9)) != 0;                  // bus_connected（遥控器连接）
               msg->charging_on = (health_word & (1u << 12)) != 0;                       // bit12
-              msg->spray_on = (health_word & (1u << 13)) != 0;                          // bit13
-              msg->drain_on = (health_word & (1u << 14)) != 0;                          // bit14
-              msg->gripper_closed = (health_word & (1u << 15)) != 0;                    // bit15
               msg->motor_alarm = msg->right_wheel_alarm || msg->left_wheel_alarm || (alarm_info != 0);
 
               // alarm_list：拼接为字符串列表（优先使用 alarm_info 的细分报警码）
@@ -757,11 +696,10 @@ hardware_interface::return_type AgrobotHardwareInterface::read(
 
               last_robot_vx_ = robot_vx;
               last_robot_vth_ = robot_vth;
-              last_lift_z_ = lift_z_;
+              last_rack_index_ = rack_index;
               last_health_word_ = health_word;
               last_alarm_info_ = alarm_info;
               last_battery_soc_x100_ = battery_soc_x100;
-              last_bucket_volume_ml_ = bucket_volume;
 
               parsed = true;
             }
@@ -825,14 +763,6 @@ hardware_interface::return_type AgrobotHardwareInterface::write(
   uart::appendInt32TLV(payload, TAG_V_LINEAR_MM_S, v_linear_mm_s);
   uart::appendInt32TLV(payload, TAG_W_ANGULAR_MRAD_S, w_angular_mrad_s);
 
-  // 一次性下发：滑台高度（单位 mm）
-  int32_t z_lift_mm = 0;
-  if (z_lift_on_.load() != 0) {
-    // 协议单位为 1mm：直接下发
-    z_lift_mm = static_cast<int32_t>(z_lift_offset_.load());
-    uart::appendInt32TLV(payload, TAG_Z_LIFT_MM, z_lift_mm);
-  }
-
   // 一次性下发：状态开关（仅在有新指令时下发）
   const uint16_t status_mask = hw_mode1_.load();
   const uint16_t status_value = hw_mode2_.load();
@@ -840,12 +770,14 @@ hardware_interface::return_type AgrobotHardwareInterface::write(
     uart::appendUint16TLV(payload, TAG_STATUS_MASK, status_mask);
     uart::appendUint16TLV(payload, TAG_STATUS_VALUE, status_value);
   }
-
-  // 一次性下发：浇水量（uint16）
-  const uint16_t spray_volume_ml = pending_spray_volume_ml_.load();
-  const bool has_spray_volume = has_pending_spray_volume_.load();
-  if (has_spray_volume) {
-    uart::appendUint16TLV(payload, TAG_SPRAY_VOLUME_ML, spray_volume_ml);
+  int8_t rack_idx = 0;
+  if (has_rack_index_cmd_.load()) {
+    rack_idx = rack_index_cmd_.load();
+    // 手动追加 int8 TLV (uart_protocol 中可能没有 int8 助手，需手动或添加)
+    // TLV 格式: Tag(1) Len(1) Val(1)
+    payload.push_back(TAG_RACK_INDEX);
+    payload.push_back(1);
+    payload.push_back(static_cast<uint8_t>(rack_idx));
   }
 
   std::vector<uint8_t> frame;
@@ -871,16 +803,14 @@ hardware_interface::return_type AgrobotHardwareInterface::write(
     last_tx_info_.frame_hex = tx_frame_hex;
     last_tx_info_.v_linear_mm_s = v_linear_mm_s;
     last_tx_info_.w_angular_mrad_s = w_angular_mrad_s;
-    last_tx_info_.z_lift_mm = z_lift_mm;
     last_tx_info_.status_mask = status_mask;
     last_tx_info_.status_value = status_value;
-    last_tx_info_.spray_volume_ml = has_spray_volume ? spray_volume_ml : 0;
+    last_tx_info_.rack_index = has_rack_index_cmd_.load() ? rack_idx : 0;
     last_tx_info_.seq = tx_seq;
   }
-  if (z_lift_on_.load() != 0 || status_mask != 0 || has_spray_volume) {
-    RCLCPP_INFO(
-      rclcpp::get_logger("AgrobotHardwareInterface"),
-      "send command: %s", tx_frame_hex.c_str());
+
+  if (status_mask != 0 || has_rack_index_cmd_.load()) {
+    RCLCPP_INFO(rclcpp::get_logger("AgrobotHardwareInterface"), "send command: %s", tx_frame_hex.c_str());
   } 
 
   if (serial_port_.IsOpen()) {
@@ -893,11 +823,8 @@ hardware_interface::return_type AgrobotHardwareInterface::write(
     if (hw_mode1_.load() != 0) {
       hw_mode1_.store(0);
     }
-    if (z_lift_on_.load() != 0) {
-      z_lift_on_.store(0);
-    }
-    if (has_pending_spray_volume_.load()) {
-      has_pending_spray_volume_.store(false);
+    if (has_rack_index_cmd_.load()) {
+      has_rack_index_cmd_.store(false);
     }
 
     return hardware_interface::return_type::OK;

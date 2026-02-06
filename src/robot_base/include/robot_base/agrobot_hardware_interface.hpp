@@ -100,13 +100,10 @@ private:
   // Mode commands
   std::atomic<uint16_t> hw_mode1_;
   std::atomic<uint16_t> hw_mode2_;
-  std::atomic<uint16_t> z_lift_on_;
-  std::atomic<int32_t> z_lift_offset_;
   std::atomic<bool> has_mode_update_{false};
 
-  // 一次性下发浇水量（单位 mL，协议为 uint16）
-  std::atomic<uint16_t> pending_spray_volume_ml_{0};
-  std::atomic<bool> has_pending_spray_volume_{false};
+  std::atomic<int8_t> rack_index_cmd_;
+  std::atomic<bool> has_rack_index_cmd_;
 
   // 协议运行态缓存
   uint8_t tx_seq_id_{0};
@@ -114,10 +111,9 @@ private:
   uint16_t last_health_word_{0};
   uint16_t last_alarm_info_{0};
   uint16_t last_battery_soc_x100_{0};
-  uint16_t last_bucket_volume_ml_{0};
   double last_robot_vx_{0.0};
   double last_robot_vth_{0.0};
-  double last_lift_z_{0.0};
+  int8_t last_rack_index_ = 0;
 
   // 协议联调信息：write() 产生、read() 发布（避免在 write() 中直接发布话题）
   struct LastTxInfo
@@ -125,10 +121,8 @@ private:
     std::string frame_hex;                      // 最近一次下发 Command 帧（十六进制字符串）
     int32_t v_linear_mm_s{0};                   // TLV 0x01
     int32_t w_angular_mrad_s{0};                // TLV 0x02
-    int32_t z_lift_mm{0};                       // TLV 0x03（1mm 定标，未下发时为 0）
     uint16_t status_mask{0};                    // TLV 0x11（未下发时为 0）
     uint16_t status_value{0};                   // TLV 0x12（未下发时为 0）
-    uint16_t spray_volume_ml{0};                // 浇水量（未下发时为 0）
     uint8_t seq{0};                            // Command 帧 SEQ
   };
 
