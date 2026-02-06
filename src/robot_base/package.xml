@@ -1,0 +1,41 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>robot_base</name>
+  <version>0.0.0</version>
+  <description>agrobot rebuild by ros2: robot-base</description>
+  <maintainer email="15587477531@163.com">agrobot3</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>std_msgs</depend>
+  <depend>hardware_interface</depend>
+  <depend>rclcpp_lifecycle</depend>
+  <depend>libserial-dev</depend>
+  <depend>pluginlib</depend>
+  <depend>ros2_control</depend>
+  <depend>controller_manager</depend>
+  <depend>diff_drive_controller</depend>
+  <depend>joint_state_broadcaster</depend>
+  <depend>robot_state_publisher</depend>
+  <depend>sensor_msgs</depend>
+  <depend>xacro</depend>
+  <depend>tf_transformations</depend>
+  <!-- <depend>livox_ros_driver2</depend> -->
+  <depend>eigen3_cmake_module</depend>
+  <depend>Eigen3</depend>
+
+  <build_depend>rosidl_default_generators</build_depend>
+  <exec_depend>rosidl_default_runtime</exec_depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <member_of_group>rosidl_interface_packages</member_of_group>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

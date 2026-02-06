@@ -1,0 +1,9 @@
+<library path="agrobot_hardware_interface">
+  <class name="robot_base/AgrobotHardwareInterface"
+         type="robot_base::AgrobotHardwareInterface"
+         base_class_type="hardware_interface::SystemInterface">
+    <description>
+      ros2_control hardware interface for the Agrobot.
+    </description>
+  </class>
+</library> 

@@ -1,0 +1,49 @@
+  controller_manager:
+    ros__parameters:
+      update_rate: 50  #控制器的频率一定要和硬件接口的频率一致，不然odom会不准，目前stm32是50hz
+
+      diff_drive_controller:
+        type: diff_drive_controller/DiffDriveController
+
+      joint_state_broadcaster:
+        type: joint_state_broadcaster/JointStateBroadcaster
+
+
+  diff_drive_controller:
+    ros__parameters:
+      left_wheel_names: ["left_wheel_joint"]
+      right_wheel_names: ["right_wheel_joint"]
+      wheel_separation: 0.205  # 下位机是400mm
+      wheel_radius: 0.0875     # 下位机是175/2
+      # wheel_radius: 0.15     # 下位机是175/2
+      publish_rate: 50.0      # 下位机上传50hz
+      odom_frame_id: odom
+      base_frame_id: base_footprint
+      use_stamped_vel: false  # 是否带时间戳
+      enable_odom_tf: false    # 启用diff_drive_controller的TF发布
+
+      # Odometry settings
+      odom_only_twist: false  # 使用完整的odom信息
+      position_feedback: false
+      velocity_feedback: true
+
+      # 稳定性设置
+      open_loop: false        # 使用反馈控制
+      
+      # Velocity and acceleration limits
+      linear:
+        x:
+          has_velocity_limits: true
+          max_velocity: 1.0
+          has_acceleration_limits: true
+          max_acceleration: 0.8
+      angular:
+        z:
+          has_velocity_limits: true
+          max_velocity: 2.0
+          has_acceleration_limits: true
+          max_acceleration: 1.6
+
+  joint_state_broadcaster:
+    ros__parameters:
+      {}

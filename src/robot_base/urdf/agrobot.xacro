@@ -1,0 +1,343 @@
+<?xml version="1.0"?>
+<robot name="agrobot"
+    xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+    <!-- XACRO参数：可以在launch文件中传递 -->
+    <xacro:arg name="controllers_file" default=""/>
+
+    <!-- 获取参数值 -->
+    <xacro:property name="use_gazebo" value="$(arg use_gazebo)"/>
+    <xacro:property name="controllers_file" value="$(arg controllers_file)"/>
+
+    <!-- ======================== 常用颜色 ======================== -->
+    <material name="orange">
+        <color rgba="1.0 0.5 0.2 1.0"/>
+    </material>
+    <material name="gray">
+        <color rgba="0.5 0.5 0.5 1.0"/>
+    </material>
+    <material name="dark_gray">
+        <color rgba="0.3 0.3 0.3 1.0"/>
+    </material>
+    <material name="blue">
+        <color rgba="0.2 0.4 0.8 0.5"/>
+    </material>
+    <material name="black">
+        <color rgba="0.1 0.1 0.1 1.0"/>
+    </material>
+    <material name="red">
+        <color rgba="0.8 0.2 0.2 1.0"/>
+    </material>
+    <material name="green">
+        <color rgba="0.2 0.8 0.2 1.0"/>
+    </material>
+    <material name="white">
+        <color rgba="0.9 0.9 0.9 1.0"/>
+    </material>
+    <material name="silver">
+        <color rgba="0.7 0.7 0.7 1.0"/>
+    </material>
+
+    <!-- ======================== 几何/安装参数 ======================== -->
+    <xacro:property name="M_PI" value="3.14159265359"/>
+
+    <!-- 车体盒子尺寸 -->
+    <xacro:property name="vehicle_length" value="0.650"/>
+    <!-- x -->
+    <xacro:property name="vehicle_width" value="0.500"/>
+    <!-- y -->
+    <xacro:property name="vehicle_height" value="0.163"/>
+    <!-- z -->
+    <!-- 车体离地高度 -->
+    <xacro:property name="ground_clearance" value="0.047"/>
+
+    <!-- 车体中间雷达层尺寸 -->
+     <xacro:property name="middle_length" value="0.498"/>
+     <xacro:property name="middle_width" value="0.348"/>
+     <xacro:property name="middle_height" value="0.066"/>
+
+    <!-- 轮子 -->
+    <xacro:property name="wheel_radius" value="0.0875"/>
+    <!-- 170 mm / 2 (原来的两倍) -->
+    <xacro:property name="wheel_length" value="0.045"/>
+    <xacro:property name="wheel_offset_z" value="${vehicle_height/2 + ground_clearance - wheel_radius}"/>
+    <!-- 轮子相对base_link的Z偏移 -->
+    <xacro:property name="wheel_offset_x" value="0"/>
+    <!-- 轮子相对车体中心的X偏移 -->
+    <xacro:property name="wheel_offset_y" value="0.20"/>
+    <!-- 轮子相对车体中心的Y偏移 -->
+    <!-- 实际轮距（两轮中心距离） 0.2*2 = 0.4 -->
+    <xacro:property name="wheel_separation" value="${2 * wheel_offset_y}"/>
+
+    <!-- 万向轮 -->
+    <xacro:property name="caster_radius" value="0.0275"/>
+    <xacro:property name="caster_length" value="0.045"/>
+    <xacro:property name="caster_offset_z" value="${vehicle_height/2 + ground_clearance - caster_radius}"/>
+    <xacro:property name="caster_offset_y" value="0.18"/>
+    <xacro:property name="caster_offset_x" value="0.25"/>
+
+    <!-- 单目摄像头：嵌入车体前部内侧，距前表面 20mm，距下表面 224mm -->
+    <!-- 摄像头尺寸：长x宽x高 = 50mm x 40mm x 30mm，便于可视化 -->
+    <xacro:property name="camera_length" value="0.05"/>
+    <xacro:property name="camera_width" value="0.05"/>
+    <xacro:property name="camera_height" value="0.03"/>
+    <xacro:property name="cam_offset_x" value="0"/>
+    <xacro:property name="cam_offset_y" value="${vehicle_width/2 - 0.02}"/>
+    <xacro:property name="cam_offset_z" value="${vehicle_height/2 + middle_height + 0.025}"/>
+    <xacro:property name="cam_offset_yaw" value="${M_PI/2}"/>
+
+    <!-- 激光雷达：嵌入车体顶部前侧，距前表面 5cm，距下表面 15cm -->
+    <xacro:property name="lidar_radius" value="0.032"/>
+    <xacro:property name="lidar_length" value="0.05"/>
+    <xacro:property name="lidar_offset_x" value="0.270"/>
+    <xacro:property name="lidar_offset_y" value="0.200"/>
+    <xacro:property name="lidar_offset_z" value="${vehicle_height/2 + lidar_length/2}"/>
+
+    <!-- ======================== 通用宏 ======================== -->
+    <!-- 轮子宏 -->
+    <xacro:macro name="wheel_link" params="name parent_link x_offset y_offset z_offset">
+        <link name="${name}_wheel_link">
+            <visual>
+                <origin xyz="0 0 0" rpy="${M_PI/2} 0 0"/>
+                <geometry>
+                    <cylinder length="${wheel_length}" radius="${wheel_radius}"/>
+                </geometry>
+                <material name="black"/>
+            </visual>
+            <collision>
+                <origin xyz="0 0 0" rpy="${M_PI/2} 0 0"/>
+                <geometry>
+                    <cylinder length="${wheel_length}" radius="${wheel_radius}"/>
+                </geometry>
+            </collision>
+            <inertial>
+                <origin xyz="0 0 0" rpy="${M_PI/2} 0 0"/>
+                <mass value="0.5"/>
+                <inertia ixx="${0.5*(3*wheel_radius*wheel_radius + wheel_length*wheel_length)/12}" ixy="0" ixz="0" iyy="${0.5*(3*wheel_radius*wheel_radius + wheel_length*wheel_length)/12}" iyz="0" izz="${0.5*wheel_radius*wheel_radius/2}"/>
+            </inertial>
+        </link>
+
+        <joint name="${name}_wheel_joint" type="continuous">
+            <parent link="${parent_link}"/>
+            <child link="${name}_wheel_link"/>
+            <origin xyz="${x_offset} ${y_offset} ${z_offset}" rpy="0 0 0"/>
+            <axis xyz="0 1 0"/>
+            <limit effort="10.0" velocity="10.0"/>
+            <dynamics damping="0.1" friction="0.1"/>
+        </joint>
+    </xacro:macro>
+
+    <!-- 万向轮宏 -->
+    <xacro:macro name="caster_link" params="name parent_link x_offset_caster y_offset_caster z_offset_caster">
+        <link name="${name}_caster_link">
+            <visual>
+                <origin xyz="0 0 0" rpy="${M_PI/2} 0 0"/>
+                <geometry>
+                    <cylinder length="${caster_length}" radius="${caster_radius}"/>
+                </geometry>
+                <material name="gray"/>
+            </visual>
+            <collision>
+                <origin xyz="0 0 0" rpy="${M_PI/2} 0 0"/>
+                <geometry>
+                    <cylinder length="${caster_length}" radius="${caster_radius}"/>
+                </geometry>
+            </collision>
+            <inertial>
+                <origin xyz="0 0 0" rpy="${M_PI/2} 0 0"/>
+                <mass value="0.1"/>
+                <inertia ixx="${0.1*(3*caster_radius*caster_radius + caster_length*caster_length)/12}" ixy="0" ixz="0" iyy="${0.1*(3*caster_radius*caster_radius + caster_length*caster_length)/12}" iyz="0" izz="${0.1*caster_radius*caster_radius/2}"/>
+            </inertial>
+        </link>
+
+        <joint name="${name}_caster_joint" type="fixed">
+            <parent link="${parent_link}"/>
+            <child link="${name}_caster_link"/>
+            <origin xyz="${x_offset_caster} ${y_offset_caster} ${z_offset_caster}" rpy="0 0 0"/>
+        </joint>
+    </xacro:macro>
+
+    <!-- 激光雷达宏 -->
+    <xacro:macro name="laser_link" params="name x_offset_laser y_offset_laser z_offset_laser yaw_offset_laser"> 
+        <link name="${name}_laser_link">
+            <visual>
+                <origin xyz="0 0 0" rpy="0 0 0"/>
+                <geometry>
+                    <cylinder length="${lidar_length}" radius="${lidar_radius}"/>
+                </geometry>
+                <material name="red"/>
+            </visual>
+            <collision>
+                <origin xyz="0 0 0" rpy="0 0 0"/>
+                <geometry>
+                    <cylinder length="${lidar_length}" radius="${lidar_radius}"/>
+                </geometry>
+            </collision>
+            <inertial>
+                <origin xyz="0 0 0" rpy="0 0 0"/>
+                <mass value="0.05"/>
+                <inertia ixx="${0.1*(3*lidar_radius*lidar_radius + lidar_length*lidar_length)/12}" ixy="0" ixz="0" iyy="${0.1*(3*lidar_radius*lidar_radius + lidar_length*lidar_length)/12}" iyz="0" izz="${0.1*lidar_radius*lidar_radius/2}"/>
+            </inertial>
+        </link>
+        <joint name="${name}_laser_joint" type="fixed">
+            <parent link="base_link"/>
+            <child link="${name}_laser_link"/>
+            <origin xyz="${x_offset_laser} ${y_offset_laser} ${z_offset_laser}" rpy="0 0 ${yaw_offset_laser}" />
+        </joint>
+    </xacro:macro>
+
+    <!-- 摄像头宏 -->
+    <xacro:macro name="camera_link" params="name x_offset_camera y_offset_camera z_offset_camera yaw_offset_camera"> 
+    <link name="${name}_camera">
+        <visual>
+            <origin xyz="0 0 0" rpy="0 0 0"/>
+            <geometry>
+                <box size="${camera_length} ${camera_width} ${camera_height}"/>
+            </geometry>
+            <material name="red"/>
+        </visual>
+        <collision>
+            <origin xyz="0 0 0" rpy="0 0 0"/>
+            <geometry>
+                <box size="${camera_length} ${camera_width} ${camera_height}"/>
+            </geometry>
+        </collision>
+        <inertial>
+            <origin xyz="0 0 0" rpy="0 0 0"/>
+            <mass value="0.05"/>
+            <inertia ixx="${0.05*(camera_width*camera_width + camera_height*camera_height)/12}" ixy="0" ixz="0" iyy="${0.05*(camera_length*camera_length + camera_height*camera_height)/12}" iyz="0" izz="${0.05*(camera_length*camera_length + camera_width*camera_width)/12}"/>
+        </inertial>
+    </link>
+    <joint name="camera_joint" type="fixed">
+        <parent link="base_link"/>
+        <child link="${name}_camera"/>
+        <origin xyz="${x_offset_camera} ${y_offset_camera} ${z_offset_camera}" rpy="0 ${M_PI/2} ${yaw_offset_camera}"/>
+    </joint>
+     </xacro:macro>
+    <!-- ======================== 车体结构 ======================== -->
+    <link name="base_footprint"/>
+    <joint name="base_joint" type="fixed">
+        <parent link="base_footprint"/>
+        <child link="base_link"/>
+        <origin xyz="0 0 ${wheel_offset_z}" rpy="0 0 0"/>
+    </joint>
+
+    <link name="base_link">
+        <visual>
+            <geometry>
+                <box size="${vehicle_length} ${vehicle_width} ${vehicle_height}"/>
+            </geometry>
+            <material name="blue"/>
+        </visual>
+        <collision>
+            <geometry>
+                <box size="${vehicle_length} ${vehicle_width} ${vehicle_height}"/>
+            </geometry>
+        </collision>
+        <inertial>
+            <mass value="50"/>
+            <inertia ixx="${(1/12)*50*(vehicle_width*vehicle_width + vehicle_height*vehicle_height)}" ixy="0" ixz="0" iyy="${(1/12)*50*(vehicle_length*vehicle_length + vehicle_height*vehicle_height)}" iyz="0" izz="${(1/12)*50*(vehicle_length*vehicle_length + vehicle_width*vehicle_width)}"/>
+        </inertial>
+    </link>
+
+    <joint name="base_middle_joint" type="fixed"> 
+        <parent link="base_link"/>
+        <child link="base_middle_link"/>
+        <origin xyz="0 0 ${vehicle_height/2+middle_height/2}" rpy="0 0 0"/>
+    </joint>
+    <link name="base_middle_link">
+        <visual>
+            <geometry>
+                <box size="${middle_length} ${middle_width} ${middle_height}"/>
+            </geometry>
+            <material name="blue"/>
+        </visual>
+        <collision>
+            <geometry>
+                <box size="${middle_length} ${middle_width} ${middle_height}"/>
+            </geometry>
+        </collision>
+        <inertial>
+            <mass value="50"/>
+            <inertia ixx="${(1/12)*50*(middle_width*middle_width + middle_height*middle_height)}" ixy="0" ixz="0" iyy="${(1/12)*50*(middle_length*middle_length + middle_height*middle_height)}" iyz="0" izz="${(1/12)*50*(vehicle_length*vehicle_length + vehicle_width*vehicle_width)}"/>
+        </inertial>
+    </link>
+    <!-- ======================== IMU传感器 ======================== -->
+    <!-- IMU安装在机器人中心位置，与base_link重合 -->
+    <link name="imu_link">
+        <visual>
+            <origin xyz="0 0 0" rpy="0 0 0"/>
+            <geometry>
+                <box size="0.02 0.02 0.01"/>
+                <!-- 小盒子表示IMU -->
+            </geometry>
+            <material name="green"/>
+        </visual>
+        <collision>
+            <origin xyz="0 0 0" rpy="0 0 0"/>
+            <geometry>
+                <box size="0.02 0.02 0.01"/>
+            </geometry>
+        </collision>
+        <inertial>
+            <mass value="0.01"/>
+            <inertia ixx="1e-6" ixy="0" ixz="0" iyy="1e-6" iyz="0" izz="1e-6"/>
+        </inertial>
+    </link>
+
+    <joint name="imu_joint" type="fixed">
+        <parent link="base_link"/>
+        <child link="imu_link"/>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <!-- {{ AURA-X: Fix - IMU安装在base_link中心位置，作为tracking frame. }} -->
+    </joint>
+
+    <!-- ======================== 万向轮 ======================== -->
+    <xacro:caster_link name="rear_l" parent_link="base_link" x_offset_caster="${-caster_offset_x}" y_offset_caster="${caster_offset_y}" z_offset_caster="${-caster_offset_z}"/>
+    <xacro:caster_link name="rear_r" parent_link="base_link" x_offset_caster="${-caster_offset_x}" y_offset_caster="${-caster_offset_y}" z_offset_caster="${-caster_offset_z}"/>
+    <xacro:caster_link name="front" parent_link="base_link" x_offset_caster="${caster_offset_x}" y_offset_caster="0" z_offset_caster="${-caster_offset_z}"/>
+
+    <!-- ======================== 驱动轮（左右中置） ======================== -->
+    <xacro:wheel_link name="left" parent_link="base_link" x_offset="0" y_offset="${wheel_offset_y}" z_offset="${-wheel_offset_z}"/>
+    <xacro:wheel_link name="right" parent_link="base_link" x_offset="0" y_offset="${-wheel_offset_y}" z_offset="${-wheel_offset_z}"/>
+
+    <!-- ======================== 摄像头 ======================== -->
+    <xacro:camera_link name="right" x_offset_camera="${cam_offset_x}" y_offset_camera="${cam_offset_y}" z_offset_camera="${cam_offset_z}" yaw_offset_camera="${cam_offset_yaw}"/>
+
+
+    <!-- ======================== 激光雷达 ======================== -->
+    <xacro:laser_link name="rightFront" x_offset_laser="${lidar_offset_x}" y_offset_laser="${-lidar_offset_y}" z_offset_laser="${lidar_offset_z}" yaw_offset_laser="${-M_PI/4}"/>
+    <xacro:laser_link name="leftRear" x_offset_laser="${-lidar_offset_x-0.01}" y_offset_laser="${lidar_offset_y-0.01}" z_offset_laser="${lidar_offset_z}" yaw_offset_laser="${3*M_PI/4 - 0.01}"/>
+
+    <!-- ======================== ros2_control 配置 ======================== -->
+    <ros2_control name="agrobot" type="system">
+        <hardware>
+            <plugin>robot_base/AgrobotHardwareInterface</plugin>
+            <param name="serial_port_name">/dev/STM32</param>
+            <param name="serial_baud_rate">115200</param>
+            <param name="wheel_radius">${wheel_radius}</param>
+            <param name="wheel_separation">${wheel_separation}</param>
+            <param name="loop_rate">20</param>
+            <param name="device_timeout">1000</param>
+            <param name="imu_port">/dev/imu_usb</param>
+            <param name="imu_baud_rate">115200</param>
+            <param name="imu_frame_id">imu_link</param>
+        </hardware>
+        <joint name="left_wheel_joint">
+            <command_interface name="velocity">
+                <param name="min">-10.0</param>
+                <param name="max">10.0</param>
+            </command_interface>
+            <state_interface name="position"/>
+            <state_interface name="velocity"/>
+        </joint>
+        <joint name="right_wheel_joint">
+            <command_interface name="velocity">
+                <param name="min">-10.0</param>
+                <param name="max">10.0</param>
+            </command_interface>
+            <state_interface name="position"/>
+            <state_interface name="velocity"/>
+        </joint>
+    </ros2_control>
+</robot>
