@@ -637,17 +637,35 @@ hardware_interface::return_type AgrobotHardwareInterface::read(
                 msg->ack_seq = last_ack_info_.seq;
                 msg->ack_result = last_ack_info_.result;
               }
-              // health_word 映射（按新协议位定义）
-              msg->estop_state = (health_word & (1u << 0)) != 0;                       // emergency_active
-              msg->right_wheel_enabled = (health_word & (1u << 1)) != 0;               // right_motor_enable
-              msg->right_wheel_alarm = (health_word & (1u << 2)) != 0;                 // right_motor_alarm
-              msg->left_wheel_enabled = (health_word & (1u << 3)) != 0;                // left_motor_enable
-              msg->left_wheel_alarm = (health_word & (1u << 4)) != 0;                  // left_motor_alarm
-              msg->battery_comm_fault = (health_word & (1u << 8)) != 0;                // battery_comm_fault
-              msg->remote_connected = (health_word & (1u << 9)) != 0;                  // bus_connected（遥控器连接）
-              msg->charging_on = (health_word & (1u << 12)) != 0;                       // bit12
-              msg->motor_alarm = msg->right_wheel_alarm || msg->left_wheel_alarm || (alarm_info != 0);
+              // bit0: estop_state
+              msg->estop_state = (health_word & (1u << 0)) != 0;
+              // bit1: right_wheel_enabled
+              msg->right_wheel_enabled = (health_word & (1u << 1)) != 0;
+              // bit2: right_wheel_alarm
+              msg->right_wheel_alarm = (health_word & (1u << 2)) != 0;
+              // bit3: left_wheel_enabled
+              msg->left_wheel_enabled = (health_word & (1u << 3)) != 0;
+              // bit4: left_wheel_alarm
+              msg->left_wheel_alarm = (health_word & (1u << 4)) != 0;
+                    
+              // bit7: action_done (动作完成)
+              msg->action_done = (health_word & (1u << 7)) != 0;
 
+              // bit8: battery_comm_fault
+              msg->battery_comm_fault = (health_word & (1u << 8)) != 0;
+
+              // bit9: remote_connected
+              msg->remote_connected = (health_word & (1u << 9)) != 0;
+
+              // bit10-11: current_action_state
+              msg->current_action_state = static_cast<uint8_t>((health_word >> 10) & 0x03);
+
+              // bit12: charging_on
+              msg->charging_on = (health_word & (1u << 12)) != 0;
+
+              // 综合电机报警标志
+              msg->motor_alarm = msg->right_wheel_alarm || msg->left_wheel_alarm || (alarm_info != 0);
+              
               // alarm_list：拼接为字符串列表（优先使用 alarm_info 的细分报警码）
               std::vector<std::string> alarms;
               const uint8_t right_alarm_code = static_cast<uint8_t>(alarm_info & 0x0F);
@@ -754,8 +772,7 @@ hardware_interface::return_type AgrobotHardwareInterface::write(
   const rclcpp::Time & /*time*/, const rclcpp::Duration & /*period*/)
 {
   double vx = (hw_command_velocity_right_ + hw_command_velocity_left_) * wheel_radius_ / 2.0;
-  double vth = (hw_command_velocity_right_ - hw_command_velocity_left_) * wheel_radius_ /
-    wheel_separation_;
+  double vth = (hw_command_velocity_right_ - hw_command_velocity_left_) * wheel_radius_ / wheel_separation_;
 
   // 按新协议组装 Command TLV
   std::vector<uint8_t> payload;
@@ -767,17 +784,15 @@ hardware_interface::return_type AgrobotHardwareInterface::write(
   // 一次性下发：状态开关（仅在有新指令时下发）
   const uint16_t status_mask = hw_mode1_.load();
   const uint16_t status_value = hw_mode2_.load();
+  int8_t rack_idx = rack_index_cmd_.load();
   if (status_mask != 0) {
     uart::appendUint16TLV(payload, TAG_STATUS_MASK, status_mask);
     uart::appendUint16TLV(payload, TAG_STATUS_VALUE, status_value);
+
+    payload.push_back(TAG_RACK_INDEX);
+    payload.push_back(1); // Length
+    payload.push_back(static_cast<uint8_t>(rack_idx));
   }
-  int8_t rack_idx = 0;
-  rack_idx = rack_index_cmd_.load();
-  // 手动追加 int8 TLV (uart_protocol 中可能没有 int8 助手，需手动或添加)
-  // TLV 格式: Tag(1) Len(1) Val(1)
-  payload.push_back(TAG_RACK_INDEX);
-  payload.push_back(1);
-  payload.push_back(static_cast<uint8_t>(rack_idx));
 
   std::vector<uint8_t> frame;
   frame.reserve(FRAME_FIXED_HEADER_LEN + payload.size() + 2);
