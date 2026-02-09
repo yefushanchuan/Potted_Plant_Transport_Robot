@@ -28,7 +28,6 @@ void AgrobotHardwareInterface::resetCommandParams()
   hw_mode2_.store(0);
   has_mode_update_.store(false);
   rack_index_cmd_.store(0);
-  has_rack_index_cmd_.store(false);
 }
 
 namespace
@@ -773,14 +772,12 @@ hardware_interface::return_type AgrobotHardwareInterface::write(
     uart::appendUint16TLV(payload, TAG_STATUS_VALUE, status_value);
   }
   int8_t rack_idx = 0;
-  if (has_rack_index_cmd_.load()) {
-    rack_idx = rack_index_cmd_.load();
-    // 手动追加 int8 TLV (uart_protocol 中可能没有 int8 助手，需手动或添加)
-    // TLV 格式: Tag(1) Len(1) Val(1)
-    payload.push_back(TAG_RACK_INDEX);
-    payload.push_back(1);
-    payload.push_back(static_cast<uint8_t>(rack_idx));
-  }
+  rack_idx = rack_index_cmd_.load();
+  // 手动追加 int8 TLV (uart_protocol 中可能没有 int8 助手，需手动或添加)
+  // TLV 格式: Tag(1) Len(1) Val(1)
+  payload.push_back(TAG_RACK_INDEX);
+  payload.push_back(1);
+  payload.push_back(static_cast<uint8_t>(rack_idx));
 
   std::vector<uint8_t> frame;
   frame.reserve(FRAME_FIXED_HEADER_LEN + payload.size() + 2);
@@ -807,11 +804,11 @@ hardware_interface::return_type AgrobotHardwareInterface::write(
     last_tx_info_.w_angular_mrad_s = w_angular_mrad_s;
     last_tx_info_.status_mask = status_mask;
     last_tx_info_.status_value = status_value;
-    last_tx_info_.rack_index = has_rack_index_cmd_.load() ? rack_idx : 0;
+    last_tx_info_.rack_index = rack_idx;
     last_tx_info_.seq = tx_seq;
   }
 
-  if (status_mask != 0 || has_rack_index_cmd_.load()) {
+  if (status_mask != 0) {
     RCLCPP_INFO(rclcpp::get_logger("AgrobotHardwareInterface"), "send command: %s", tx_frame_hex.c_str());
   } 
 
@@ -824,9 +821,6 @@ hardware_interface::return_type AgrobotHardwareInterface::write(
     }
     if (hw_mode1_.load() != 0) {
       hw_mode1_.store(0);
-    }
-    if (has_rack_index_cmd_.load()) {
-      has_rack_index_cmd_.store(false);
     }
 
     return hardware_interface::return_type::OK;
