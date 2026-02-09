@@ -16,8 +16,10 @@ bool right_wheel_enabled     # 右轮电机使能 bit1 0:未使能 1:使能
 bool right_wheel_alarm       # 右轮电机报警 bit2 0:未报警 1:报警
 bool left_wheel_enabled      # 左轮电机使能 bit3 0:未使能 1:使能
 bool left_wheel_alarm        # 左轮电机报警 bit4 0:未报警 1:报警
+bool action_done             # 动作完成标志 bit7 0未完成/进行中 1完成
 bool battery_comm_fault      # 电池电池通信故障 bit8 0:未故障 1:故障
 bool remote_connected        # 遥控器连接状态 bit9 0:未连接 1:已连接
+uint8 current_action_state   # 当前（搬运/卸载）状态 bit10-11 0无动作 1搬运 2卸载
 bool charging_on             # 充电开关状态 bit12 0:关闭 1:打开
 
 bool motor_alarm             # 电机报警 bit2 | bit4

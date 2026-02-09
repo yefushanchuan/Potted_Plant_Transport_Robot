@@ -21,7 +21,7 @@
 namespace robot_base
 {
 
-// 控制类一次性参数初始化/复位（服务触发的开关、浇水量、滑台高度等）
+// 控制类一次性参数初始化/复位
 void AgrobotHardwareInterface::resetCommandParams()
 {
   hw_mode1_.store(0);
@@ -44,7 +44,7 @@ constexpr uint8_t UART_TYPE_ACK = 0x02;        // 帧类型：ACK
 
 constexpr uint8_t TAG_V_LINEAR_MM_S = 0x01;     // int32: 线速度 mm/s
 constexpr uint8_t TAG_W_ANGULAR_MRAD_S = 0x02;  // int32: 角速度 mrad/s
-constexpr int8_t  TAG_RACK_INDEX = 0x05;        // int8: 花盆架索引
+constexpr uint8_t TAG_RACK_INDEX = 0x05;        // int8: 花盆架索引
 constexpr uint8_t TAG_STATUS_MASK = 0x11;       // u16
 constexpr uint8_t TAG_STATUS_VALUE = 0x12;      // u16
 constexpr uint8_t TAG_STATUS_WORD = 0x13;       // u16
@@ -161,8 +161,8 @@ hardware_interface::CallbackReturn AgrobotHardwareInterface::on_init(
       constexpr uint16_t RIGHT_WHEEL_RESET_BIT = 2;              // bit2
       constexpr uint16_t LEFT_WHEEL_ENABLE_SHIFT = 3;            // bit3-bit4
       constexpr uint16_t LEFT_WHEEL_RESET_BIT = 5;               // bit5
-      constexpr uint16_t ACTION_ENABLE_BIT = 9;                  // bit9: 动作使能
-      constexpr uint16_t ACTION_STATUS_BIT = 11;                 // bit11: 动作状态(搬运/卸载)
+      constexpr uint16_t ACTION_ENABLE_BIT = 9;                  // bit9
+      constexpr uint16_t ACTION_STATUS_BIT = 10;                 // bit10-bit11
       constexpr uint16_t CHARGING_ON_BIT = 14;                   // bit14
 
       auto applyTriStateBit = [&](uint16_t bit, uint8_t cmd, const char * name) -> bool {
@@ -248,23 +248,27 @@ hardware_interface::CallbackReturn AgrobotHardwareInterface::on_init(
         response->success = false;
         return;
       }
-      if (!applyResetBit(
+      if (!applyTriStateBit(
         ACTION_ENABLE_BIT, request->action_enable_cmd, "action_enable"))
       {
         this->resetCommandParams(); 
         response->success = false;
         return;
       }
-      if (!applyTriStateBit(
+      if (!applyEnable2Bits(
         ACTION_STATUS_BIT, request->action_status, "action_status"))
       {
          this->resetCommandParams();
          response->success = false;
          return;
       }
+      if (!applyTriStateBit(CHARGING_ON_BIT, request->charging_on_cmd, "charging_on")) {
+        this->resetCommandParams();
+        response->success = false;
+        return;
+      }
 
       this->rack_index_cmd_.store(request->rack_index);
-      this->has_rack_index_cmd_.store(true);
 
       // 更新状态开关（一次性下发，发送后清空标记）
       this->hw_mode1_.store(status_mask);
@@ -568,10 +572,6 @@ hardware_interface::return_type AgrobotHardwareInterface::read(
                   if (len != 4) {tlv_error = true; break;}
                   robot_vth = static_cast<double>(uart::readInt32LE(data_ptr)) / 1000.0;
                   break;
-                case TAG_RACK_INDEX:
-                  if (len != 1) {tlv_error = true; break;}
-                  rack_index = static_cast<int8_t>(data_ptr[0]);
-                  break;
                 case TAG_HEALTH_WORD:
                   if (len != 2) {tlv_error = true; break;}
                   health_word = uart::readUint16LE(data_ptr);
@@ -584,6 +584,10 @@ hardware_interface::return_type AgrobotHardwareInterface::read(
                   if (len != 2) {tlv_error = true; break;}
                   battery_soc_x100 = uart::readUint16LE(data_ptr);
                   break;
+                case TAG_RACK_INDEX:
+                    if (len != 1) {tlv_error = true; break;}
+                    rack_index = static_cast<int8_t>(data_ptr[0]);
+                    break;
                 default:
                   // 未知标签按长度跳过，保证向后兼容
                   break;
@@ -611,7 +615,6 @@ hardware_interface::return_type AgrobotHardwareInterface::read(
               msg->speed_x = robot_vx;
               msg->speed_z = robot_vth;
               msg->power = static_cast<float>(battery_soc_x100) / 100.0f;
-              msg->rack_index = rack_index;
               msg->flag_1 = static_cast<uint8_t>(0x00);
 
               // 原始协议字段

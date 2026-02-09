@@ -102,6 +102,7 @@ private:
   std::atomic<uint16_t> hw_mode2_;
   std::atomic<bool> has_mode_update_{false};
 
+  // 花盆架索引下发缓存
   std::atomic<int8_t> rack_index_cmd_;
   std::atomic<bool> has_rack_index_cmd_;
 
@@ -113,17 +114,18 @@ private:
   uint16_t last_battery_soc_x100_{0};
   double last_robot_vx_{0.0};
   double last_robot_vth_{0.0};
-  int8_t last_rack_index_ = 0;
-
+  int8_t last_rack_index_{0};
+  
   // 协议联调信息：write() 产生、read() 发布（避免在 write() 中直接发布话题）
   struct LastTxInfo
   {
     std::string frame_hex;                      // 最近一次下发 Command 帧（十六进制字符串）
     int32_t v_linear_mm_s{0};                   // TLV 0x01
     int32_t w_angular_mrad_s{0};                // TLV 0x02
+    int8_t rack_index;                          // 花盆夹索引
     uint16_t status_mask{0};                    // TLV 0x11（未下发时为 0）
     uint16_t status_value{0};                   // TLV 0x12（未下发时为 0）
-    uint8_t seq{0};                            // Command 帧 SEQ
+    uint8_t seq{0};                             // Command 帧 SEQ
   };
 
   struct LastAckInfo
@@ -140,7 +142,7 @@ private:
   double wheel_radius_;
   double wheel_separation_;
 
-  // 控制类一次性参数初始化/复位（服务触发的开关、浇水量、滑台高度等）
+  // 控制类一次性参数初始化/复位
   void resetCommandParams();
 };
 

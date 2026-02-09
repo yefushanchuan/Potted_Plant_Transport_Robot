@@ -11,19 +11,17 @@ uint8 left_wheel_enable_cmd
 uint8 right_wheel_reset_cmd
 uint8 left_wheel_reset_cmd
 
-# 使能搬运/卸载动作（bit9） : 0不使能 1使能
-uint8_t action_enable_cmd
+# 使能搬运/卸载动作（bit9） : 0不修改 1使能 2失能
+uint8 action_enable_cmd
 
-# 搬运/卸载状态（bit11） ： 0不修改 1搬运 2卸载
+# 搬运/卸载状态（bit10-bit11） ： 0不修改 1搬运 2卸载
 uint8 action_status
 
 # 充电（bit14）：0不修改 1打开/夹紧 2关闭/松开
 uint8 charging_on_cmd
 
 #一次性下发参数
-
 #花盆架索引
-uint8 rack_index_set   # 0:不下发 1:下发
 int8 rack_index
 ---
 # Response
