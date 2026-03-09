@@ -183,14 +183,15 @@ hardware_interface::CallbackReturn AgrobotHardwareInterface::on_init(
           return true;
         };
 
+      // 此函数增加cmd = 3 支持（slave模式）
       auto applyEnable2Bits = [&](uint16_t shift, uint8_t cmd, const char * name) -> bool {
           if (cmd == 0) {
             return true;
           }
-          if (cmd != 1 && cmd != 2) {
+          if (cmd > 3) {
             RCLCPP_ERROR(
               rclcpp::get_logger("AgrobotHardwareInterface"),
-              "%s_cmd 取值非法：%u（期望 0/1/2）",
+              "%s_cmd 取值非法：%u（期望 0/1/2/3）",
               name,
               static_cast<unsigned>(cmd));
             return false;
@@ -584,9 +585,9 @@ hardware_interface::return_type AgrobotHardwareInterface::read(
                   battery_soc_x100 = uart::readUint16LE(data_ptr);
                   break;
                 case TAG_RACK_INDEX:
-                    if (len != 1) {tlv_error = true; break;}
-                    rack_index = static_cast<int8_t>(data_ptr[0]);
-                    break;
+                  if (len != 1) {tlv_error = true; break;}
+                  rack_index = static_cast<int8_t>(data_ptr[0]);
+                  break;
                 default:
                   // 未知标签按长度跳过，保证向后兼容
                   break;
@@ -648,8 +649,8 @@ hardware_interface::return_type AgrobotHardwareInterface::read(
               // bit4: left_wheel_alarm
               msg->left_wheel_alarm = (health_word & (1u << 4)) != 0;
                     
-              // bit7: action_done (动作完成)
-              msg->action_done = (health_word & (1u << 7)) != 0;
+              // bit7: action_running (动作进行)
+              msg->action_running = (health_word & (1u << 7)) != 0;
 
               // bit8: battery_comm_fault
               msg->battery_comm_fault = (health_word & (1u << 8)) != 0;
@@ -657,8 +658,11 @@ hardware_interface::return_type AgrobotHardwareInterface::read(
               // bit9: remote_connected
               msg->remote_connected = (health_word & (1u << 9)) != 0;
 
-              // bit10-11: current_action_state
-              msg->current_action_state = static_cast<uint8_t>((health_word >> 10) & 0x03);
+              // bit10: rc_override
+              msg->rc_in_slave_gear = (health_word & (1u << 10)) != 0;
+
+              // bit11: ready_mode
+              msg->ready_mode = (health_word & (1u << 11)) != 0;
 
               // bit12: charging_on
               msg->charging_on = (health_word & (1u << 12)) != 0;
