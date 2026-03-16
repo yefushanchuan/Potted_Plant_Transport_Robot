@@ -21,11 +21,6 @@ def generate_launch_description():
             description="Use sim time if true",
         ),
         DeclareLaunchArgument(
-            "imu_port",
-            default_value="/dev/IMU",
-            description="The serial port for the IMU",
-        ),
-        DeclareLaunchArgument(
             "imu_topic",
             default_value="imu",
             description="The topic name for the IMU",
