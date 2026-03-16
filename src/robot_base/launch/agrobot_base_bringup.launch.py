@@ -132,62 +132,6 @@ def generate_launch_description():
             output="screen",
         ),
 
-        # sensor: LiDAR 2D
-                Node(
-            package="hins_fe_ros2",
-            executable="hins_fe_ros2_node",
-            name="hins_rightfront_node",
-            output="screen",
-            emulate_tty=True,
-            parameters=[
-                {
-                    "frame_id": "leftRear_laser_link",
-                    "laser_ip": "192.168.1.100",   #"192.168.1.88",		# 传感器ip地址		
-                    "laser_port": 8080,				# 传感器端口（固定为8080）
-                    "min_angle": 52.0,				# 传感器测量角度的最小值
-                    "max_angle": 312.0,				# 传感器测量角度的最大值
-                    "change_param": True,			# 
-                    "angle_increment": "0.500",
-                    "motor_speed": 50,				# 雷达转速 12就是12.5
-                                                    # 12:0.025|0.050|0.100|0.250|0.500 
-                                                    # 25:0.050|0.100|0.250|0.500
-                                                    # 50:0.100|0.200|0.500
-                    "filter_level": 1,				# 噪声过滤等级
-                    "shadows_filter_level": 1,      # 拖尾过滤等级
-                    "service_name": "HinsFeSrv",
-                    "use_udp": True,
-                 }				
-            ],
-            remappings=[('/scan_fe', '/scan1')]
-        ),
-        Node(
-            package="hins_fe_ros2",
-            executable="hins_fe_ros2_node",
-            name="hins_leftrear_node2",
-            output="screen",
-            emulate_tty=True,
-            parameters=[
-                {
-                    "frame_id": "rightFront_laser_link",
-                    "laser_ip": "192.168.2.200",   #"192.168.1.88",		# 传感器ip地址		
-                    "laser_port": 8080,				# 传感器端口（固定为8080）
-                    "min_angle": 52.0,				# 传感器测量角度的最小值
-                    "max_angle": 312.0,				# 传感器测量角度的最大值
-                    "change_param": True,			# 
-                    "angle_increment": "0.500",
-                    "motor_speed": 50,				# 雷达转速 12就是12.5
-                                                    # 12:0.025|0.050|0.100|0.250|0.500 
-                                                    # 25:0.050|0.100|0.250|0.500
-                                                    # 50:0.100|0.200|0.500
-                    "filter_level": 1,				# 噪声过滤等级
-                    "shadows_filter_level": 1,      # 拖尾过滤等级
-                    "service_name": "HinsFeSrv",
-                    "use_udp": True,
-                 }				
-            ],
-            remappings=[('/scan_fe', '/scan2')]
-        ),
-
         # sensor: LiDAR 3D
         Node(
             package='livox_ros_driver2',
@@ -209,25 +153,6 @@ def generate_launch_description():
                 {'cmdline_input_bd_code': 'livox0000000001'}
             ]
         ),
-
-        # sensor: Camera
-        Node(
-            package="realsense2_camera",
-            executable="realsense2_camera_node",
-            name="camera",
-            output="screen",
-            parameters=[
-                {"camera_name": "front_camera"},
-                {"enable_color": False},
-                {"enable_depth": True},
-                {"enable_infra": False},
-                {"enable_infra1": False},
-                {"enable_infra2": False},
-                {"pointcloud.enable": True},
-                {"pointcloud.stream_filter": 0}
-                # {"rgb_camera.color_profile": "1920,1080,30"},
-            ]
-        )
 
         # tools
         # # Tilt Compensator Node (C++) - 只处理 CustomMsg
