@@ -5,9 +5,9 @@ IMU_publisher:
         frame_id: "imu_link"
         imu_switch: TRUE
         imu_topic: "/IMU_data"
-        euler_switch: TRUE
+        euler_switch: FALSE
         euler_topic: "/euler_data"
-        magnetic_switch: TRUE
+        magnetic_switch: FALSE
         magnetic_topic: "/magnetic_data"
 
 
