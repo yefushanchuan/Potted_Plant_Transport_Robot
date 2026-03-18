@@ -571,6 +571,7 @@ hardware_interface::return_type AgrobotHardwareInterface::read(
                 case TAG_W_ANGULAR_MRAD_S:
                   if (len != 4) {tlv_error = true; break;}
                   robot_vth = static_cast<double>(uart::readInt32LE(data_ptr)) / 1000.0;
+                  robot_vth = -robot_vth;  // 协议中正值为顺时针旋转，ROS 中正值为逆时针，需取反转换
                   break;
                 case TAG_HEALTH_WORD:
                   if (len != 2) {tlv_error = true; break;}
@@ -777,7 +778,7 @@ hardware_interface::return_type AgrobotHardwareInterface::write(
 {
   double vx = (hw_command_velocity_right_ + hw_command_velocity_left_) * wheel_radius_ / 2.0;
   double vth = (hw_command_velocity_right_ - hw_command_velocity_left_) * wheel_radius_ / wheel_separation_;
-
+  vth = -vth;  // ROS 中正值为逆时针旋转，协议中正值为顺时针，需取反转换
   // 按新协议组装 Command TLV
   std::vector<uint8_t> payload;
   const int32_t v_linear_mm_s = static_cast<int32_t>(std::lround(vx * 1000.0));
