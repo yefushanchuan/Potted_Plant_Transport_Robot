@@ -13,9 +13,8 @@
     ros__parameters:
       left_wheel_names: ["left_wheel_joint"]
       right_wheel_names: ["right_wheel_joint"]
-      wheel_separation: 0.205  # 下位机是400mm
+      wheel_separation: 0.612
       wheel_radius: 0.0875     # 下位机是175/2
-      # wheel_radius: 0.15     # 下位机是175/2
       publish_rate: 50.0      # 下位机上传50hz
       odom_frame_id: odom
       base_frame_id: base_footprint

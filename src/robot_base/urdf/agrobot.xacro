@@ -49,6 +49,9 @@
     <xacro:property name="vehicle_height" value="0.2"/>
     <!-- z -->
 
+    <!-- base_link 距离地面的高度：一半车高 + 轮子半径-->
+    <xacro:property name="base_z_origin" value="${wheel_radius + vehicle_height/2}"/>
+
     <!-- 车体中间雷达层尺寸 -->
     <xacro:property name="middle_length" value="0.498"/>
     <xacro:property name="middle_width" value="0.348"/>
@@ -58,7 +61,7 @@
     <xacro:property name="wheel_radius" value="0.0875"/>
     <!-- 175 mm / 2 (原来的两倍) -->
     <xacro:property name="wheel_length" value="0.045"/>
-    <xacro:property name="wheel_offset_z" value="${wheel_radius + vehicle_height/2}"/>
+    <xacro:property name="wheel_offset_z" value="${vehicle_height/2}"/>
     <!-- 轮子相对base_link的Z偏移 -->
     <xacro:property name="wheel_offset_x" value="0.236"/>
     <!-- 轮子相对车体中心的X偏移 -->
@@ -70,7 +73,7 @@
     <!-- 万向轮 -->
     <xacro:property name="caster_radius" value="0.0275"/>
     <xacro:property name="caster_length" value="0.045"/>
-    <xacro:property name="caster_offset_z" value="${wheel_radius + vehicle_height/2}"/>
+    <xacro:property name="caster_offset_z" value="${base_z_origin - caster_radius}"/>
     <xacro:property name="caster_offset_y" value="0"/>
     <xacro:property name="caster_offset_x" value="-0.25"/>
 
@@ -217,7 +220,7 @@
     <joint name="base_joint" type="fixed">
         <parent link="base_footprint"/>
         <child link="base_link"/>
-        <origin xyz="0 0 ${wheel_offset_z}" rpy="0 0 0"/>
+        <origin xyz="0 0 ${base_z_origin}" rpy="0 0 0"/>
     </joint>
 
     <link name="base_link">
