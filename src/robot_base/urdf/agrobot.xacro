@@ -315,7 +315,7 @@
             <param name="serial_baud_rate">115200</param>
             <param name="wheel_radius">${wheel_radius}</param>
             <param name="wheel_separation">${wheel_separation}</param>
-            <param name="loop_rate">20</param>
+            <param name="loop_rate">50</param>
             <param name="device_timeout">1000</param>
         </hardware>
         <joint name="left_wheel_joint">
