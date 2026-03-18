@@ -42,39 +42,37 @@
     <xacro:property name="M_PI" value="3.14159265359"/>
 
     <!-- 车体盒子尺寸 -->
-    <xacro:property name="vehicle_length" value="0.650"/>
+    <xacro:property name="vehicle_length" value="0.640"/>
     <!-- x -->
-    <xacro:property name="vehicle_width" value="0.500"/>
+    <xacro:property name="vehicle_width" value="0.542"/>
     <!-- y -->
-    <xacro:property name="vehicle_height" value="0.163"/>
+    <xacro:property name="vehicle_height" value="0.2"/>
     <!-- z -->
-    <!-- 车体离地高度 -->
-    <xacro:property name="ground_clearance" value="0.047"/>
 
     <!-- 车体中间雷达层尺寸 -->
-     <xacro:property name="middle_length" value="0.498"/>
-     <xacro:property name="middle_width" value="0.348"/>
-     <xacro:property name="middle_height" value="0.066"/>
+    <xacro:property name="middle_length" value="0.498"/>
+    <xacro:property name="middle_width" value="0.348"/>
+    <xacro:property name="middle_height" value="0.066"/>
 
     <!-- 轮子 -->
     <xacro:property name="wheel_radius" value="0.0875"/>
-    <!-- 170 mm / 2 (原来的两倍) -->
+    <!-- 175 mm / 2 (原来的两倍) -->
     <xacro:property name="wheel_length" value="0.045"/>
-    <xacro:property name="wheel_offset_z" value="${vehicle_height/2 + ground_clearance - wheel_radius}"/>
+    <xacro:property name="wheel_offset_z" value="${wheel_radius + vehicle_height/2}"/>
     <!-- 轮子相对base_link的Z偏移 -->
-    <xacro:property name="wheel_offset_x" value="0"/>
+    <xacro:property name="wheel_offset_x" value="0.236"/>
     <!-- 轮子相对车体中心的X偏移 -->
-    <xacro:property name="wheel_offset_y" value="0.20"/>
+    <xacro:property name="wheel_offset_y" value="0.306"/>
     <!-- 轮子相对车体中心的Y偏移 -->
-    <!-- 实际轮距（两轮中心距离） 0.2*2 = 0.4 -->
+    <!-- 实际轮距（两轮中心距离） 0.306*2 = 0.612 -->
     <xacro:property name="wheel_separation" value="${2 * wheel_offset_y}"/>
 
     <!-- 万向轮 -->
     <xacro:property name="caster_radius" value="0.0275"/>
     <xacro:property name="caster_length" value="0.045"/>
-    <xacro:property name="caster_offset_z" value="${vehicle_height/2 + ground_clearance - caster_radius}"/>
-    <xacro:property name="caster_offset_y" value="0.18"/>
-    <xacro:property name="caster_offset_x" value="0.25"/>
+    <xacro:property name="caster_offset_z" value="${wheel_radius + vehicle_height/2}"/>
+    <xacro:property name="caster_offset_y" value="0"/>
+    <xacro:property name="caster_offset_x" value="-0.25"/>
 
     <!-- 单目摄像头：嵌入车体前部内侧，距前表面 20mm，距下表面 224mm -->
     <!-- 摄像头尺寸：长x宽x高 = 50mm x 40mm x 30mm，便于可视化 -->
@@ -259,7 +257,7 @@
         </collision>
         <inertial>
             <mass value="50"/>
-            <inertia ixx="${(1/12)*50*(middle_width*middle_width + middle_height*middle_height)}" ixy="0" ixz="0" iyy="${(1/12)*50*(middle_length*middle_length + middle_height*middle_height)}" iyz="0" izz="${(1/12)*50*(vehicle_length*vehicle_length + vehicle_width*vehicle_width)}"/>
+            <inertia ixx="${(1/12)*50*(middle_width*middle_width + middle_height*middle_height)}" ixy="0" ixz="0" iyy="${(1/12)*50*(middle_length*middle_length + middle_height*middle_height)}" iyz="0" izz="${(1/12)*50*(middle_length*middle_length + middle_width*middle_width)}"/>
         </inertial>
     </link>
     <!-- ======================== IMU传感器 ======================== -->
@@ -293,13 +291,11 @@
     </joint>
 
     <!-- ======================== 万向轮 ======================== -->
-    <xacro:caster_link name="rear_l" parent_link="base_link" x_offset_caster="${-caster_offset_x}" y_offset_caster="${caster_offset_y}" z_offset_caster="${-caster_offset_z}"/>
-    <xacro:caster_link name="rear_r" parent_link="base_link" x_offset_caster="${-caster_offset_x}" y_offset_caster="${-caster_offset_y}" z_offset_caster="${-caster_offset_z}"/>
-    <xacro:caster_link name="front" parent_link="base_link" x_offset_caster="${caster_offset_x}" y_offset_caster="0" z_offset_caster="${-caster_offset_z}"/>
+    <xacro:caster_link name="back" parent_link="base_link" x_offset_caster="${caster_offset_x}" y_offset_caster="${-caster_offset_y}" z_offset_caster="${-caster_offset_z}"/>
 
-    <!-- ======================== 驱动轮（左右中置） ======================== -->
-    <xacro:wheel_link name="left" parent_link="base_link" x_offset="0" y_offset="${wheel_offset_y}" z_offset="${-wheel_offset_z}"/>
-    <xacro:wheel_link name="right" parent_link="base_link" x_offset="0" y_offset="${-wheel_offset_y}" z_offset="${-wheel_offset_z}"/>
+    <!-- ======================== 驱动轮 ======================== -->
+    <xacro:wheel_link name="left" parent_link="base_link" x_offset="${wheel_offset_x}" y_offset="${wheel_offset_y}" z_offset="${-wheel_offset_z}"/>
+    <xacro:wheel_link name="right" parent_link="base_link" x_offset="${wheel_offset_x}" y_offset="${-wheel_offset_y}" z_offset="${-wheel_offset_z}"/>
 
     <!-- ======================== 摄像头 ======================== -->
     <xacro:camera_link name="right" x_offset_camera="${cam_offset_x}" y_offset_camera="${cam_offset_y}" z_offset_camera="${cam_offset_z}" yaw_offset_camera="${cam_offset_yaw}"/>
@@ -307,7 +303,6 @@
 
     <!-- ======================== 激光雷达 ======================== -->
     <xacro:laser_link name="rightFront" x_offset_laser="${lidar_offset_x}" y_offset_laser="${-lidar_offset_y}" z_offset_laser="${lidar_offset_z}" yaw_offset_laser="${-M_PI/4}"/>
-    <xacro:laser_link name="leftRear" x_offset_laser="${-lidar_offset_x-0.01}" y_offset_laser="${lidar_offset_y-0.01}" z_offset_laser="${lidar_offset_z}" yaw_offset_laser="${3*M_PI/4 - 0.01}"/>
 
     <!-- ======================== ros2_control 配置 ======================== -->
     <ros2_control name="agrobot" type="system">
