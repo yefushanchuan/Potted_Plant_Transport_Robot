@@ -1,0 +1,38 @@
+/**:
+  ros__parameters:
+
+    # ── Input ──────────────────────────────────────────────────────────────
+    # Default topic for Livox MID-360 (livox_ros_driver2)
+    lidar_topic: "/livox/lidar"
+
+    # ── Ground removal ─────────────────────────────────────────────────────
+    ground:
+      # RANSAC inlier distance (m) — increase on rough floors
+      ransac_distance_thresh: 0.05
+      ransac_max_iter: 100
+      # Pass-through range filter
+      min_range:  0.3
+      max_range: 15.0
+      # Pass-through height filter (sensor-relative z, m)
+      min_height: -2.0
+      max_height:  3.0
+
+    # ── Euclidean clustering ────────────────────────────────────────────────
+    cluster:
+      # Max distance (m) between neighbouring points to be in the same cluster
+      tolerance: 0.15
+      # Min / max number of points to form a valid cluster
+      min_size:   20
+      max_size: 5000
+
+    # ── Plant classifier ────────────────────────────────────────────────────
+    classifier:
+      # Bounding-box size limits (m)
+      min_height: 0.10
+      max_height: 1.20
+      min_width:  0.05
+      max_width:  0.80
+      min_depth:  0.05
+      max_depth:  0.80
+      # Minimum confidence [0-1] to report a cluster as a plant
+      confidence_threshold: 0.35
