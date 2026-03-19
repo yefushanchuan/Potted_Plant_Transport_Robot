@@ -437,10 +437,14 @@ hardware_interface::return_type AgrobotHardwareInterface::read(
         while (rx_buffer_.size() >= FRAME_MIN_SIZE) {
           // 帧头对齐
           if (rx_buffer_[0] != FRAME_HEAD_1 || rx_buffer_[1] != FRAME_HEAD_2) {
-            rx_buffer_.erase(rx_buffer_.begin());
+            size_t drop_count = 1;
+            while (drop_count < rx_buffer_.size() && rx_buffer_[drop_count] != FRAME_HEAD_1) {
+              drop_count++;
+            }
+            rx_buffer_.erase(rx_buffer_.begin(), rx_buffer_.begin() + drop_count);
             RCLCPP_WARN(
               rclcpp::get_logger("AgrobotHardwareInterface"),
-              "帧头对齐失败，丢弃一个字节"
+              "帧头对齐失败，一次性丢弃 %zu 个无效字节，重新寻找帧头", drop_count
             );
             continue;
           }
@@ -478,10 +482,10 @@ hardware_interface::return_type AgrobotHardwareInterface::read(
           if (payload_len > MAX_PAYLOAD_LEN) {
             RCLCPP_WARN(
               rclcpp::get_logger("AgrobotHardwareInterface"),
-              "PAYLOAD 长度异常：%u（上限 %u），丢弃帧头重新同步",
+              "PAYLOAD 长度异常：%u（上限 %u），丢弃当前帧头重新同步",
               static_cast<unsigned>(payload_len),
               static_cast<unsigned>(MAX_PAYLOAD_LEN));
-            rx_buffer_.erase(rx_buffer_.begin());
+            rx_buffer_.erase(rx_buffer_.begin(), rx_buffer_.begin() + 2);
             continue;
           }
           size_t frame_len = FRAME_FIXED_HEADER_LEN + payload_len + 2;           // + CRC
@@ -504,7 +508,7 @@ hardware_interface::return_type AgrobotHardwareInterface::read(
             RCLCPP_WARN(
               rclcpp::get_logger("AgrobotHardwareInterface"),
               "协议版本不匹配，收到 %u", static_cast<unsigned>(version));
-            rx_buffer_.erase(rx_buffer_.begin());
+            rx_buffer_.erase(rx_buffer_.begin(), rx_buffer_.begin() + 2);
             continue;
           }
 
@@ -523,7 +527,8 @@ hardware_interface::return_type AgrobotHardwareInterface::read(
               rclcpp::get_logger("AgrobotHardwareInterface"),
               "错误数据帧内容: %s",
               bytesToHexString(rx_buffer_.data(), frame_len).c_str());
-            rx_buffer_.erase(rx_buffer_.begin());
+            // CRC错误说明数据段有错位或干扰，丢弃帧头(0xA0 0x0A)，从后续数据中重新寻头
+            rx_buffer_.erase(rx_buffer_.begin(), rx_buffer_.begin() + 2);
             continue;
           }
           RCLCPP_DEBUG(rclcpp::get_logger("AgrobotHardwareInterface"),
@@ -753,13 +758,17 @@ hardware_interface::return_type AgrobotHardwareInterface::read(
             }
           }
 
-          if (parsed) {
-            rx_buffer_.erase(rx_buffer_.begin(), rx_buffer_.begin() + frame_len);
-          } else {
-            // 解析失败丢弃头部，避免卡住
-            rx_buffer_.erase(rx_buffer_.begin());
+          if (!parsed) {
+            RCLCPP_WARN(
+              rclcpp::get_logger("AgrobotHardwareInterface"),
+              "收到未知帧类型(0x%02X)或 TLV 结构解析失败，但 CRC 校验有效，忽略该帧。", 
+              static_cast<unsigned>(type)
+            );
           }
-
+          // 因为前面已经通过了 CRC 校验，说明这 `frame_len` 长度的数据是完整且未损坏的包裹。
+          // 无论解析是否认识它（parsed状态），都必须一次性把这一整帧移除，绝不能只丢1个字节！
+          rx_buffer_.erase(rx_buffer_.begin(), rx_buffer_.begin() + frame_len);
+          
           (void)seq_id;           // 当前未使用序列号，仅保持接口兼容
         }
       }
