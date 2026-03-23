@@ -305,7 +305,7 @@
 
 
     <!-- ======================== 激光雷达 ======================== -->
-    <xacro:laser_link name="rightFront" x_offset_laser="${lidar_offset_x}" y_offset_laser="${-lidar_offset_y}" z_offset_laser="${lidar_offset_z}" yaw_offset_laser="${-M_PI/4}"/>
+    <xacro:laser_link name="front" x_offset_laser="${lidar_offset_x}" y_offset_laser="${-lidar_offset_y}" z_offset_laser="${lidar_offset_z}" yaw_offset_laser="${-M_PI/4}"/>
 
     <!-- ======================== ros2_control 配置 ======================== -->
     <ros2_control name="agrobot" type="system">

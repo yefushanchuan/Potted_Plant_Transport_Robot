@@ -67,7 +67,7 @@ Visualization Manager:
           Value: false
         left_wheel_link:
           Value: true
-        rightFront_laser_link:
+        front_laser_link:
           Value: true
         right_camera:
           Value: true
@@ -89,7 +89,7 @@ Visualization Manager:
               {}
             left_wheel_link:
               {}
-            rightFront_laser_link:
+            front_laser_link:
               {}
             right_camera:
               {}
@@ -144,7 +144,7 @@ Visualization Manager:
           Show Axes: false
           Show Trail: false
           Value: true
-        rightFront_laser_link:
+        front_laser_link:
           Alpha: 1
           Show Axes: false
           Show Trail: false
@@ -248,7 +248,7 @@ Visualization Manager:
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
-    Fixed Frame: base_footprint
+    Fixed Frame: base_link
     Frame Rate: 30
   Name: root
   Tools:
