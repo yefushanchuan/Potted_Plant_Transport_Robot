@@ -15,7 +15,7 @@ ekf_filter_node:
         odom0: /diff_drive_controller/odom 
         odom0_config: [false,  false ,  false,   # 位置: 忽略
                        false, false, false,    # 姿态: 忽略roll,pitch，yaw
-                       true, true, false,    # 线速度: 使用vx,vy,忽略vz
+                       true, false, false,    # 线速度: 使用vx,vy,忽略vz
                        false, false, false,   # 角速度: 忽略
                        false, false, false]   # 加速度: 全部忽略
         odom0_relative: false

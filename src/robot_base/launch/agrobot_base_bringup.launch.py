@@ -93,9 +93,9 @@ def generate_launch_description():
 
     # EKF 融合定位
     # 作用: 融合 IMU 和轮式里程计数据，输出滤波后的位姿估计，
-    #       发布到 /odom 话题，并广播 odom → base_link 的 TF 变换
+    #       发布到 /odom 话题，并广播 odom → base_footprint 的 TF 变换
     # 输入: /imu (IMU数据), /diff_drive_controller/odom (轮式里程计)
-    # 输出: /odom (融合后的里程计), TF: odom → base_link (动态更新)
+    # 输出: /odom (融合后的里程计), TF: odom → base_footprint (动态更新)
     ekf_node = Node(
         package='robot_localization',
         executable='ekf_node',
