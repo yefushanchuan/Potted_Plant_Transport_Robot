@@ -45,7 +45,22 @@ def generate_launch_description():
     )
 
     # ================= 核心节点定义 =================
-    
+
+    # 发布 TF 和 URDF
+    # 作用: 解析 URDF 文件，发布机器人模型到 /robot_description 话题，
+    #       并根据 /joint_states 话题发布 TF 变换（静态+动态）
+    # 输出: /robot_description (URDF字符串), /tf, /tf_static    
+    robot_state_publisher_node = Node(
+        package="robot_state_publisher",
+        executable="robot_state_publisher",
+        output="both",
+        parameters=[robot_description, base_params],
+    )
+
+    # 启动控制器管理器
+    # 作用: ros2_control 的核心节点，加载硬件接口和控制器框架，
+    #       通过 remapping 从 /robot_description 获取 URDF 中的 <ros2_control> 配置
+    # 注意: 必须先于所有 spawner 启动，提供 /controller_manager 服务
     ros2_control_node = Node(
         package="controller_manager",
         executable="ros2_control_node",
@@ -54,13 +69,10 @@ def generate_launch_description():
         remappings=[("~/robot_description", "/robot_description")],
     )
 
-    robot_state_publisher_node = Node(
-        package="robot_state_publisher",
-        executable="robot_state_publisher",
-        output="both",
-        parameters=[robot_description, base_params],
-    )
-
+    # 加载关节状态广播器
+    # 作用: 向 controller_manager 请求加载 joint_state_broadcaster 控制器，
+    #       读取硬件接口中的关节状态，发布到 /joint_states 话题
+    # 依赖: 必须在 ros2_control_node 启动后执行（由 delay_joint_state_spawner 控制时序）
     joint_state_broadcaster_spawner = Node(
         package="controller_manager",
         executable="spawner",
@@ -68,6 +80,10 @@ def generate_launch_description():
         name="joint_state_broadcaster_spawner",
     )
 
+    # 加载差分驱动控制器
+    # 作用: 向 controller_manager 请求加载 diff_drive_controller，
+    #       订阅 /cmd_vel 话题控制轮子速度，发布轮式里程计 /diff_drive_controller/odom
+    # 依赖: 必须在 joint_state_broadcaster 加载完成后执行（由 delay_robot_controller_spawner 控制时序）
     robot_controller_spawner = Node(
         package="controller_manager",
         executable="spawner",
@@ -75,6 +91,11 @@ def generate_launch_description():
         name="robot_controller_spawner",
     )
 
+    # EKF 融合定位
+    # 作用: 融合 IMU 和轮式里程计数据，输出滤波后的位姿估计，
+    #       发布到 /odom 话题，并广播 odom → base_link 的 TF 变换
+    # 输入: /imu (IMU数据), /diff_drive_controller/odom (轮式里程计)
+    # 输出: /odom (融合后的里程计), TF: odom → base_link (动态更新)
     ekf_node = Node(
         package='robot_localization',
         executable='ekf_node',
@@ -84,6 +105,10 @@ def generate_launch_description():
         remappings=[('odometry/filtered', 'odom')]
     )
 
+    # IMU 数据发布
+    # 作用: 驱动 hipnuc IMU 硬件，读取原始传感器数据，
+    #       发布 IMU 消息到 /imu 话题，供 EKF 和其他节点使用
+    # 输出: /imu (sensor_msgs/Imu)
     imu_node = Node(
         package="hipnuc_imu",
         executable="talker",
@@ -92,22 +117,27 @@ def generate_launch_description():
         output="screen",
     )
 
+    # Livox 激光雷达驱动
+    # 作用: 驱动 Livox MID360 激光雷达，发布点云数据
+    # 输出: /livox/lidar (PointCloud2, xfer_format=0 标准格式)
+    # 坐标系: 点云数据的 frame_id = 'front_laser_link'（需在 URDF 中定义该 link）
+    # 注意: multi_topic=0 表示单雷达单话题模式
     livox_lidar_node = Node(
         package='livox_ros_driver2',
         executable='livox_ros_driver2_node',
         name='livox_lidar_publisher',
         output='screen',
         parameters=[
-            {'xfer_format': 0},
-            {'multi_topic': 0},
-            {'data_src': 0},
-            {'publish_freq': 10.0},
-            {'output_data_type': 0},
-            {'frame_id': 'front_laser_link'},
+            {'xfer_format': 0}, # 0=标准点云格式 /livox/lidar, 1=Livox自定义格式 /livox/lidar_custom
+            {'multi_topic': 0}, # 0=单话题模式, 1=多话题模式（多雷达时使用）
+            {'data_src': 0}, # 0=在线雷达数据, 1=从ROS bag读取, 2=从LVX文件读取
+            {'publish_freq': 10.0}, # 点云发布频率 (Hz)
+            {'output_data_type': 0}, # 0=PointCloud2, 1=自定义 Livox 点云格式
+            {'frame_id': 'front_laser_link'}, # 点云数据的坐标系ID，必须与 URDF 中的 link 名称一致
             {'user_config_path': PathJoinSubstitution([
                 FindPackageShare("livox_ros_driver2"), "config", "MID360_config.json"
-            ])},
-            {'cmdline_input_bd_code': 'livox0000000001'}
+            ])}, # 雷达硬件配置文件路径（包含IP、端口等参数）
+            {'cmdline_input_bd_code': 'livox0000000001'} # 雷达绑定码，用于识别特定设备
         ]
     )
 
