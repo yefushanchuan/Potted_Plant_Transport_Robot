@@ -63,11 +63,15 @@ Visualization Manager:
           Value: true
         base_middle_link:
           Value: true
+        chassis_link:
+          Value: true
+        front_laser_link:
+          Value: true
         imu_link:
           Value: false
         left_wheel_link:
           Value: true
-        front_laser_link:
+        odom:
           Value: true
         right_camera:
           Value: true
@@ -79,22 +83,24 @@ Visualization Manager:
       Show Axes: true
       Show Names: true
       Tree:
-        base_footprint:
-          base_link:
-            back_caster_link:
-              {}
-            base_middle_link:
-              {}
-            imu_link:
-              {}
-            left_wheel_link:
-              {}
-            front_laser_link:
-              {}
-            right_camera:
-              {}
-            right_wheel_link:
-              {}
+        odom:
+          base_footprint:
+            base_link:
+              chassis_link:
+                back_caster_link:
+                  {}
+                base_middle_link:
+                  {}
+                front_laser_link:
+                  {}
+                imu_link:
+                  {}
+                right_camera:
+                  {}
+              left_wheel_link:
+                {}
+              right_wheel_link:
+                {}
       Update Interval: 0
       Value: true
     - Alpha: 1
@@ -128,8 +134,17 @@ Visualization Manager:
           Alpha: 1
           Show Axes: false
           Show Trail: false
-          Value: true
         base_middle_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        chassis_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        front_laser_link:
           Alpha: 1
           Show Axes: false
           Show Trail: false
@@ -140,11 +155,6 @@ Visualization Manager:
           Show Trail: false
           Value: true
         left_wheel_link:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-          Value: true
-        front_laser_link:
           Alpha: 1
           Show Axes: false
           Show Trail: false
@@ -248,7 +258,7 @@ Visualization Manager:
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
-    Fixed Frame: base_link
+    Fixed Frame: odom
     Frame Rate: 30
   Name: root
   Tools:
@@ -306,10 +316,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.8097967505455017
+      Pitch: 0.5697969794273376
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 3.1654140949249268
+      Yaw: 4.905433654785156
     Saved: ~
 Window Geometry:
   Displays:
