@@ -1,0 +1,462 @@
+2025-10-22 17:05:17 - Error: DockRobotActionBT: DOCK aborted
+2025-10-22 17:07:24 - Error: DockRobotActionBT: DOCK aborted
+2025-10-22 17:14:00 - Error: DockRobotActionBT: DOCK aborted
+2025-10-22 17:21:48 - Error: DockRobotActionBT: DOCK aborted
+2025-10-22 17:24:26 - Error: DockRobotActionBT: DOCK aborted
+2025-10-22 17:40:04 - Error: DockRobotActionBT: DOCK aborted
+2025-10-22 17:47:53 - Error: DockRobotActionBT: DOCK aborted
+2025-12-08 15:07:25 - Error: GetNavGoalFromRoom: Service [/get_room_pose] not available
+2025-12-08 18:01:09 - Error: IsRosNodeOk: Topic 'agrobot_base_info' has no active publishers.
+2025-12-08 18:07:45 - Error: IsRosNodeOk: Topic 'agrobot_base_info' has no active publishers.
+2025-12-08 18:10:17 - Error: IsRosNodeOk: Topic 'agrobot_base_info' has no active publishers.
+2025-12-08 18:10:28 - Error: GetNavGoalFromRoom: Service [/get_room_pose] not available
+2025-12-08 18:16:44 - Error: GetNavGoalFromRoom: Service [/get_room_pose] not available
+2025-12-08 18:19:04 - Error: GetNavGoalFromRoom: Service [/get_room_pose] not available
+2025-12-09 11:59:23 - Error: IsRosNodeOk: Topic 'agrobot_base_info' has no active publishers.
+2025-12-09 12:00:42 - Error: IsRosNodeOk: Topic 'agrobot_base_info' has no active publishers.
+2025-12-09 12:02:43 - Error: IsRosNodeOk: Topic 'agrobot_base_info' has no active publishers.
+2025-12-09 12:04:44 - Error: IsRosNodeOk: Topic 'agrobot_base_info' has no active publishers.
+2025-12-09 14:46:55 - Error: IsRosNodeOk: Topic 'agrobot_base_info' has no active publishers.
+2025-12-09 17:16:16 - Error: UndockRobotActionBT: UndockRobot action server not available
+2025-12-09 17:18:16 - Error: UndockRobotActionBT: UndockRobot action server not available
+2025-12-09 17:21:52 - Error: UndockRobotActionBT: UndockRobot action server not available
+2025-12-10 16:49:22 - Error: IsRosNodeOk: Topic 'agrobot_base_info' has no active publishers.
+2025-12-10 17:17:23 - Error: GetNavGoalFromRoom: Service [/get_room_pose] not available
+2025-12-10 17:31:22 - Error: GetNavGoalFromRoom: Service [/get_room_pose] not available
+2025-12-10 17:33:47 - Error: IsRosNodeOk: Topic 'odom' has no active publishers.
+2025-12-10 17:34:07 - Error: GetNavGoalFromRoom: Service [/get_room_pose] not available
+2025-12-11 10:52:23 - Error: IsRosNodeOk: Topic 'agrobot_base_info' has no active publishers.
+2025-12-11 10:53:34 - Error: GetNavGoalFromRoom: Service [/get_room_pose] not available
+2025-12-11 15:13:52 - Error: IsRosNodeOk: Topic 'agrobot_base_info' has no active publishers.
+2025-12-11 15:28:30 - Error: UndockRobotActionBT: UndockRobot action server not available
+2025-12-11 15:31:53 - Error: IsRosNodeOk: Topic 'odom' has no active publishers.
+2025-12-11 15:33:34 - Error: UndockRobotActionBT: UndockRobot action server not available
+2025-12-11 15:33:59 - Error: IsRosNodeOk: Topic 'agrobot_base_info' has no active publishers.
+2025-12-11 15:33:59 - Error: IsRosNodeOk: Topic 'odom' has no active publishers.
+2025-12-11 15:34:17 - Error: UndockRobotActionBT: UndockRobot action server not available
+2025-12-11 15:35:48 - Error: IsRosNodeOk: Topic 'agrobot_base_info' has no active publishers.
+2025-12-11 15:43:21 - Error: IsRosNodeOk: Topic 'agrobot_base_info' has no active publishers.
+2025-12-11 15:43:21 - Error: IsRosNodeOk: Topic 'odom' has no active publishers.
+2025-12-11 15:44:16 - Error: UndockRobotActionBT: UNDock aborted
+2025-12-11 15:46:08 - Error: IsRosNodeOk: Topic 'agrobot_base_info' has no active publishers.
+2025-12-11 15:47:02 - Error: GetNavGoalFromRoom: Service [/get_room_pose] not available
+2025-12-11 15:56:44 - Error: IsRosNodeOk: Topic 'odom' has no active publishers.
+2025-12-11 15:57:57 - Error: GetNavGoalFromRoom: Service [/get_room_pose] not available
+2025-12-11 16:03:35 - Error: IsRosNodeOk: Topic 'agrobot_base_info' has no active publishers.
+2025-12-11 16:04:11 - Error: GetNavGoalFromRoom: Service [/get_room_pose] not available
+2025-12-11 16:06:32 - Error: IsRosNodeOk: Topic 'agrobot_base_info' has no active publishers.
+2025-12-11 16:07:31 - Error: GetNavGoalFromRoom: Service [/get_room_pose] not available
+2025-12-11 16:27:59 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-11 16:36:19 - Error: GetNavGoalFromRoom: Service [/get_room_pose] not available
+2025-12-11 16:45:06 - Error: IsRosNodeOk: Parameter service 'cartographer_node/describe_parameters' is not available.
+2025-12-11 18:04:57 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-11 18:04:57 - Error: IsRosNodeOk: Parameter service 'bt_navigator/describe_parameters' is not available.
+2025-12-11 18:43:10 - Error: GetNavGoalFromRoom: Missing input port [nav_target_room]
+2025-12-12 10:20:27 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 10:22:30 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 10:24:33 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 10:26:36 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 10:28:39 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 10:30:39 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 10:32:42 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 10:34:45 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 10:36:45 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 10:38:48 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 10:40:48 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 10:42:51 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 10:44:54 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 10:46:54 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 10:48:57 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 10:51:00 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 10:53:03 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 10:55:06 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 10:57:06 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 10:59:09 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 11:01:12 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 11:03:15 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 11:05:15 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 11:07:18 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 11:09:18 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 11:11:21 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 11:13:21 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 11:15:21 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 11:17:24 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 11:19:27 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 11:21:27 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 11:23:30 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 11:25:30 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 11:27:33 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 11:29:36 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 11:31:39 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 11:33:39 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 11:35:39 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 11:37:42 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 11:39:42 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 11:41:45 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 11:43:13 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 11:45:16 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 11:47:19 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 11:49:19 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 11:51:19 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 11:53:22 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 11:55:22 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 11:57:25 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 17:59:35 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 18:01:38 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 18:03:38 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 18:04:35 - Error: IsRosNodeOk: Parameter service 'icp_matcher/describe_parameters' is not available.
+2025-12-12 18:04:38 - Error: IsRosNodeOk: Parameter service 'cartographer_node/describe_parameters' is not available.
+2025-12-12 18:04:41 - Error: IsRosNodeOk: Parameter service 'bt_navigator/describe_parameters' is not available.
+2025-12-12 18:04:44 - Error: IsRosNodeOk: Parameter service 'roompose_loader/describe_parameters' is not available.
+2025-12-12 18:06:44 - Error: IsRosNodeOk: Parameter service 'roompose_loader/describe_parameters' is not available.
+2025-12-12 18:06:47 - Error: IsRosNodeOk: Parameter service 'cartographer_node/describe_parameters' is not available.
+2025-12-12 18:06:59 - Error: IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2025-12-12 18:07:32 - Error: IsRosNodeOk: Parameter service 'bt_navigator/describe_parameters' is not available.
+2025-12-12 18:07:41 - Error: RetryUntilSuccessful: all retry attempts exhausted after 3 retries
+2025-12-15 17:49:43 - Error: IsRosNodeOk: Parameter service 'cartographer_node/describe_parameters' is not available.
+2025-12-15 17:58:37 - Error: IsRosNodeOk: Parameter service 'cartographer_node/describe_parameters' is not available.
+2025-12-15 17:58:41 - Error: IsRosNodeOk: Parameter service 'bt_navigator/describe_parameters' is not available.
+2025-12-15 17:58:48 - Error: RetryUntilSuccessful: all retry attempts exhausted after 3 retries
+2025-12-15 18:02:25 - Error: RetryUntilSuccessful: all retry attempts exhausted after 3 retries
+2025-12-15 18:03:52 - Error: RetryUntilSuccessful: all retry attempts exhausted after 3 retries
+2025-12-15 18:05:31 - Error: RetryUntilSuccessful: all retry attempts exhausted after 3 retries
+2025-12-17 11:40:21 - Error: RetryUntilSuccessful: all retry attempts exhausted after 3 retries
+2025-12-17 11:56:03 - Error: RetryUntilSuccessful: all retry attempts exhausted after 3 retries
+2025-12-18 10:19:03 - Error: RetryUntilSuccessful: all retry attempts exhausted after 3 retries
+2025-12-18 10:31:41 - Error: RetryUntilSuccessful: all retry attempts exhausted after 3 retries
+2025-12-18 10:35:32 - Error: RetryUntilSuccessful: all retry attempts exhausted after 3 retries
+2025-12-18 10:39:16 - Error: RetryUntilSuccessful: all retry attempts exhausted after 3 retries
+2025-12-18 10:41:24 - Error: RetryUntilSuccessful: all retry attempts exhausted after 3 retries
+2025-12-18 11:36:50 - Error: Nav2Pose: Goal handle is null
+2025-12-18 11:51:54 - Error: Nav2Pose: Goal handle is null
+2025-12-18 14:16:13 - Error: Nav2Pose: Goal handle is null
+2025-12-18 14:17:58 - Error: RetryUntilSuccessful: all retry attempts exhausted after 3 retries
+2025-12-18 14:18:21 - Error: Nav2Pose: Goal handle is null
+2025-12-18 14:23:02 - Error: RetryUntilSuccessful: all retry attempts exhausted after 3 retries
+2025-12-18 14:24:25 - Error: RetryUntilSuccessful: all retry attempts exhausted after 3 retries
+2025-12-18 14:24:35 - Error: Nav2Pose: Goal handle is null
+2025-12-18 14:28:58 - Error: Nav2Pose: Goal handle is null
+2025-12-18 14:30:48 - Error: RetryUntilSuccessful: all retry attempts exhausted after 3 retries
+2025-12-18 15:24:39 - Error: RetryUntilSuccessful: all retry attempts exhausted after 3 retries
+2025-12-18 15:32:37 - Error: Nav2Pose: Goal handle is null
+2025-12-18 15:33:19 - Error: RetryUntilSuccessful: all retry attempts exhausted after 3 retries
+2025-12-18 15:37:52 - Error: RetryUntilSuccessful: all retry attempts exhausted after 3 retries
+2025-12-18 16:21:16 - Error: RetryUntilSuccessful: all retry attempts exhausted after 3 retries
+2025-12-18 16:23:18 - Error: Nav2Pose: Goal handle is null
+2025-12-18 16:24:12 - Error: RetryUntilSuccessful: all retry attempts exhausted after 3 retries
+2025-12-18 16:31:02 - Error: Nav2Pose: Goal handle is null
+2025-12-18 16:31:56 - Error: RetryUntilSuccessful: all retry attempts exhausted after 3 retries
+2025-12-18 16:42:13 - Error: Nav2Pose: Goal handle is null
+2025-12-18 17:04:24 - Error: Nav2Pose: Goal handle is null
+2025-12-18 17:31:59 - Error: GetNavGoalFromRoom: Missing input port [nav_target_room]
+2025-12-18 17:32:19 - Error: Nav2Pose: Send goal failed
+2025-12-18 17:38:31 - Error: Nav2Pose: Goal handle is null
+2025-12-18 17:39:03 - Error: GetNavGoalFromRoom: Missing input port [nav_target_room]
+2025-12-19 11:42:43 - Error: Nav2Pose: Send goal failed
+2025-12-19 11:42:53 - Error: GetNavGoalFromRoom: Missing input port [nav_target_room]
+2025-12-19 14:58:59 - Error: Nav2Pose: Send goal failed
+2025-12-19 15:20:04 - Error: TaskUpdate: Robot is charging,ignoring this command
+2025-12-19 15:52:35 - Error: UndockRobotActionBT: UNDock aborted
+2025-12-19 16:49:50 - Error: UndockRobotActionBT: UNDock aborted
+2025-12-19 17:02:14 - Error: UndockRobotActionBT: UNDock aborted
+2025-12-19 17:19:31 - Error: UndockRobotActionBT: UNDock aborted
+2025-12-24 17:43:24 - Error: Nav2Pose: Navigation aborted
+2025-12-24 17:51:47 - Error: Nav2Pose: Navigation aborted
+2025-12-25 09:52:17 - Error: Nav2Pose: Navigation aborted
+2025-12-25 10:01:37 - Error: GetNavGoalFromRoom: room not found
+2025-12-25 10:12:11 - Error: DockRobotActionBT: DOCK aborted
+2025-12-25 10:22:54 - Error: Nav2Pose: Navigation aborted
+2025-12-25 10:30:24 - Error: Nav2Pose: Navigation aborted
+2025-12-25 10:38:38 - Error: Nav2Pose: Navigation aborted
+2025-12-25 11:01:06 - Error: DockRobotActionBT: DOCK aborted
+2025-12-25 11:05:08 - Error: DockRobotActionBT: DOCK aborted
+2025-12-25 11:12:54 - Error: Nav2Pose: Navigation aborted
+2025-12-25 15:14:38 - Error: DockRobotActionBT: DOCK aborted
+2025-12-25 16:52:09 - Error: UndockRobotActionBT: UNDock aborted
+2025-12-25 17:17:22 - Error: UndockRobotActionBT: UNDock aborted
+2025-12-25 18:09:27 - Error: SetIcpActive: Service [/icp_active] not available
+2025-12-25 18:10:37 - Error: IsRosNodeOk: Parameter service 'bt_navigator/describe_parameters' is not available.
+2025-12-25 18:11:43 - Error: IsRosNodeOk: Parameter service 'cartographer_node/describe_parameters' is not available.
+2025-12-29 19:27:51 - Error: GetNavGoalFromRoom: room not found
+2026-01-16 10:44:01 - Error: Nav2Pose: Navigation aborted
+2026-01-16 11:22:25 - Error: DockRobotActionBT: DOCK aborted
+2026-01-16 13:00:03 - Error: GetNavGoalFromRoom: room not found
+2026-01-16 14:00:04 - Error: GetNavGoalFromRoom: room not found
+2026-01-19 10:12:57 - Error: GetNavGoalFromRoom: Missing input port [nav_target_room]
+2026-01-19 10:14:59 - Error: GetNavGoalFromRoom: Missing input port [nav_target_room]
+2026-01-19 10:17:01 - Error: GetNavGoalFromRoom: Missing input port [nav_target_room]
+2026-01-19 10:19:03 - Error: GetNavGoalFromRoom: Missing input port [nav_target_room]
+2026-01-19 10:19:03 - Error: SetIcpActive: Service [/icp_active] not available
+2026-01-19 15:00:03 - Error: GetNavGoalFromRoom: room not found
+2026-01-21 15:26:09 - Error: IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-01-21 15:28:23 - Error: Nav2Pose: Navigation aborted
+2026-01-21 15:31:40 - Error: Nav2Pose: Navigation aborted
+2026-01-21 15:34:57 - Error: Nav2Pose: Navigation aborted
+2026-01-21 15:38:18 - Error: Nav2Pose: Navigation aborted
+2026-01-21 15:41:17 - Error: Nav2Pose: Navigation aborted
+2026-01-21 15:44:05 - Error: Nav2Pose: Navigation aborted
+2026-01-21 15:46:53 - Error: Nav2Pose: Navigation aborted
+2026-01-21 16:00:03 - Error: GetNavGoalFromRoom: room not found
+2026-01-21 17:00:04 - Error: GetNavGoalFromRoom: room not found
+2026-01-21 18:00:04 - Error: GetNavGoalFromRoom: room not found
+2026-01-21 19:00:04 - Error: GetNavGoalFromRoom: room not found
+2026-01-21 20:00:04 - Error: GetNavGoalFromRoom: room not found
+2026-01-21 21:00:03 - Error: GetNavGoalFromRoom: room not found
+2026-01-21 22:11:16 - Error: IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-01-21 22:13:27 - Error: IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-01-21 22:15:37 - Error: IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-01-21 22:15:46 - Error: LaunchManagerAction: Service unavailable /launch_manager/start
+2026-01-21 22:16:09 - Error: IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-01-21 22:18:21 - Error: IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-01-21 22:19:29 - Error: IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-01-21 22:21:41 - Error: IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-01-21 22:23:53 - Error: IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-01-21 22:25:19 - Error: LaunchManagerAction: Service unavailable /launch_manager/start
+2026-01-21 22:25:42 - Error: IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-01-22 11:14:37 - Error: IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-01-22 11:16:49 - Error: IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-01-22 11:18:13 - Error: IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-01-22 11:20:23 - Error: IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-01-22 11:22:34 - Error: IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-01-22 11:24:46 - Error: IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-01-22 11:26:58 - Error: IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-01-22 11:34:59 - Error: Nav2Pose: Navigation aborted
+2026-01-22 12:00:03 - Error: GetNavGoalFromRoom: room not found
+2026-01-22 13:00:03 - Error: GetNavGoalFromRoom: room not found
+2026-01-22 14:00:04 - Error: GetNavGoalFromRoom: room not found
+2026-01-22 15:00:05 - Error: GetNavGoalFromRoom: room not found
+2026-01-22 16:00:06 - Error: GetNavGoalFromRoom: room not found
+2026-01-22 17:00:03 - Error: GetNavGoalFromRoom: room not found
+2026-01-22 18:00:03 - Error: GetNavGoalFromRoom: room not found
+2026-01-22 19:00:04 - Error: GetNavGoalFromRoom: room not found
+2026-01-23 09:55:37 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-01-23 10:10:03 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-23 11:10:03 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-23 12:00:04 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-23 13:00:04 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-23 14:00:05 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-23 15:00:03 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-23 15:51:43 - Error: [1100] LaunchManagerAction: Service unavailable /launch_manager/start
+2026-01-23 15:53:29 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-23 15:55:58 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-23 15:58:59 - Error: [1100] LaunchManagerAction: Service unavailable /launch_manager/start
+2026-01-23 15:59:47 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-23 16:09:47 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-23 16:15:56 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-23 16:18:58 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-26 10:00:03 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-26 11:00:03 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-26 12:00:03 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-26 13:00:03 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-26 13:01:13 - Error: [1200] Nav2Pose: Navigation aborted
+2026-01-26 14:00:04 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-26 14:01:06 - Error: [1200] Nav2Pose: Navigation aborted
+2026-01-26 15:00:04 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-26 15:00:37 - Error: [1200] Nav2Pose: Navigation aborted
+2026-01-26 16:00:05 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-26 16:01:14 - Error: [1200] Nav2Pose: Navigation aborted
+2026-01-26 17:00:06 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-26 17:00:39 - Error: [1200] Nav2Pose: Navigation aborted
+2026-01-26 18:16:27 - Error: [1300] LaunchManagerAction: Command start timed out
+2026-01-26 18:27:57 - Error: [1200] Nav2Pose: Send goal failed
+2026-01-27 10:15:36 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-27 10:37:13 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-27 10:41:53 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-27 10:45:14 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-27 10:55:57 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-27 10:58:36 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-27 10:59:32 - Error: [1200] Nav2Pose: Navigation aborted
+2026-01-27 11:03:34 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-27 11:18:30 - Error: [1000] GetNavGoalFromRoom: Missing input port [nav_target_room]
+2026-01-27 11:25:04 - Error: [1200] DockRobotActionBT: DOCK aborted
+2026-01-27 11:26:08 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-27 11:28:36 - Error: [1200] DockRobotActionBT: DOCK aborted
+2026-01-27 11:32:56 - Error: [1200] DockRobotActionBT: DOCK aborted
+2026-01-27 11:42:42 - Error: [1200] Nav2Pose: Navigation aborted
+2026-01-27 13:28:26 - Error: [1200] DockRobotActionBT: DOCK aborted
+2026-01-27 16:37:56 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-27 16:40:00 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-27 16:42:00 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-27 16:44:04 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-27 16:46:08 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-27 16:48:08 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-27 16:50:08 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-27 16:52:12 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-27 16:54:16 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-27 16:56:16 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-27 16:58:16 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-27 17:00:20 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-27 17:02:24 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-27 17:04:24 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-27 17:06:24 - Error: [1400] GetNavGoalFromRoom: room not found
+2026-01-28 17:37:19 - Error: [1200] Nav2Pose: Navigation aborted
+2026-01-28 17:49:24 - Error: [1200] Nav2Pose: Navigation aborted
+2026-01-28 18:02:37 - Error: [1200] DockRobotActionBT: DOCK aborted
+2026-01-28 18:04:03 - Error: [1400] GetNavGoalFromRoom: room 'patrol_1' not found
+2026-01-29 10:23:37 - Error: [1100] IsRosNodeOk: Parameter service 'diff_drive_controller/describe_parameters' is not available.
+2026-01-29 10:25:48 - Error: [1100] IsRosNodeOk: Parameter service 'diff_drive_controller/describe_parameters' is not available.
+2026-01-29 14:45:39 - Error: [1400] GetNavGoalFromRoom: room 'charge_room_1' not found
+2026-01-29 14:47:39 - Error: [1400] GetNavGoalFromRoom: room 'charge_room_1' not found
+2026-01-29 14:49:43 - Error: [1400] GetNavGoalFromRoom: room 'charge_room_1' not found
+2026-01-29 14:51:47 - Error: [1400] GetNavGoalFromRoom: room 'charge_room_1' not found
+2026-01-29 14:53:51 - Error: [1400] GetNavGoalFromRoom: room 'charge_room_1' not found
+2026-01-29 14:55:55 - Error: [1400] GetNavGoalFromRoom: room 'charge_room_1' not found
+2026-01-29 14:57:59 - Error: [1400] GetNavGoalFromRoom: room 'charge_room_1' not found
+2026-01-29 14:59:59 - Error: [1400] GetNavGoalFromRoom: room 'charge_room_1' not found
+2026-01-29 15:01:59 - Error: [1400] GetNavGoalFromRoom: room 'charge_room_1' not found
+2026-01-29 15:03:59 - Error: [1400] GetNavGoalFromRoom: room 'charge_room_1' not found
+2026-01-29 15:06:03 - Error: [1400] GetNavGoalFromRoom: room 'charge_room_1' not found
+2026-01-29 15:08:03 - Error: [1400] GetNavGoalFromRoom: room 'charge_room_1' not found
+2026-01-29 15:10:07 - Error: [1400] GetNavGoalFromRoom: room 'charge_room_1' not found
+2026-01-29 15:12:11 - Error: [1400] GetNavGoalFromRoom: room 'charge_room_1' not found
+2026-01-29 15:14:15 - Error: [1400] GetNavGoalFromRoom: room 'charge_room_1' not found
+2026-01-29 15:16:19 - Error: [1400] GetNavGoalFromRoom: room 'charge_room_1' not found
+2026-01-29 15:18:19 - Error: [1400] GetNavGoalFromRoom: room 'charge_room_1' not found
+2026-01-30 10:33:09 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-01-30 10:35:21 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-01-30 10:37:32 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-03 18:21:29 - Error: [1100] IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2026-02-03 18:23:41 - Error: [1100] IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2026-02-03 18:25:51 - Error: [1100] IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2026-02-03 18:28:02 - Error: [1100] IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2026-02-03 18:30:13 - Error: [1100] IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2026-02-03 18:32:22 - Error: [1100] IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2026-02-03 18:34:33 - Error: [1100] IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2026-02-03 18:36:44 - Error: [1100] IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2026-02-03 18:38:55 - Error: [1100] IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2026-02-03 18:41:07 - Error: [1100] IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2026-02-03 18:43:17 - Error: [1100] IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2026-02-03 18:47:09 - Error: [1100] IsRosNodeOk: Parameter service 'diff_docking_controller/describe_parameters' is not available.
+2026-02-03 18:49:24 - Error: [1100] LaunchManagerAction: Service unavailable /launch_manager/start
+2026-02-05 15:18:06 - Error: [1100] IsRosNodeOk: Parameter service 'diff_drive_controller/describe_parameters' is not available.
+2026-02-05 15:22:29 - Error: [1100] IsRosNodeOk: Parameter service 'diff_drive_controller/describe_parameters' is not available.
+2026-02-05 15:24:40 - Error: [1100] IsRosNodeOk: Parameter service 'diff_drive_controller/describe_parameters' is not available.
+2026-02-05 15:26:52 - Error: [1100] IsRosNodeOk: Parameter service 'diff_drive_controller/describe_parameters' is not available.
+2026-02-05 15:29:31 - Error: [1100] IsRosNodeOk: Parameter service 'diff_drive_controller/describe_parameters' is not available.
+2026-02-05 15:31:45 - Error: [1100] IsRosNodeOk: Parameter service 'diff_drive_controller/describe_parameters' is not available.
+2026-02-05 15:34:59 - Error: [1100] IsRosNodeOk: Parameter service 'diff_drive_controller/describe_parameters' is not available.
+2026-02-06 10:54:03 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-06 11:10:32 - Error: [1300] LaunchManagerAction: Command restart timed out
+2026-02-06 14:12:12 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-24 15:55:43 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-24 15:57:54 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-24 15:59:44 - Error: [1100] IsRosNodeOk: Parameter service 'bt_navigator/describe_parameters' is not available.
+2026-02-24 16:00:06 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-24 16:43:18 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-24 16:45:30 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-24 16:46:58 - Error: [1100] IsRosNodeOk: Parameter service 'bt_navigator/describe_parameters' is not available.
+2026-02-24 16:47:42 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-24 16:49:52 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-24 16:52:04 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-24 16:54:16 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-24 16:56:28 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-24 16:58:40 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-24 17:00:52 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-24 17:03:04 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-24 17:05:15 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-24 17:07:26 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-24 17:09:37 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-24 17:11:47 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-24 17:13:59 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-24 17:16:08 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-24 17:18:19 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-24 17:20:30 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-24 17:22:42 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-24 17:24:52 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-24 17:27:01 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-24 17:29:09 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-24 17:31:20 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-24 17:33:30 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-24 17:35:41 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-24 17:44:44 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-24 17:46:55 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-24 17:49:06 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-24 17:51:18 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-24 17:53:29 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-24 17:55:40 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-24 17:57:51 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-24 18:00:01 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-24 18:02:13 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-24 18:02:35 - Error: [1100] IsRosNodeOk: Parameter service 'bt_navigator/describe_parameters' is not available.
+2026-02-24 18:04:24 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-24 18:06:34 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-24 18:08:45 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-27 14:20:50 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-27 14:23:01 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-27 14:25:13 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-27 17:26:59 - Error: [1100] IsRosNodeOk: Parameter service 'bt_navigator/describe_parameters' is not available.
+2026-02-27 17:29:11 - Error: [1100] IsRosNodeOk: Parameter service 'bt_navigator/describe_parameters' is not available.
+2026-02-27 17:31:31 - Error: [1100] IsRosNodeOk: Parameter service 'bt_navigator/describe_parameters' is not available.
+2026-02-28 11:24:38 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-02-28 11:47:55 - Error: [1300] LaunchManagerAction: Command restart timed out
+2026-02-28 14:33:39 - Error: [1300] LaunchManagerAction: Command restart timed out
+2026-02-28 17:56:53 - Error: [1300] LaunchManagerAction: Command restart timed out
+2026-03-04 15:11:53 - Error: [1100] LaunchManagerAction: Service unavailable /launch_manager/start
+2026-03-04 15:13:05 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-04 18:28:21 - Error: [1300] LaunchManagerAction: Command restart timed out
+2026-03-05 10:28:34 - Error: [1100] IsRosNodeOk: Parameter service 'diff_drive_controller/describe_parameters' is not available.
+2026-03-05 10:39:49 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-05 10:42:33 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-05 15:58:43 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-05 16:00:05 - Error: [1100] IsRosNodeOk: Parameter service 'bt_navigator/describe_parameters' is not available.
+2026-03-05 16:05:47 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-05 16:07:50 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-05 16:09:53 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-05 16:11:57 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-05 16:14:00 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-05 16:16:04 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-05 16:18:07 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-05 16:20:10 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-05 16:22:14 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-05 16:24:17 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-05 16:26:20 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-05 16:28:24 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-05 16:30:27 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-05 16:32:30 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-05 16:34:34 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-05 16:36:37 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-05 16:38:41 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-05 16:40:44 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-05 16:42:48 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-05 16:44:51 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-05 16:46:54 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-05 16:48:58 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-05 16:51:01 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-05 16:53:04 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-05 16:55:08 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-05 16:57:11 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-05 16:59:14 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-05 17:01:17 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-05 17:03:20 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-05 17:05:24 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-05 17:07:27 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-05 17:09:30 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-05 17:11:34 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-05 17:13:37 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-05 17:15:41 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-05 17:17:44 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-05 17:19:47 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-05 17:31:50 - Error: [1100] LaunchManagerAction: Service unavailable /launch_manager/start
+2026-03-05 18:19:52 - Error: [1400] IsRosNodeOk: Topic 'map' has no active publishers.
+2026-03-05 18:22:18 - Error: [1400] IsRosNodeOk: Topic 'map' has no active publishers.
+2026-03-05 18:24:00 - Error: [1400] IsRosNodeOk: Topic 'odom' has no active publishers.
+2026-03-05 18:24:21 - Error: [1100] IsRosNodeOk: Parameter service 'bt_navigator/describe_parameters' is not available.
+2026-03-05 18:27:36 - Error: [1300] LaunchManagerAction: Command restart timed out
+2026-03-06 11:42:45 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-06 16:12:38 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-09 18:08:29 - Error: [1100] IsRosNodeOk: Parameter service 'keepout_mask_publisher/describe_parameters' is not available.
+2026-03-09 18:10:31 - Error: [1100] IsRosNodeOk: Parameter service 'keepout_mask_publisher/describe_parameters' is not available.
+2026-03-09 18:12:33 - Error: [1100] IsRosNodeOk: Parameter service 'keepout_mask_publisher/describe_parameters' is not available.
+2026-03-09 18:13:49 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-09 18:22:36 - Error: [1300] LaunchManagerAction: Command start_mapping timed out
+2026-03-10 16:13:42 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-10 16:14:44 - Error: [1100] IsRosNodeOk: Parameter service 'bt_navigator/describe_parameters' is not available.
+2026-03-10 16:23:17 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-10 17:04:15 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-10 17:06:18 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-10 17:08:22 - Error: [1100] IsRosNodeOk: Parameter service 'mqtt_node/describe_parameters' is not available.
+2026-03-10 17:42:43 - Error: [1200] Nav2Pose: Navigation aborted
+2026-03-10 20:11:34 - Error: [1000] CameraCaptureAction: Missing input [task_id]
+2026-03-10 20:16:24 - Error: [1300] CameraCaptureAction: camera_capture action timed out
+2026-03-10 20:31:48 - Error: [1100] LaunchManagerAction: Service unavailable /launch_manager/start
+2026-03-10 20:33:09 - Error: [1200] Nav2Pose: Navigation aborted

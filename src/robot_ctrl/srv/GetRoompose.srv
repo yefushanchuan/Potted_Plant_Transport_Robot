@@ -1,0 +1,10 @@
+string room_name
+---
+float64 x
+float64 y
+float64 yaw
+int32 type
+int32 visibility_level
+string tags
+bool success
+string message

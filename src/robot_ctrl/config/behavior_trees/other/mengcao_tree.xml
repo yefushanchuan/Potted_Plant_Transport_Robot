@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root BTCPP_format="3"
+      main_tree_to_execute="MainTree">
+  <BehaviorTree ID="MainTree">
+    <ReactiveFallback name="Mainfallback">
+    <!-- === 持续监听任务 === -->
+      <WaitForNewCommand nav_target_room="{nav_target_room}" voice_task_command="{voice_task_command}" target_pot_num="{target_pot_num}" task_locked="{task_locked}"/>
+      <LogError/>
+    <!-- === task handler === -->
+      <Fallback name="TaskFallback">
+
+        <!-- ======== Nav ========= -->
+        <Sequence name="NavSequence">
+          <IsTaskCommand voice_task_command="{voice_task_command}" task_type="Nav"/>
+          <GetGoalFromRoom nav_target_room="{nav_target_room}" goal="{goal}"/>
+          <NavToPose goal="{goal}"/>
+          <ClearTaskCommand voice_task_command="{voice_task_command}" nav_target_room="{nav_target_room}" target_pot_num="{target_pot_num}"/>
+        </Sequence>
+
+        <!-- ======== Park ========= -->
+        <Sequence name="ParkSequence">
+          <IsTaskCommand voice_task_command="{voice_task_command}" task_type="Park"/>
+          <GetGoalFromRoom nav_target_room="{nav_target_room}" goal="{goal}" />
+          <NavToPose goal="{goal}" />
+          <ClearTaskCommand voice_task_command="{voice_task_command}" nav_target_room="{nav_target_room}" target_pot_num="{target_pot_num}"/>
+        </Sequence>
+
+        <!-- ========= move_pot ======= -->
+        <Sequence name="MovePotSequence">
+          <IsTaskCommand voice_task_command="{voice_task_command}" task_type="MovePot"/>
+          <SetTaskLocked task_locked="true" />
+          <Fallback name="movepotfallback">
+          
+            <Sequence name="MovePot_success">
+              <!-- 根据输入的盆栽数量决定搬运的循环次数 -->
+              <RepeatWithBlackboard target_pot_num="{target_pot_num}">
+                <Sequence name="Catch_PLC_Sequence">
+                  <GripControl mode2="2"/>
+                  <!-- nav goal_1 -->
+                  <GetGoalFromRoom nav_target_room="pot_grip_pose" goal="{goal}"  />
+                  <Retry retry="3">
+                    <NavToPose goal="{goal}"  />
+                  </Retry>  
+                  <SubTree ID="CatchSubTree" node="node"/>
+                  <GetGoalFromRoom nav_target_room="pot_set_pose" goal="{goal}"  />
+                  <Retry retry="3">
+                    <NavToPose goal="{goal}"  />
+                  </Retry> 
+                  <InteractWithPLC ask_plc="ask_release"  />
+                  <SubTree ID="ReleaseSubTree" node="node"/>
+                  <InteractWithPLC ask_plc="release_over"  />
+                  <!-- ==== wait PLC_work ==== -->   
+                  <InteractWithPLC ask_plc="ask_catch"  />
+                  <SubTree ID="CatchSubTree" node="node"/>
+                  <InteractWithPLC ask_plc="catch_over"  />
+                  <!-- nav goal_1 -->
+                  <GetGoalFromRoom nav_target_room="pot_grip_pose" goal="{goal}"  />
+                  <Retry retry="3">
+                    <NavToPose goal="{goal}"  />
+                  </Retry>  
+                  <SubTree ID="ReleaseSubTree" node="node"/>
+                  <!-- 延迟60000ms 等待60s更换花盆-->
+                  <Delay delay_msec="6000">
+                    <AlwaysSuccess/>
+                  </Delay>
+                </Sequence>
+              </RepeatWithBlackboard>
+              <GetArmGoalFromTf goal_type="zero" arm_goal="{arm_goal}"  />
+              <SendArmGoal arm_goal="{arm_goal}"  />
+              <!-- park -->
+              <GetGoalFromRoom nav_target_room="park_room" goal="{goal}"  />
+              <Retry retry="3">
+                <NavToPose goal="{goal}"  />
+              </Retry> 
+              <ClearTaskCommand voice_task_command="{voice_task_command}" nav_target_room="{nav_target_room}" target_pot_num="{target_pot_num}"/>
+            </Sequence>
+
+            <Sequence name="movepot_failed">
+              <GetArmGoalFromTf goal_type="zero" arm_goal="{arm_goal}"  />
+              <SendArmGoal arm_goal="{arm_goal}"  />
+              <!-- park -->
+              <GetGoalFromRoom nav_target_room="park_room" goal="{goal}"  />
+              <Retry retry="3">
+                <NavToPose goal="{goal}"  />
+              </Retry> 
+              <ClearTaskCommand voice_task_command="{voice_task_command}" nav_target_room="{nav_target_room}" target_pot_num="{target_pot_num}"/>
+            </Sequence>
+
+            <ClearTaskCommand voice_task_command="{voice_task_command}" nav_target_room="{nav_target_room}" target_pot_num="{target_pot_num}"/>
+          </Fallback>
+          <SetTaskLocked task_locked="false" />
+        </Sequence>
+        
+      </Fallback>
+    </ReactiveFallback>
+  </BehaviorTree>
+
+  <BehaviorTree ID="CatchSubTree">
+    <Sequence name="CatchSequence">
+      <GetArmGoalFromTf goal_type="init" arm_goal="{arm_goal}"  />
+      <SendArmGoal arm_goal="{arm_goal}"  />
+      <GetArmGoalFromTf goal_type="down" arm_goal="{arm_goal}"  />
+      <SendArmGoal arm_goal="{arm_goal}"  />
+      <!-- 左移37.5mm -->
+      <GetArmGoalFromTf goal_type="left" arm_goal="{arm_goal}"  />
+      <SendArmGoal arm_goal="{arm_goal}"  />
+      <GetArmGoalFromTf goal_type="front" arm_goal="{arm_goal}"  />
+      <SendArmGoal arm_goal="{arm_goal}"  />
+      <!-- 右移37.5mm -->
+      <GetArmGoalFromTf goal_type="right" arm_goal="{arm_goal}"  />
+      <SendArmGoal arm_goal="{arm_goal}"  />
+      <!-- catch --> 
+      <GripControl mode2="1"/>
+      <GetArmGoalFromTf goal_type="up" arm_goal="{arm_goal}"  />
+      <SendArmGoal arm_goal="{arm_goal}"  />
+      <GetArmGoalFromTf goal_type="back" arm_goal="{arm_goal}"  />
+      <SendArmGoal arm_goal="{arm_goal}"  />
+      <GetArmGoalFromTf goal_type="init" arm_goal="{arm_goal}"  />
+      <SendArmGoal arm_goal="{arm_goal}"  />
+    </Sequence>
+  </BehaviorTree>
+
+  <BehaviorTree ID="ReleaseSubTree">
+    <Sequence name="ReleaseSequence">
+      <GetArmGoalFromTf goal_type="init" arm_goal="{arm_goal}"  />
+      <SendArmGoal arm_goal="{arm_goal}"  />
+      <GetArmGoalFromTf goal_type="front" arm_goal="{arm_goal}"  />
+      <SendArmGoal arm_goal="{arm_goal}"  />
+      <!-- 右移37.5mm -->
+      <GetArmGoalFromTf goal_type="right" arm_goal="{arm_goal}"  />
+      <SendArmGoal arm_goal="{arm_goal}"  />
+      <GetArmGoalFromTf goal_type="down" arm_goal="{arm_goal}"  />
+      <SendArmGoal arm_goal="{arm_goal}"  />
+      <!-- release --> 
+      <GripControl mode2="2"/>
+      <!-- 左移37.5mm -->
+      <GetArmGoalFromTf goal_type="left" arm_goal="{arm_goal}"  />
+      <SendArmGoal arm_goal="{arm_goal}"  />
+      <GetArmGoalFromTf goal_type="back" arm_goal="{arm_goal}"  />
+      <SendArmGoal arm_goal="{arm_goal}"  />
+      <GetArmGoalFromTf goal_type="up" arm_goal="{arm_goal}"  />
+      <SendArmGoal arm_goal="{arm_goal}"  />
+      <GetArmGoalFromTf goal_type="init" arm_goal="{arm_goal}"  />
+      <SendArmGoal arm_goal="{arm_goal}"  />
+    </Sequence>
+  </BehaviorTree>
+</root>

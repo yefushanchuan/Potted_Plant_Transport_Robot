@@ -1,0 +1,49 @@
+<root main_tree_to_execute="NavigateOnRouteGraphWRecovery">
+  <BehaviorTree ID="NavigateOnRouteGraphWRecovery">
+    <RecoveryNode number_of_retries="1" name="NavigateRecovery">
+      <PipelineSequence name="NavigateWithReplanning">
+          <RateController hz="0.5" name="ComputeRouteRateController">
+            <RecoveryNode number_of_retries="1" name="FollowPath">
+              <Fallback>
+                <Sequence>
+                  <GetCurrentPose current_pose="{current_pose}"/>
+                  <ArePosesNear ref_pose="{current_pose}" target_pose="{goal}" tolerance="0.5"/>
+                  <ComputePathToPose goal="{goal}" path="{path}" planner_id="GridBased"/>
+                </Sequence>
+                <Sequence name="ComputeRoute">
+                  <GetCurrentPose current_pose="{current_pose}"/>
+                  <ComputeRoute goal="{goal}" path="{route_path}" route="{route}" use_poses="true" error_code_id="{compute_route_error_code}" error_msg="{compute_route_error_msg}"/>
+
+                  <GetPoseFromPath path="{route_path}" index="0" pose="{route_start_pose}"/>
+                  <ComputePathToPose start="{current_pose}" goal="{route_start_pose}" path="{first_mile_path}" planner_id="GridBased"/>
+                  <ConcatenatePaths input_path1="{first_mile_path}" input_path2="{route_path}" output_path="{route_path_first}"/>
+
+                  <GetPoseFromPath path="{route_path}" index="-1" pose="{route_end_pose}"/>
+                  <ComputePathToPose start="{route_end_pose}" goal="{goal}" path="{last_mile_path}" planner_id="GridBased"/>
+                  <ConcatenatePaths input_path1="{route_path_first}" input_path2="{last_mile_path}" output_path="{path}"/>
+                  
+                </Sequence>
+              </Fallback>
+              <ClearEntireCostmap name="ClearGlobalCostmap-Context" service_name="global_costmap/clear_entirely_global_costmap"/>
+            </RecoveryNode>
+          </RateController>
+          <RecoveryNode number_of_retries="1" name="FollowPath">
+              <FollowPath path="{path}" controller_id="FollowPath" goal_checker_id="goal_checker"/>
+            <ClearEntireCostmap name="ClearLocalCostmap-Context" service_name="local_costmap/clear_entirely_local_costmap"/>
+          </RecoveryNode>
+      </PipelineSequence>
+      <ReactiveFallback name="RecoveryFallback">
+        <GoalUpdated/>
+        <RoundRobin name="RecoveryActions">
+          <Sequence name="ClearingActions">
+            <ClearEntireCostmap name="ClearLocalCostmap-Subtree" service_name="local_costmap/clear_entirely_local_costmap"/>
+            <ClearEntireCostmap name="ClearGlobalCostmap-Subtree" service_name="global_costmap/clear_entirely_global_costmap"/>
+          </Sequence>
+          <!-- <Spin spin_dist="1.57"/> -->
+          <Wait wait_duration="5"/>
+          <!-- <BackUp backup_dist="0.30" backup_speed="0.05"/> -->
+        </RoundRobin>
+      </ReactiveFallback>
+    </RecoveryNode>
+  </BehaviorTree>
+</root>

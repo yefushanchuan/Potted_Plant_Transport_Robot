@@ -1,0 +1,398 @@
+### Nav2完整配置文件（已修复RotationShimController旋转逻辑）
+# 适用场景: Cartographer定位 + Nav2导航
+# 机器人类型: 差分驱动，矩形footprint 0.7 m×0.56 m
+# 传感器: 激光雷达 + IMU + 里程计
+# 关键修复: RotationShimController阈值收紧，确保旋转到路径方向后才由DWB接管
+
+# =======================================================================
+# 1. 行为树导航器
+# =======================================================================
+bt_navigator:
+  ros__parameters:
+    use_sim_time: false
+    global_frame: map
+    robot_base_frame: base_footprint
+    odom_topic: odom
+    bt_loop_duration: 20
+    default_server_timeout: 20
+
+    # Groot2
+    enable_groot_monitoring: true
+    groot_zmq_publisher_port: 1666
+    groot_zmq_server_port: 1667
+
+    default_nav_to_pose_bt_xml: "/opt/ros/humble/share/nav2_bt_navigator/behavior_trees/navigate_to_pose_w_replanning_and_recovery.xml"
+    default_nav_through_poses_bt_xml: "/opt/ros/humble/share/nav2_bt_navigator/behavior_trees/navigate_through_poses_w_replanning_and_recovery.xml"
+
+    plugin_lib_names:
+      - nav2_compute_path_to_pose_action_bt_node
+      - nav2_compute_path_through_poses_action_bt_node
+      - nav2_smooth_path_action_bt_node
+      - nav2_follow_path_action_bt_node
+      - nav2_back_up_action_bt_node
+      - nav2_spin_action_bt_node
+      - nav2_wait_action_bt_node
+      - nav2_clear_costmap_service_bt_node
+      - nav2_is_stuck_condition_bt_node
+      - nav2_goal_reached_condition_bt_node
+      - nav2_goal_updated_condition_bt_node
+      - nav2_globally_updated_goal_condition_bt_node
+      - nav2_is_path_valid_condition_bt_node
+      - nav2_initial_pose_received_condition_bt_node
+      - nav2_transform_available_condition_bt_node
+      - nav2_time_expired_condition_bt_node
+      - nav2_path_expiring_timer_condition
+      - nav2_distance_traveled_condition_bt_node
+      - nav2_is_battery_low_condition_bt_node
+      - nav2_is_battery_charging_condition_bt_node
+      - nav2_reinitialize_global_localization_service_bt_node
+      - nav2_rate_controller_bt_node
+      - nav2_distance_controller_bt_node
+      - nav2_speed_controller_bt_node
+      - nav2_truncate_path_action_bt_node
+      - nav2_truncate_path_local_action_bt_node
+      - nav2_goal_updater_node_bt_node
+      - nav2_recovery_node_bt_node
+      - nav2_pipeline_sequence_bt_node
+      - nav2_round_robin_node_bt_node
+      - nav2_single_trigger_bt_node
+      - nav2_goal_updated_controller_bt_node
+      - nav2_navigate_through_poses_action_bt_node
+      - nav2_navigate_to_pose_action_bt_node
+      - nav2_remove_passed_goals_action_bt_node
+      - nav2_planner_selector_bt_node
+      - nav2_controller_selector_bt_node
+      - nav2_goal_checker_selector_bt_node
+      - nav2_controller_cancel_bt_node
+      - nav2_path_longer_on_approach_bt_node
+      - nav2_wait_cancel_bt_node
+      - nav2_spin_cancel_bt_node
+      - nav2_back_up_cancel_bt_node
+      - nav2_assisted_teleop_cancel_bt_node
+      - nav2_drive_on_heading_cancel_bt_node
+
+# =======================================================================
+# 2. 控制器服务器（TEB）
+# =======================================================================
+controller_server:
+  ros__parameters:
+    odom_topic: odom
+    use_sim_time: False
+    controller_frequency: 10.0
+    controller_plugin_types: ["teb_local_planner::TebLocalPlannerROS"]
+    goal_checker_plugins: ["goal_checker"]
+    controller_plugins: ["FollowPath"]
+
+    goal_checker:
+      plugin: "nav2_controller::SimpleGoalChecker"
+      xy_goal_tolerance: 0.06
+      yaw_goal_tolerance: 0.04
+      stateful: true
+
+    FollowPath:
+      plugin: teb_local_planner::TebLocalPlannerROS
+
+      teb_autosize: 1.0                               #优化期间允许改变轨迹的时域长度
+      dt_ref: 0.3                                     #局部路径规划的解析度 default：0.3
+      dt_hysteresis: 0.1                              #允许改变的时域解析度的浮动范围， 一般为 dt_ref 的 10% 左右; default：0.1
+      max_samples: 500                                #轨迹采样的最大节点数，越大越平滑但计算量上升
+      global_plan_overwrite_orientation: False        #预留给3D路径规划使用，2D不适用
+      allow_init_with_backwards_motion: False         #初始化轨迹时是否允许反向起步，差速移动底盘一般关闭
+      max_global_plan_lookahead_dist: 3.0             #最大向前看距离 此距离1.应随车辆最大速度的增大而增大 2.不应超过激光雷达等传感器的可靠测量范围 3. 不应超过局部耗费地图的大小 
+      global_plan_viapoint_sep: 0.2                  #从全局规划路径中提取的路点的相互距离 默认设置下为Disable，即只沿全局规划向前寻找，找到的离开局部规划器规划范围前的最后一个点作为局部目标。若全局规划特殊，在无障碍空间仍不走直线（例如，工作中的扫地机器人），则需要将此值设置为设置为一个小的正数
+      global_plan_prune_distance: 1.0                 #从全局路径起点向前裁剪的距离，避免处理已经通过的段落
+      exact_arc_length: False                         #是否按弧长计算轨迹位置，开启更精确但耗时
+      feasibility_check_no_poses: 2                   #检测轨迹可行性时向前检查的姿态个数
+      publish_feedback: False                         #是否发布调试反馈消息，正常运行可关闭降低通信量
+          
+      # Robot
+      cmd_angle_instead_rotvel: False                 #设置为true时，ROS话题cmd_vel/angular/z输出舵机角度，差速控制需保持false
+      wheelbase: 0.0                                  #前后轮距  差速设为0
+      min_turning_radius: 0.0                         #最小转弯半径  差速机器人为0
+      max_vel_x: 0.50                                 #最大前向线速度
+      max_vel_theta: 0.5                              #最大角速度
+      max_vel_x_backwards: 0.15                        #最大倒车线速度，限制机器人后退
+      acc_lim_x: 1.5                                  #线速度加速度上限，影响速度曲线平滑性
+      acc_lim_theta: 2.0                              #角速度加速度上限，影响转向响应
+      footprint_model: # types: "point", "circular", "two_circles", "line", "polygon"
+        type: "polygon"  
+        vertices: "[[0.30, 0.25], [0.30, -0.25], [-0.30, -0.25], [-0.30, 0.25]]"   # 顶点顺序按顺/逆时针给出，单位：米，坐标原点是机器人底盘中心
+
+      # GoalTolerance 
+      free_goal_vel: False                            #设为False时，车辆到达终点时的目标速度为0。我们已经指出，TEB是时间最优规划器。缺少目标速度约束将导致车辆“全速冲线”，即使前方有一堵墙也是如此
+          
+      # Obstacles
+      min_obstacle_dist: 0.1                          #最小障碍物距离   若设置了车辆的轮廓，则不建议使用此参数。使用车辆轮廓配置footprint_model配合膨胀距离即可实现较好效果。
+      inflation_dist: 0.3                             #障碍物膨胀距离   此膨胀只是降低通过这些区域的优先级，不应当用此距离迫使车辆远离障碍物。
+      include_costmap_obstacles: True                 #必须设置为True后才能规避实时探测到的、建图时不存在的障碍物
+      costmap_obstacles_behind_robot_dist: 1.0        #在机器人后方考虑障碍物的距离，避免倒车撞击
+      obstacle_poses_affected: 15                     #障碍物影响的轨迹姿态数，数值越大越保守
+
+      dynamic_obstacle_inflation_dist: 0.5            #动态障碍物的额外膨胀距离，给移动目标留出保险距离
+      include_dynamic_obstacles: True                 #是否在优化中考虑动态障碍物速度
+
+      costmap_converter_plugin: "costmap_converter::CostmapToPolygonsDBSMCCH"  #代价地图转换插件，输出多边形障碍
+      costmap_converter_spin_thread: True             #是否单独线程运行转换器，减少主线程阻塞
+      costmap_converter_rate: 5                       #转换频率Hz，保持障碍描述更新
+
+      # Optimization
+          
+      no_inner_iterations: 5                          #每个求解周期内循环次数，控制轨迹优化收敛速度
+      no_outer_iterations: 4                          #外层迭代次数，配合内循环决定总迭代量
+      optimization_activate: True                     #是否启用优化求解器
+      optimization_verbose: False                     #是否输出优化详细日志，调试时可打开
+      penalty_epsilon: 0.1                            #惩罚函数的软化因子，避免梯度突变  penalty_epsilon 永远要小于所有速度/加速度的约束，否则 TEB 会认为这些约束“负值”，导致不可预期的代价函数
+      obstacle_cost_exponent: 4.0                     #障碍物代价指数，越大越强调远离障碍
+      weight_max_vel_x: 1.0                           #违反最大线速度约束的惩罚权重
+      weight_max_vel_theta: 1.0                       #违反最大角速度约束的惩罚权重
+      weight_acc_lim_x: 0.5                           #线加速度约束权重
+      weight_acc_lim_theta: 10.5                      #角加速度约束权重
+      weight_kinematics_nh: 5000.0                    #非完整性动力学约束权重，差速驱动需保持高权重
+      weight_kinematics_forward_drive: 1000.0          #惩罚反向行驶的权重，引导机器人尽量前进   0--1000   （>100），禁止规划倒车
+      weight_kinematics_turning_radius: 0.0           #最小转弯半径约束的惩罚权重
+      weight_optimaltime: 1.0 # must be > 0           #时间最优目标的权重  时间权重降低至0.3以下时，车辆速度明显平稳，不会向最高速度加速。
+      weight_shortest_path: 0.0                      #最短路径权重，为0表示不单独考虑距离
+      weight_obstacle: 100.0                          #静态障碍物代价权重
+      weight_inflation: 0.5                           #障碍膨胀区代价权重
+      weight_dynamic_obstacle: 10.0 # not in use yet  #动态障碍物代价权重（特性未完全启用）
+      weight_dynamic_obstacle_inflation: 0.2          #动态障碍膨胀区代价权重
+      weight_viapoint: 100.0                           #偏离全局路径路点的惩罚权重
+      weight_adapt_factor: 2.0                        #自适应权重缩放因子，逐步增加约束力度
+
+      # Homotopy Class Planner
+
+      enable_homotopy_class_planning: False         #多路径并行规划 关闭后可以减少计算量，提升计算速度
+      enable_multithreading: True                   #对多个同伦类并行优化时是否使用多线程
+      max_number_classes: 4                         #同伦类最大数量，限制候选轨迹分支
+      selection_cost_hysteresis: 5.0                #轨迹切换的滞回阈值，避免频繁切换方案
+      selection_prefer_initial_plan: 1.0            #优先保持初始路径的权重系数
+      selection_obst_cost_scale: 1.0                #轨迹选择时障碍代价的缩放
+      selection_alternative_time_cost: True         #轨迹选择时是否考虑时间代价
+
+      roadmap_graph_no_samples: 15                  #构建路网图时采样点数量
+      roadmap_graph_area_width: 5.0                 #采样区域宽度，影响多路径搜索范围
+      roadmap_graph_area_length_scale: 1.0          #采样区域长度尺度，相对于目标距离的比例
+      h_signature_prescaler: 0.5                    #同伦理签名的尺度系数
+      h_signature_threshold: 0.1                    #判断同伦类是否不同的阈值
+      obstacle_heading_threshold: 0.45              #机器人朝向与障碍方向的阈值，决定是否切换类
+      switching_blocking_period: 0.0                #防止频繁切换的封锁时间，0为不限制
+      viapoints_all_candidates: True                #所有候选轨迹是否都考虑路点对齐
+      delete_detours_backwards: True                #自动删除明显绕行且包含回退的轨迹
+      max_ratio_detours_duration_best_duration: 3.0 #判定绕行轨迹的最长允许时间倍数
+      visualize_hc_graph: True                      #是否在RViz可视化同伦图
+      visualize_with_time_as_z_axis_scale: 0.0      #同伦图可视化时时间轴的缩放比例
+
+      # Recovery
+      
+      shrink_horizon_backup: True                   #遇到不可行轨迹时是否临时缩小优化时间域
+      shrink_horizon_min_duration: 10.0             #缩小时间域后保持的最短持续时间
+      oscillation_recovery: False                   #是否启用振荡检测恢复策略
+      oscillation_v_eps: 0.1                        #判定线速度振荡的阈值
+      oscillation_omega_eps: 0.1                    #判定角速度振荡的阈值
+      oscillation_recovery_min_duration: 10.0       #振荡恢复策略启用后持续的最短时长
+      oscillation_filter_duration: 10.0             #振荡检测的滑动窗口时长
+
+
+# =======================================================================
+# 3. 局部代价地图
+# =======================================================================
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      update_frequency: 10.0
+      publish_frequency: 15.0
+      global_frame: odom
+      robot_base_frame: base_footprint
+      transform_timeout: 1.0
+      transform_tolerance: 0.3
+      tf_buffer_duration: 10.0
+      use_sim_time: false
+      rolling_window: true
+      width: 3
+      height: 3
+      resolution: 0.03
+      footprint: "[[0.34,0.26],[0.34,-0.26],[-0.34,-0.26],[-0.34,0.26]]"
+      plugins: ["static_layer","obstacle_layer","inflation_layer"]
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: true
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: true
+        observation_sources: scan
+        footprint_clearing_enabled: true
+        combination_method: 1
+        scan:
+          topic: /scan
+          max_obstacle_height: 0.5
+          clearing: true
+          marking: true
+          data_type: "LaserScan"
+          raytrace_max_range: 3.0
+          raytrace_min_range: 0.0
+          obstacle_max_range: 2.5
+          obstacle_min_range: 0.0
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        enabled: true
+        cost_scaling_factor: 1.5
+        inflation_radius: 0.3
+      always_send_full_costmap: true
+
+# =======================================================================
+# 4. 全局代价地图
+# =======================================================================
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      update_frequency: 10.0
+      publish_frequency: 10.0
+      global_frame: map
+      robot_base_frame: base_footprint
+      transform_timeout: 1.0
+      transform_tolerance: 0.3
+      tf_buffer_duration: 10.0
+      use_sim_time: false
+      footprint: "[[0.34,0.26],[0.34,-0.26],[-0.34,-0.26],[-0.34,0.26]]"
+      resolution: 0.03
+      track_unknown_space: false
+      plugins: ["static_layer","obstacle_layer","inflation_layer"]
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: true
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: true
+        observation_sources: scan
+        scan:
+          topic: /scan
+          max_obstacle_height: 0.5
+          clearing: true
+          marking: true
+          data_type: "LaserScan"
+          raytrace_max_range: 3.0
+          raytrace_min_range: 0.0
+          obstacle_max_range: 2.5
+          obstacle_min_range: 0.0
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        enabled: true
+        cost_scaling_factor: 3.0
+        inflation_radius: 0.45
+      always_send_full_costmap: true
+
+# =======================================================================
+# 5. 地图服务器
+# =======================================================================
+map_server:
+  ros__parameters:
+    use_sim_time: false
+    yaml_filename: ""
+
+# =======================================================================
+# 6. 规划器服务器
+# =======================================================================
+planner_server:
+  ros__parameters:
+    expected_planner_frequency: 10.0
+    use_sim_time: false
+    planner_plugins: ["GridBased"]
+    GridBased:
+      plugin: "nav2_smac_planner/SmacPlanner2D"
+      tolerance: 0.1
+      downsample_costmap: false
+      downsampling_factor: 1
+      allow_unknown: false
+      max_iterations: 1000000
+      max_on_approach_iterations: 1000
+      max_planning_time: 2.0
+      motion_model_for_search: "MOORE"
+      angle_quantization_bins: 72
+      cost_penalty: 1.5
+      use_final_approach_orientation: false
+      smooth_path: true
+
+# =======================================================================
+# 7. 路径平滑器服务器
+# =======================================================================
+smoother_server:
+  ros__parameters:
+    use_sim_time: false
+    smoother_plugins: ["simple_smoother"]
+    simple_smoother:
+      plugin: "nav2_smoother::SimpleSmoother"
+      tolerance: 1.0e-10
+      max_its: 1000
+      do_refinement: true
+
+# =======================================================================
+# 8. 行为服务器
+# =======================================================================
+behavior_server:
+  ros__parameters:
+    use_sim_time: false
+    local_costmap_topic: local_costmap/costmap_raw
+    global_costmap_topic: global_costmap/costmap_raw
+    local_footprint_topic: local_costmap/published_footprint
+    global_footprint_topic: global_costmap/published_footprint
+    cycle_frequency: 10.0
+    behavior_plugins: ["spin","backup","drive_on_heading","wait"]
+    spin:
+      plugin: "nav2_behaviors/Spin"
+    backup:
+      plugin: "nav2_behaviors/BackUp"
+    drive_on_heading:
+      plugin: "nav2_behaviors/DriveOnHeading"
+    wait:
+      plugin: "nav2_behaviors/Wait"
+    local_frame: odom
+    global_frame: map
+    robot_base_frame: base_footprint
+    transform_tolerance: 0.4
+    simulate_ahead_time: 2.0
+    max_rotational_vel: 0.3
+    min_rotational_vel: 0.2
+    rotational_acc_lim: 0.3
+
+# =======================================================================
+# 9. 路径点跟随器
+# =======================================================================
+waypoint_follower:
+  ros__parameters:
+    use_sim_time: false
+    loop_rate: 20
+    stop_on_failure: false
+    waypoint_task_executor_plugin: "wait_at_waypoint"
+    wait_at_waypoint:
+      plugin: "nav2_waypoint_follower::WaitAtWaypoint"
+      enabled: true
+      waypoint_pause_duration: 2000
+
+# =======================================================================
+# 10. 速度平滑器
+# =======================================================================
+velocity_smoother:
+  ros__parameters:
+    use_sim_time: false
+    smoothing_frequency: 40.0
+    scale_velocities: false
+    feedback: "OPEN_LOOP"
+    max_velocity: [0.5, 0.0, 1.0]
+    min_velocity: [-0.5, 0.0, -1.0]
+    max_accel: [0.2, 0.0, 0.2]
+    max_decel: [-0.2, 0.0, -0.2]
+    odom_topic: "odom"
+    odom_duration: 0.1
+    deadband_velocity: [0.0, 0.0, 0.0]
+    velocity_timeout: 1.0
+
+# =======================================================================
+# 11. Cartographer节点
+# =======================================================================
+cartographer_node:
+  ros__parameters:
+    use_sim_time: false
+
+cartographer_occupancy_grid_node:
+  ros__parameters:
+    use_sim_time: false

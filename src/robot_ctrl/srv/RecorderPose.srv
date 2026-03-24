@@ -1,0 +1,7 @@
+string room_name
+int32 type
+int32 visibility_level
+string tags
+---
+bool success
+string message

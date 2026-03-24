@@ -1,0 +1,10 @@
+string source_room
+string target_room
+string task_command
+string[] pot_ids
+int32 pot_num
+string[] waypoint_rooms
+---
+bool accepted
+string message
+string task_id

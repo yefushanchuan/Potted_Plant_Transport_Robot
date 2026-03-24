@@ -1,0 +1,447 @@
+<?xml version="1.0"?>
+<root main_tree_to_execute="MainTree">
+    <!-- ////////// -->
+    <BehaviorTree ID="MainTree">
+        <ReactiveSequence>
+            <Condition ID="LogError"/>
+            <Fallback>
+                <Condition ID="IsRobotStarted" robot_started="{robot_started}"/>
+                <Sequence name="RobotStartSequence">
+                    <Action ID="SetRobotState" robot_state="INIT"/>
+                    <Action ID="LaunchManager" command="start" result_message="{result_message}" timeout_ms="150000"/>
+                    <SetBlackboard output_key="robot_started" value="true"/>
+                </Sequence>
+            </Fallback>
+            <Fallback name="RobotInitFallback">
+                <Condition ID="IsRobotInitSuccess" robot_init_success="{robot_init_success}"/>
+                <SubTree ID="robotinit_sub" __shared_blackboard="true"/>
+                <Sequence>
+                    <Action ID="SetRobotState" robot_state="INITERROR"/>
+                    <AlwaysFailure/>
+                </Sequence>
+            </Fallback>
+            <ReactiveFallback>
+                <Sequence name="TaskupdataSequence">
+                    <Condition ID="TaskUpdate" nav_source_room="{nav_source_room}" nav_target_room="{nav_target_room}" robot_state_msg="{robot_state_msg}" target_pot_ids="{target_pot_ids}" target_pot_num="{target_pot_num}" waypoint_rooms="{waypoint_rooms}" task_command="{task_command}" task_locked="{task_locked}" task_id="{task_id}"/>
+                    <Fallback>
+                        <SubTree ID="robotstop_sub" __shared_blackboard="true"/>
+                        <SubTree ID="robotrestart_sub" __shared_blackboard="true"/>
+                        <SubTree ID="startmapping_sub" __shared_blackboard="true"/>
+                        <SubTree ID="startnavigation_sub" __shared_blackboard="true"/>
+                        <AlwaysSuccess/>
+                    </Fallback>
+                </Sequence>
+                <Fallback name="TaskFallback">
+                    <SubTree ID="nav_sub" __shared_blackboard="true"/>
+                    <SubTree ID="idle_sub" __shared_blackboard="true"/>
+                    <SubTree ID="patrol_sub" __shared_blackboard="true"/>
+                    <SubTree ID="phenotype_sub" __shared_blackboard="true"/>
+                    <SubTree ID="canceltask_sub" __shared_blackboard="true"/>
+                </Fallback>
+            </ReactiveFallback>
+        </ReactiveSequence>
+    </BehaviorTree>
+    <!-- ////////// -->
+    <BehaviorTree ID="canceltask_sub">
+        <Sequence>
+            <Condition ID="IsTaskCommand" task_command="{task_command}" task_type="CancelTask"/>
+            <Action ID="SetRobotState" robot_state="IDLE"/>
+            <Action ID="ClearTaskCommand" nav_source_room="{nav_source_room}" nav_target_room="{nav_target_room}" target_pot_ids="{target_pot_ids}" target_pot_num="{target_pot_num}" task_command="{task_command}" waypoint_rooms="{waypoint_rooms}" task_id="{task_id}"/>
+        </Sequence>
+    </BehaviorTree>
+    <!-- ////////// -->
+    <BehaviorTree ID="idle_sub">
+        <Sequence>
+            <Condition ID="IsTaskCommand" task_command="{task_command}" task_type="IDLE"/>
+            <Fallback>
+                <Sequence name="RetryPendingTaskfileUploadWhenIdle">
+                    <Action ID="GetPendingTaskfile" task_id="{retry_task_id}"/>
+                    <Action ID="TaskfileUpload" result_message="{result_message}" task_id="{retry_task_id}" timeout_ms="20000"/>
+                    <Action ID="AckPendingTaskfile" task_id="{retry_task_id}"/>
+                </Sequence>
+                <!-- <Sequence>
+                    <Condition ID="IsBatteryLow"/>
+                    <SetBlackboard output_key="task_command" value="Charge"/>
+                    <SetBlackboard output_key="nav_target_room" value="charge_room_1"/>
+                </Sequence> -->
+                <AlwaysSuccess/>
+            </Fallback>
+        </Sequence>
+    </BehaviorTree>
+    <!-- ////////// -->
+    <BehaviorTree ID="irrigation_sub">
+        <Sequence>
+            <Condition ID="IsTaskCommand" task_command="{task_command}" task_type="Irrigate"/>
+            <Fallback>
+                <Sequence>
+                    <Action ID="SetRobotState" robot_state="IRRIGATING"/>
+                    <Action ID="GetGoalFromRoom" goal="{goal}" nav_target_room="startPoint"/>
+                    <Action ID="NavToPose" goal="{goal}"/>
+                    <Repeat num_cycles="-1">
+                        <Sequence>
+                            <Inverter>
+                                <Condition ID="IsGoalReached" goal="endPoint" tolerance="0.15"/>
+                            </Inverter>
+                            <ReactiveFallback>
+                                <Sequence>
+                                    <Condition ID="IsPotDetected" delta_threshold="100"/>
+                                    <Action ID="CancelNavToPose" timeout_ms="1000"/>
+                                </Sequence>
+                                <Sequence>
+                                    <Action ID="GetGoalFromRoom" goal="{goal}" nav_target_room="endPoint"/>
+                                    <Action ID="NavToPose" goal="{goal}"/>
+                                </Sequence>
+                            </ReactiveFallback>
+                        </Sequence>
+                    </Repeat>
+                    <Action ID="ClearTaskCommand" nav_source_room="{nav_source_room}" nav_target_room="{nav_target_room}" target_pot_ids="{target_pot_ids}" target_pot_num="{target_pot_num}" task_command="{task_command}" waypoint_rooms="{waypoint_rooms}" task_id="{task_id}"/>
+                </Sequence>
+                <Sequence>
+                    <Action ID="SetRobotState" robot_state="IRRIGATIONERROR"/>
+                    <Action ID="ClearTaskCommand" nav_source_room="{nav_source_room}" nav_target_room="{nav_target_room}" target_pot_ids="{target_pot_ids}" target_pot_num="{target_pot_num}" task_command="{task_command}" waypoint_rooms="{waypoint_rooms}" task_id="{task_id}"/>
+                </Sequence>
+            </Fallback>
+        </Sequence>
+    </BehaviorTree>
+    <!-- ////////// -->
+    <BehaviorTree ID="nav_sub">
+        <Sequence name="NavSequence">
+            <Condition ID="IsTaskCommand" task_command="{task_command}" task_type="Nav"/>
+            <Fallback>
+                <Sequence>
+                    <Action ID="SetRobotState" robot_state="NAVIGATING"/>
+                    <Action ID="GetGoalFromRoom" goal="{goal}" nav_target_room="{nav_target_room}"/>
+                    <Action ID="NavToPose" goal="{goal}"/>
+                    <Action ID="SetRobotState" robot_state="IDLE"/>
+                    <Action ID="ClearTaskCommand" nav_source_room="{nav_source_room}" nav_target_room="{nav_target_room}" target_pot_ids="{target_pot_ids}" target_pot_num="{target_pot_num}" task_command="{task_command}" waypoint_rooms="{waypoint_rooms}" task_id="{task_id}"/>
+                </Sequence>
+                <Sequence name="NavfailureSequence">
+                    <Action ID="SetRobotState" robot_state="NAVERROR"/>
+                    <Action ID="ClearTaskCommand" nav_source_room="{nav_source_room}" nav_target_room="{nav_target_room}" target_pot_ids="{target_pot_ids}" target_pot_num="{target_pot_num}" task_command="{task_command}" waypoint_rooms="{waypoint_rooms}" task_id="{task_id}"/>
+                </Sequence>
+            </Fallback>
+        </Sequence>
+    </BehaviorTree>
+    <!-- ////////// -->
+    <BehaviorTree ID="patrol_sub">
+        <Sequence>
+            <Condition ID="IsTaskCommand" task_command="{task_command}" task_type="Patrol"/>
+            <Fallback>
+                <Sequence name="PatrolSequence">
+                    <Action ID="SetRobotState" robot_state="PATROLING"/>
+                    <Action ID="PatrolPlanInit" waypoint_rooms="{waypoint_rooms}" patrol_points="{patrol_points}" patrol_count="{patrol_count}" patrol_index="{patrol_index}"/>
+                    <RepeatWithBlackboard target_pot_num="{patrol_count}">
+                        <Sequence>
+                            <Action ID="PatrolSelectWaypoint" patrol_points="{patrol_points}" patrol_index="{patrol_index}" nav_target_room="{nav_target_room}"/>
+                            <Action ID="GetGoalFromRoom" goal="{goal}" nav_target_room="{nav_target_room}"/>
+                            <Action ID="NavToPose" goal="{goal}"/>
+                            <SubTree ID="patrol_point_action_sub" __shared_blackboard="true"/>
+                            <Action ID="PatrolAdvanceIndex" patrol_index="{patrol_index}"/>
+                        </Sequence>
+                    </RepeatWithBlackboard>
+                    <Action ID="GetGoalFromRoom" goal="{goal}" nav_target_room="原点"/>
+                    <Action ID="NavToPose" goal="{goal}"/>
+                    <Action ID="SetRobotState" robot_state="IDLE"/>
+                    <Action ID="ClearTaskCommand" nav_source_room="{nav_source_room}" nav_target_room="{nav_target_room}" target_pot_ids="{target_pot_ids}" target_pot_num="{target_pot_num}" task_command="{task_command}" waypoint_rooms="{waypoint_rooms}" task_id="{task_id}"/>
+                </Sequence>
+                <Sequence name="PatrolerrSequence">
+                    <Action ID="SetRobotState" robot_state="PATROLERROR"/>
+                    <Fallback>
+                        <Sequence>
+                            <Action ID="GetGoalFromRoom" goal="{goal}" nav_target_room="原点"/>
+                            <Action ID="NavToPose" goal="{goal}"/>
+                        </Sequence>
+                        <AlwaysSuccess/>
+                    </Fallback>
+                    <Action ID="ClearTaskCommand" nav_source_room="{nav_source_room}" nav_target_room="{nav_target_room}" target_pot_ids="{target_pot_ids}" target_pot_num="{target_pot_num}" task_command="{task_command}" waypoint_rooms="{waypoint_rooms}" task_id="{task_id}"/>
+                </Sequence>
+            </Fallback>
+        </Sequence>
+    </BehaviorTree>
+    <!-- ////////// -->
+    <BehaviorTree ID="patrol_point_action_sub">
+        <Sequence>
+            <Action ID="CameraCapture" pot_id="" task_id="{task_id}" timeout_ms="600000"/>
+            <Fallback>
+                <Action ID="TaskfileUpload" result_message="{result_message}" task_id="{task_id}" timeout_ms="20000"/>
+                <Sequence>
+                    <SetBlackboard output_key="taskfile_update_flag" value="false"/>
+                    <Action ID="RecordFailedTaskfile" task_id="{task_id}"/>
+                </Sequence>
+            </Fallback>
+        </Sequence>
+    </BehaviorTree>
+    <!-- ////////// -->
+    <BehaviorTree ID="phenotype_sub">
+        <Sequence name="PhenoSequence">
+            <Condition ID="IsTaskCommand" task_command="{task_command}" task_type="Phenotype"/>
+            <Fallback>
+                <Sequence>
+                    <Action ID="SetRobotState" robot_state="PHENOTYPING"/>
+                    <Action ID="GetGoalFromRoom" goal="{goal}" nav_target_room="{nav_target_room}"/>
+                    <Action ID="NavToPose" goal="{goal}"/>
+                    <Action ID="CameraCapture" pot_id="{pot_id}" task_id="{task_id}" timeout_ms="600000"/>
+                    <Fallback>
+                        <Action ID="TaskfileUpload" result_message="{result_message}" task_id="{task_id}" timeout_ms="20000"/>
+                        <SetBlackboard output_key="taskfile_update_flag" value="false"/>
+                    </Fallback>
+                    <Action ID="SetRobotState" robot_state="IDLE"/>
+                    <Action ID="ClearTaskCommand" nav_source_room="{nav_source_room}" nav_target_room="{nav_target_room}" target_pot_ids="{target_pot_ids}" target_pot_num="{target_pot_num}" task_command="{task_command}" waypoint_rooms="{waypoint_rooms}" task_id="{task_id}"/>
+                </Sequence>
+                <Sequence>
+                    <Action ID="SetRobotState" robot_state="PHENOTYPEERROR"/>
+                    <Action ID="ClearTaskCommand" nav_source_room="{nav_source_room}" nav_target_room="{nav_target_room}" target_pot_ids="{target_pot_ids}" target_pot_num="{target_pot_num}" task_command="{task_command}" waypoint_rooms="{waypoint_rooms}" task_id="{task_id}"/>
+                </Sequence>
+            </Fallback>
+        </Sequence>
+    </BehaviorTree>
+    <!-- ////////// -->
+    <BehaviorTree ID="robotinit_sub">
+        <Sequence>
+            <SetBlackboard output_key="robot_init_success" value="false"/>
+            <Action ID="SetRobotState" robot_state="INITCHECK"/>
+            <Delay delay_msec="20000">
+                <AlwaysSuccess/>
+            </Delay>
+            <Sequence>
+                <Condition ID="IsRosNodeOk" node_name="diff_drive_controller" topic_name=""/>
+                <Condition ID="IsRosNodeOk" node_name="bt_navigator" topic_name=""/>
+                <Condition ID="IsRosNodeOk" node_name="keepout_mask_publisher" topic_name=""/>
+                <Condition ID="IsRosNodeOk" node_name="mqtt_node" topic_name=""/>
+                <Condition ID="IsRosNodeOk" node_name="roompose_loader" topic_name=""/>
+                <Condition ID="IsRosNodeOk" node_name="roompose_recorder" topic_name=""/>
+                <Condition ID="IsRosNodeOk" node_name="" topic_name="local_costmap/costmap_raw"/>
+                <Condition ID="IsRosNodeOk" node_name="" topic_name="odom"/>
+                <Condition ID="IsRosNodeOk" node_name="" topic_name="agrobot_base_info"/>
+            </Sequence>
+            <Fallback>
+                <Sequence>
+                    <Condition ID="IsCharging"/>
+                    <Action ID="SetRobotState" robot_state="CHARGING"/>
+                </Sequence>
+                <Action ID="SetRobotState" robot_state="IDLE"/>
+            </Fallback>
+            <SetBlackboard output_key="robot_init_success" value="true"/>
+        </Sequence>
+    </BehaviorTree>
+    <!-- ////////// -->
+    <BehaviorTree ID="robotrestart_sub">
+        <Sequence>
+            <Condition ID="IsTaskCommand" task_command="{task_command}" task_type="RobotRestart"/>
+            <Action ID="SetRobotState" robot_state="RESTART"/>
+            <Action ID="LaunchManager" command="restart" result_message="{result_message}" timeout_ms="150000"/>
+            <SetBlackboard output_key="robot_init_success" value="false"/>
+            <Action ID="ClearTaskCommand" nav_source_room="{nav_source_room}" nav_target_room="{nav_target_room}" target_pot_ids="{target_pot_ids}" target_pot_num="{target_pot_num}" task_command="{task_command}" waypoint_rooms="{waypoint_rooms}" task_id="{task_id}"/>
+        </Sequence>
+    </BehaviorTree>
+    <!-- ////////// -->
+    <BehaviorTree ID="robotstop_sub">
+        <Sequence>
+            <Condition ID="IsTaskCommand" task_command="{task_command}" task_type="RobotStop"/>
+            <Action ID="SetRobotState" robot_state="STOP"/>
+            <Action ID="LaunchManager" command="stop" result_message="{result_message}" timeout_ms="150000"/>
+            <Action ID="ClearTaskCommand" nav_source_room="{nav_source_room}" nav_target_room="{nav_target_room}" target_pot_ids="{target_pot_ids}" target_pot_num="{target_pot_num}" task_command="{task_command}" waypoint_rooms="{waypoint_rooms}" task_id="{task_id}"/>
+        </Sequence>
+    </BehaviorTree>
+    <!-- ////////// -->
+    <BehaviorTree ID="startmapping_sub">
+        <Sequence>
+            <Condition ID="IsTaskCommand" task_command="{task_command}" task_type="StartMapping"/>
+            <Action ID="SetRobotState" robot_state="RESTART"/>
+            <Action ID="LaunchManager" command="start_mapping" result_message="{result_message}" timeout_ms="150000"/>
+            <Action ID="SetRobotState" robot_state="MAPPING"/>
+            <Action ID="ClearTaskCommand" nav_source_room="{nav_source_room}" nav_target_room="{nav_target_room}" target_pot_ids="{target_pot_ids}" target_pot_num="{target_pot_num}" task_command="{task_command}" waypoint_rooms="{waypoint_rooms}" task_id="{task_id}"/>
+        </Sequence>
+    </BehaviorTree>
+    <!-- ////////// -->
+    <BehaviorTree ID="startnavigation_sub">
+        <Sequence>
+            <Condition ID="IsTaskCommand" task_command="{task_command}" task_type="StartNavigation"/>
+            <Action ID="SetRobotState" robot_state="RESTART"/>
+            <Action ID="LaunchManager" command="start_navigation" result_message="{result_message}" timeout_ms="150000"/>
+            <SetBlackboard output_key="robot_init_success" value="false"/>
+            <Action ID="ClearTaskCommand" nav_source_room="{nav_source_room}" nav_target_room="{nav_target_room}" target_pot_ids="{target_pot_ids}" target_pot_num="{target_pot_num}" task_command="{task_command}" waypoint_rooms="{waypoint_rooms}" task_id="{task_id}"/>
+        </Sequence>
+    </BehaviorTree>
+    <!-- ////////// -->
+    <TreeNodesModel>
+        <Action ID="CameraCapture">
+            <input_port name="pot_id" type="std::string">盆栽ID（字符串）</input_port>
+            <input_port name="task_id" type="std::string">任务ID</input_port>
+            <input_port default="8000" name="timeout_ms" type="int">等待服务响应超时时间(毫秒)</input_port>
+        </Action>
+        <Action ID="CancelNavToPose">
+            <input_port name="timeout_ms" type="int">等待取消指令完成的超时时间，单位毫秒</input_port>
+        </Action>
+        <Action ID="ClearTaskCommand">
+            <output_port name="nav_source_room" type="std::string"/>
+            <output_port name="nav_target_room" type="std::string"/>
+            <output_port name="target_pot_ids" type="std::vector&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::allocator&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt; &gt;"/>
+            <output_port name="waypoint_rooms" type="std::vector&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::allocator&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt; &gt;"/>
+            <output_port name="target_pot_num" type="int"/>
+            <output_port name="task_command" type="std::string"/>
+        </Action>
+        <Action ID="DockRobot">
+            <input_port name="charge_enable" type="bool"/>
+            <input_port name="charge_stop" type="bool"/>
+        </Action>
+        <Action ID="GetGoalFromRoom">
+            <output_port name="goal" type="geometry_msgs::msg::PoseStamped_&lt;std::allocator&lt;void&gt; &gt;"/>
+            <input_port name="nav_target_room" type="std::string"/>
+        </Action>
+        <Condition ID="IsBatteryLow"/>
+        <Condition ID="IsCharging"/>
+        <Condition ID="IsGoalReached">
+            <input_port name="goal">目标点</input_port>
+            <input_port name="tolerance">允许的距离容差</input_port>
+            <input_port name="yaw_tolerance">允许的偏航角容差(弧度)</input_port>
+        </Condition>
+        <Condition ID="IsPotDetected">
+            <input_port name="delta_threshold">允许的像素偏差阈值，单位：像素</input_port>
+        </Condition>
+        <Condition ID="IsRobotInitSuccess">
+            <input_port name="robot_init_success" type="bool"/>
+        </Condition>
+        <Condition ID="IsRobotStarted">
+            <input_port default="false" name="robot_started"/>
+        </Condition>
+        <Condition ID="IsRosNodeOk">
+            <input_port name="node_name" type="std::string"/>
+            <input_port name="topic_name" type="std::string"/>
+        </Condition>
+        <Condition ID="IsTaskCommand">
+            <input_port name="task_command" type="std::string"/>
+            <input_port name="task_type" type="std::string"/>
+        </Condition>
+        <Condition ID="IsTimeForAction">
+            <inout_port name="min_interval_sec"/>
+            <inout_port name="trigger_hour"/>
+            <inout_port name="trigger_minute"/>
+            <inout_port name="window_seconds"/>
+        </Condition>
+        <Action ID="LaunchManager">
+            <input_port name="command" type="std::string">要发送给 launch_manager 的指令（start/stop/restart）</input_port>
+            <output_port name="result_message" type="std::string">launch_manager 返回的信息</output_port>
+            <input_port name="timeout_ms" type="int">等待服务响应的超时时间，单位毫秒</input_port>
+        </Action>
+        <Condition ID="LogError"/>
+        <Action ID="NavToPose">
+            <input_port name="goal" type="geometry_msgs::msg::PoseStamped_&lt;std::allocator&lt;void&gt; &gt;">Goal pose to send to Nav2</input_port>
+        </Action>
+        <Action ID="PublishRobotState">
+            <input_port name="robot_state" type="std::string">Robot working state from blackboard</input_port>
+        </Action>
+        <Action ID="PatrolPlanInit">
+            <input_port name="waypoint_rooms" type="std::vector&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::allocator&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt; &gt;"/>
+            <output_port name="patrol_points" type="std::vector&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::allocator&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt; &gt;"/>
+            <output_port name="patrol_count" type="int"/>
+            <output_port name="patrol_index" type="int"/>
+        </Action>
+        <Action ID="PatrolSelectWaypoint">
+            <input_port name="patrol_points" type="std::vector&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::allocator&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt; &gt;"/>
+            <input_port name="patrol_index" type="int"/>
+            <output_port name="nav_target_room" type="std::string"/>
+        </Action>
+        <Action ID="PatrolAdvanceIndex">
+            <input_port name="patrol_index" type="int"/>
+            <output_port name="patrol_index" type="int"/>
+        </Action>
+        <Action ID="PatrolWaypoints">
+            <input_port name="waypoint_rooms" type="std::vector&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::allocator&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt; &gt;"/>
+            <input_port default="原点" name="return_room" type="std::string"/>
+            <output_port name="current_waypoint" type="std::string"/>
+            <output_port name="action_feedback" type="std::string"/>
+            <output_port name="progress" type="double"/>
+        </Action>
+        <Control ID="RecoveryNode">
+            <input_port name="number_of_retries" type="int">Number of retries</input_port>
+        </Control>
+        <Decorator ID="RepeatWithBlackboard">
+            <input_port name="repeat_type" type="int"/>
+            <input_port name="target_pot_num" type="int"/>
+        </Decorator>
+        <Decorator ID="Retry">
+            <input_port name="retry" type="int">Maximum retry attempts</input_port>
+        </Decorator>
+        <Action ID="SetIcpActive">
+            <input_port name="icp_active" type="bool"/>
+        </Action>
+        <Action ID="SetRobotState">
+            <input_port name="robot_state" type="std::string">Robot working state (e.g., IDLE, NAVIGATING, CHARGING)</input_port>
+        </Action>
+        <Action ID="SetTaskLocked">
+            <input_port name="task_locked" type="bool"/>
+        </Action>
+        <Condition ID="TaskUpdate">
+            <output_port name="nav_source_room"/>
+            <output_port name="nav_target_room"/>
+            <input_port name="robot_state_msg"/>
+            <output_port name="target_pot_ids"/>
+            <output_port name="target_pot_num"/>
+            <output_port name="waypoint_rooms"/>
+            <output_port name="task_command"/>
+            <input_port name="task_locked"/>
+        </Condition>
+        <Action ID="TaskfileUpload">
+            <output_port default="{result_message}" name="result_message"/>
+            <input_port default="{task_id}" name="task_id"/>
+            <input_port default="1200" name="timeout_ms"/>
+        </Action>
+        <Action ID="RecordFailedTaskfile">
+            <input_port default="{task_id}" name="task_id"/>
+        </Action>
+        <Action ID="GetPendingTaskfile">
+            <output_port default="{retry_task_id}" name="task_id"/>
+        </Action>
+        <Action ID="AckPendingTaskfile">
+            <input_port default="{retry_task_id}" name="task_id"/>
+        </Action>
+        <Action ID="UndockRobot">
+            <input_port name="charge_enable" type="bool"/>
+            <input_port name="charge_stop" type="bool"/>
+        </Action>
+        <SubTree ID="canceltask_sub">
+            <inout_port name="__shared_blackboard"/>
+        </SubTree>
+        <SubTree ID="charge_sub">
+            <inout_port name="__shared_blackboard"/>
+        </SubTree>
+        <SubTree ID="checkcharge_sub">
+            <inout_port name="__shared_blackboard"/>
+        </SubTree>
+        <SubTree ID="idle_sub">
+            <inout_port default="false" name="__shared_blackboard">If false (default), the Subtree has an isolated blackboard and needs port remapping</inout_port>
+        </SubTree>
+        <SubTree ID="irrigation_sub">
+            <inout_port default="false" name="__shared_blackboard">If false (default), the Subtree has an isolated blackboard and needs port remapping</inout_port>
+        </SubTree>
+        <SubTree ID="nav_sub">
+            <inout_port name="__shared_blackboard"/>
+        </SubTree>
+        <SubTree ID="patrol_sub">
+            <inout_port default="false" name="__shared_blackboard">If false (default), the Subtree has an isolated blackboard and needs port remapping</inout_port>
+        </SubTree>
+        <SubTree ID="phenotype_sub">
+            <inout_port name="__shared_blackboard"/>
+        </SubTree>
+        <SubTree ID="robotinit_sub">
+            <inout_port name="__shared_blackboard"/>
+        </SubTree>
+        <SubTree ID="robotrestart_sub">
+            <inout_port default="true" name="__shared_blackboard">If false (default), the Subtree has an isolated blackboard and needs port remapping</inout_port>
+        </SubTree>
+        <SubTree ID="robotstop_sub">
+            <inout_port name="__shared_blackboard"/>
+        </SubTree>
+        <SubTree ID="startmapping_sub">
+            <inout_port name="__shared_blackboard"/>
+        </SubTree>
+        <SubTree ID="startnavigation_sub">
+            <inout_port name="__shared_blackboard"/>
+        </SubTree>
+        <SubTree ID="stopcharge_sub">
+            <inout_port name="__shared_blackboard"/>
+        </SubTree>
+    </TreeNodesModel>
+    <!-- ////////// -->
+</root>
