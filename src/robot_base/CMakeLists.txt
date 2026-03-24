@@ -67,23 +67,9 @@ ament_target_dependencies(laser_filter_node
 )
 rclcpp_components_register_node(laser_filter_node PLUGIN "CLidarFilter" EXECUTABLE "laser_filter_node_exe")
 
-# # ==========Build Tilt Compensator (CustomMsg only)=========================
-# add_executable(tilt_compensator src/tilt_compensator.cpp)
-# target_include_directories(tilt_compensator PUBLIC
-#   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-#   ${Eigen3_INCLUDE_DIRS}
-# )
-# ament_target_dependencies(tilt_compensator
-#   rclcpp
-#   sensor_msgs
-#   livox_ros_driver2
-#   Eigen3
-# )
-
 install(TARGETS
     agrobot_hardware_interface
     laser_filter_node
-    # tilt_compensator
     ARCHIVE DESTINATION lib
     LIBRARY DESTINATION lib
     RUNTIME DESTINATION lib/${PROJECT_NAME}
