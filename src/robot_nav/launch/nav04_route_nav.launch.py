@@ -70,7 +70,7 @@ def generate_launch_description():
             'inf_epsilon': 1.0
         }],
         remappings=[
-            ('cloud_in', '/livox/lidar/pointcloud'),  # 直接使用原始点云
+            ('cloud_in', '/livox/lidar'),  # 直接使用原始点云
             ('scan', '/scan_raw')                      # 输出未过滤的激光数据
         ]
     )

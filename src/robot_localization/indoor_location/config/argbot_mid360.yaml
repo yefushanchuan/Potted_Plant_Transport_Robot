@@ -10,7 +10,7 @@ limit_angle_max: 180.0
 
 #surf_threshold: 0.1
 
-lidar_topic: "/livox/lidar/pointcloud"        #激光雷达话题
+lidar_topic: "/livox/lidar"        #激光雷达话题
 
 pub_cloud_topic: "/deskew_cloud"              #去畸变点云话题
 
