@@ -283,7 +283,7 @@
     <xacro:camera_link name="right" x_offset_camera="${cam_offset_x}" y_offset_camera="${cam_offset_y}" z_offset_camera="${cam_offset_z}" yaw_offset_camera="${cam_offset_yaw}"/>
 
     <!-- ======================== 激光雷达 ======================== -->
-    <xacro:laser_link name="front" x_offset_laser="${lidar_offset_x}" y_offset_laser="${-lidar_offset_y}" z_offset_laser="${lidar_offset_z}" pitch_offset_laser="${-M_PI/4}" yaw_offset_laser="0"/>
+    <xacro:laser_link name="front" x_offset_laser="${lidar_offset_x}" y_offset_laser="${-lidar_offset_y}" z_offset_laser="${lidar_offset_z}" pitch_offset_laser="${M_PI/4}" yaw_offset_laser="0"/>
 
     <!-- ======================== ros2_control 配置 ======================== -->
     <ros2_control name="agrobot" type="system">
