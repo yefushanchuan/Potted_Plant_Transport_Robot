@@ -141,7 +141,6 @@ def generate_launch_description():
             {'user_config_path': PathJoinSubstitution([
                 FindPackageShare("livox_ros_driver2"), "config", "MID360_config.json"
             ])}, # 雷达硬件配置文件路径（包含IP、端口等参数）
-            {'cmdline_input_bd_code': 'livox0000000001'} # 雷达绑定码，用于识别特定设备
         ]
     )
 
