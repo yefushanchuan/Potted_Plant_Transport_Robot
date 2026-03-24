@@ -46,10 +46,12 @@ def generate_launch_description():
 
     # ================= 核心节点定义 =================
 
-    # 发布 TF 和 URDF
-    # 作用: 解析 URDF 文件，发布机器人模型到 /robot_description 话题，
-    #       并根据 /joint_states 话题发布 TF 变换（静态+动态）
-    # 输出: /robot_description (URDF字符串), /tf, /tf_static
+    # 发布 TF 变换
+    # 作用: 从参数读取 URDF，解析连杆和关节结构；
+    #       订阅 /joint_states 话题获取关节角度，
+    #       发布 TF 变换实现可视化（静态+动态）
+    # 输入: 参数 robot_description (URDF字符串), 话题 /joint_states
+    # 输出: /tf, /tf_static 
     robot_state_publisher_node = Node(
         package="robot_state_publisher",
         executable="robot_state_publisher",
@@ -59,7 +61,8 @@ def generate_launch_description():
 
     # 启动控制器管理器
     # 作用: ros2_control 的核心节点，加载硬件接口和控制器框架，
-    #       通过 remapping 从 /robot_description 获取 URDF 中的 <ros2_control> 配置
+    #       从参数 robot_controllers 加载控制器配置，
+    #       通过 remapping 从 /robot_description 获取 URDF 中的 <ros2_control> 硬件配置
     # 注意: 必须先于所有 spawner 启动，提供 /controller_manager 服务
     ros2_control_node = Node(
         package="controller_manager",
@@ -70,7 +73,7 @@ def generate_launch_description():
     )
 
     # 加载关节状态广播器
-    # 作用: 向 controller_manager 请求加载 joint_state_broadcaster 控制器，
+    # 作用: 向 controller_manager 请求加载 joint_state_broadcaster 控制器，spawner仅生命周期管理，不执行控制逻辑，
     #       读取硬件接口中的关节状态，发布到 /joint_states 话题
     # 依赖: 必须在 ros2_control_node 启动后执行（由 delay_joint_state_spawner 控制时序）
     joint_state_broadcaster_spawner = Node(
@@ -82,7 +85,7 @@ def generate_launch_description():
 
     # 加载差分驱动控制器
     # 作用: 向 controller_manager 请求加载 diff_drive_controller，
-    #       订阅 /cmd_vel 话题控制轮子速度，发布轮式里程计 /diff_drive_controller/odom 话题
+    #       订阅 /diff_drive_controller/cmd_vel_unstamped 话题控制轮子速度，发布轮式里程计 /diff_drive_controller/odom 话题
     # 依赖: 必须在 joint_state_broadcaster 加载完成后执行（由 delay_robot_controller_spawner 控制时序）
     robot_controller_spawner = Node(
         package="controller_manager",
