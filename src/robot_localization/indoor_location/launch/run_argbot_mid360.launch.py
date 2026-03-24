@@ -115,7 +115,6 @@ def generate_launch_description():
             default_value='map.pcd',
             description='地图文件名（可选）；与 map_dir 组合成最终路径'
         ),
-        
         DeclareLaunchArgument(
             'package', 
             default_value='indoor_location', 
