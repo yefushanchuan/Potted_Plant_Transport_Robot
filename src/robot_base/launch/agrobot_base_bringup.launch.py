@@ -49,7 +49,7 @@ def generate_launch_description():
     # 发布 TF 和 URDF
     # 作用: 解析 URDF 文件，发布机器人模型到 /robot_description 话题，
     #       并根据 /joint_states 话题发布 TF 变换（静态+动态）
-    # 输出: /robot_description (URDF字符串), /tf, /tf_static    
+    # 输出: /robot_description (URDF字符串), /tf, /tf_static
     robot_state_publisher_node = Node(
         package="robot_state_publisher",
         executable="robot_state_publisher",
@@ -82,7 +82,7 @@ def generate_launch_description():
 
     # 加载差分驱动控制器
     # 作用: 向 controller_manager 请求加载 diff_drive_controller，
-    #       订阅 /cmd_vel 话题控制轮子速度，发布轮式里程计 /diff_drive_controller/odom
+    #       订阅 /cmd_vel 话题控制轮子速度，发布轮式里程计 /diff_drive_controller/odom 话题
     # 依赖: 必须在 joint_state_broadcaster 加载完成后执行（由 delay_robot_controller_spawner 控制时序）
     robot_controller_spawner = Node(
         package="controller_manager",
