@@ -50,8 +50,9 @@ def generate_launch_description():
     # 作用: 从参数读取 URDF，解析连杆和关节结构；
     #       订阅 /joint_states 话题获取关节角度，
     #       发布 TF 变换实现可视化（静态+动态）
+    #       将 URDF 字符串以锁存话题的形式对外广播，供控制器管理器和 RViz 读取。
     # 输入: 参数 robot_description (URDF字符串), 话题 /joint_states
-    # 输出: /tf, /tf_static 
+    # 输出: /tf, /tf_static, /robot_description
     robot_state_publisher_node = Node(
         package="robot_state_publisher",
         executable="robot_state_publisher",
