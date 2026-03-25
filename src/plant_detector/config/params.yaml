@@ -3,7 +3,7 @@
 
     # ── Input ──────────────────────────────────────────────────────────────
     # Default topic for Livox MID-360 (livox_ros_driver2)
-    lidar_topic: "/livox/lidar"
+    lidar_topic: "/livox/lidar_custom"
 
     # ── Ground removal ─────────────────────────────────────────────────────
     ground:
