@@ -33,12 +33,6 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   DEPENDENCIES geometry_msgs std_msgs
 )
 
-# ── Include dirs ─────────────────────────────────────────────────────────────
-target_include_directories(plant_detector_component PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include>
-)
-
 # ── Main node executable ─────────────────────────────────────────────────────
 add_library(plant_detector_component SHARED
   src/plant_detector_node.cpp
@@ -47,7 +41,12 @@ add_library(plant_detector_component SHARED
   src/plant_classifier.cpp
 )
 
-ament_target_dependencies(plant_detector_node
+target_include_directories(plant_detector_component PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+
+ament_target_dependencies(plant_detector_component
   rclcpp
   rclcpp_components
   sensor_msgs
@@ -61,20 +60,21 @@ ament_target_dependencies(plant_detector_node
   pcl_ros
 )
 
-target_link_libraries(plant_detector_node
+target_link_libraries(plant_detector_component
   ${PCL_LIBRARIES}
 )
 
 rosidl_get_typesupport_target(cpp_typesupport_target
   ${PROJECT_NAME} rosidl_typesupport_cpp)
-target_link_libraries(plant_detector_node "${cpp_typesupport_target}")
+target_link_libraries(plant_detector_component "${cpp_typesupport_target}")
 
 rclcpp_components_register_node(plant_detector_component
   PLUGIN "plant_detector::PlantDetectorNode"
   EXECUTABLE plant_detector_node
 )
 # ── Install ───────────────────────────────────────────────────────────────────
-install(TARGETS plant_detector_node
+install(TARGETS plant_detector_component
+  plant_detector_node
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION lib/${PROJECT_NAME}
