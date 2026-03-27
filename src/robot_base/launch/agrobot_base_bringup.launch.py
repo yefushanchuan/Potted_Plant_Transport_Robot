@@ -112,7 +112,7 @@ def generate_launch_description():
     # IMU 数据发布
     # 作用: 驱动 hipnuc IMU 硬件，读取原始传感器数据，
     #       发布 IMU 消息到 /imu 话题，供 EKF 和其他节点使用
-    # 输出: /imu (sensor_msgs/Imu)
+    # 输出: /imu 
     imu_node = Node(
         package="hipnuc_imu",
         executable="talker",
