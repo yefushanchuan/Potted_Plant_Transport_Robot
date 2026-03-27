@@ -12,6 +12,7 @@ set(CMAKE_CXX_STANDARD 17)
 # ── Dependencies ────────────────────────────────────────────────────────────
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(rclcpp_components REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
@@ -39,15 +40,21 @@ include_directories(
 )
 
 # ── Main node executable ─────────────────────────────────────────────────────
-add_executable(plant_detector_node
+add_library(plant_detector_component SHARED
   src/plant_detector_node.cpp
   src/ground_remover.cpp
   src/euclidean_cluster.cpp
   src/plant_classifier.cpp
 )
 
+target_include_directories(plant_detector_component PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+
 ament_target_dependencies(plant_detector_node
   rclcpp
+  rclcpp_components
   sensor_msgs
   geometry_msgs
   visualization_msgs
@@ -67,9 +74,15 @@ rosidl_get_typesupport_target(cpp_typesupport_target
   ${PROJECT_NAME} rosidl_typesupport_cpp)
 target_link_libraries(plant_detector_node "${cpp_typesupport_target}")
 
+rclcpp_components_register_node(plant_detector_component
+  PLUGIN "plant_detector::PlantDetectorNode"
+  EXECUTABLE plant_detector_node
+)
 # ── Install ───────────────────────────────────────────────────────────────────
 install(TARGETS plant_detector_node
-  DESTINATION lib/${PROJECT_NAME}
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
 
 install(DIRECTORY launch config

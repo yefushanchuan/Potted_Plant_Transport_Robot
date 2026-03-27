@@ -4,6 +4,8 @@
 #include <chrono>
 
 #include "rclcpp/rclcpp.hpp"
+#include "rclcpp_components/register_node_macro.hpp" 
+
 #include "sensor_msgs/msg/point_cloud2.hpp"
 #include "visualization_msgs/msg/marker_array.hpp"
 #include "geometry_msgs/msg/point.hpp"
@@ -21,12 +23,14 @@
 using namespace plant_detector;
 using std::placeholders::_1;
 
+namespace plant_detector
+{
 // ─────────────────────────────────────────────────────────────────────────────
 class PlantDetectorNode : public rclcpp::Node
 {
 public:
-  PlantDetectorNode()
-  : Node("plant_detector_node")
+  PlantDetectorNode(const rclcpp::NodeOptions & options)
+  : Node("plant_detector_node", options)
   {
     declare_and_load_params();
 
@@ -106,7 +110,7 @@ private:
   }
 
   // ── Main callback ──────────────────────────────────────────────────────
-  void cloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
+  void cloudCallback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr msg)
   {
     auto t0 = std::chrono::steady_clock::now();
 
@@ -122,10 +126,10 @@ private:
 
     // Publish filtered cloud (for visualisation / debugging)
     if (pub_filtered_->get_subscription_count() > 0) {
-      sensor_msgs::msg::PointCloud2 filtered_msg;
-      pcl::toROSMsg(*obstacle_cloud, filtered_msg);
-      filtered_msg.header = msg->header;
-      pub_filtered_->publish(filtered_msg);
+      sensor_msgs::msg::PointCloud2::UniquePtr filtered_msg;
+      pcl::toROSMsg(*obstacle_cloud, *filtered_msg);
+      filtered_msg->header = msg->header;
+      pub_filtered_->publish(std::move(filtered_msg)); // handle ownership transfer with std::move
     }
 
     // ── Clustering ────────────────────────────────────────────────────────
@@ -243,11 +247,6 @@ private:
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr                 pub_filtered_;
 };
 
-// ── main ─────────────────────────────────────────────────────────────────────
-int main(int argc, char ** argv)
-{
-  rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<PlantDetectorNode>());
-  rclcpp::shutdown();
-  return 0;
-}
+} // namespace plant_detector
+
+RCLCPP_COMPONENTS_REGISTER_NODE(plant_detector::PlantDetectorNode)
