@@ -34,9 +34,9 @@ rosidl_generate_interfaces(${PROJECT_NAME}
 )
 
 # ── Include dirs ─────────────────────────────────────────────────────────────
-include_directories(
-  include
-  ${PCL_INCLUDE_DIRS}
+target_include_directories(plant_detector_component PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
 )
 
 # ── Main node executable ─────────────────────────────────────────────────────
@@ -45,11 +45,6 @@ add_library(plant_detector_component SHARED
   src/ground_remover.cpp
   src/euclidean_cluster.cpp
   src/plant_classifier.cpp
-)
-
-target_include_directories(plant_detector_component PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include>
 )
 
 ament_target_dependencies(plant_detector_node
