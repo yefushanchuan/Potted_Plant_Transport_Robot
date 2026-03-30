@@ -14,9 +14,9 @@ ekf_filter_node:
         # ========== 里程计传感器配置 ==========
         odom0: /diff_drive_controller/odom 
         odom0_config: [false,  false ,  false, # 位置: 忽略
-                       false, false, true,     # 姿态: 使用yaw,忽略roll,pitch
+                       false, false, false,     # 姿态: 使用yaw,忽略roll,pitch
                        true, false, false,     # 线速度: 使用vx,vy,忽略vz
-                       false, false, true,     # 角速度: 使用wz,忽略wx,wy
+                       false, false, false,     # 角速度: 使用wz,忽略wx,wy
                        false, false, false]    # 加速度: 全部忽略
         odom0_relative: false
         odom0_queue_size: 10
