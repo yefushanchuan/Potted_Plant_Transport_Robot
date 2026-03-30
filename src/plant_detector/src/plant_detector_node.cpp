@@ -13,6 +13,9 @@
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/transform_listener.h>
+#include <tf2_sensor_msgs/tf2_sensor_msgs.hpp>
 
 #include "plant_detector/ground_remover.hpp"
 #include "plant_detector/euclidean_cluster.hpp"
@@ -61,6 +64,10 @@ public:
     clp.max_depth            = static_cast<float>(get_parameter("classifier.max_depth").as_double());
     clp.confidence_threshold = static_cast<float>(get_parameter("classifier.confidence_threshold").as_double());
     classifier_ = std::make_unique<PlantClassifier>(clp);
+
+    // ── TF listener ───────────────────────────────────────────────────────
+    tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
+    tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
     // ── Publishers ───────────────────────────────────────────────────────
     pub_clusters_ = create_publisher<plant_detector::msg::PlantClusterArray>(
@@ -114,9 +121,33 @@ private:
   {
     auto t0 = std::chrono::steady_clock::now();
 
+    // TF transform to target frame
+    std::string target_frame = "base_link"; // 或者 "base_link", "odom"
+    sensor_msgs::msg::PointCloud2 cloud_transformed;
+
+    try {
+      // 查找从 lidar 坐标系到目标坐标系的变换 (带 50ms 超时等待)
+      geometry_msgs::msg::TransformStamped tf_stamped = tf_buffer_->lookupTransform(
+        target_frame, 
+        msg->header.frame_id,
+        msg->header.stamp, // 使用点云的时间戳
+        rclcpp::Duration::from_seconds(0.05) 
+      );
+
+      // 执行点云坐标转换
+      tf2::doTransform(*msg, cloud_transformed, tf_stamped);
+    } 
+    catch (const tf2::TransformException & ex) {
+      RCLCPP_WARN_THROTTLE(
+        this->get_logger(), *this->get_clock(), 2000, 
+        "等待 TF 转换失败, 忽略此帧: %s", ex.what()
+      );
+      return; // 如果 TF 还没准备好，安全退出，不至于闪退
+    }
+
     // Convert ROS → PCL
     pcl::PointCloud<pcl::PointXYZI>::Ptr raw(new pcl::PointCloud<pcl::PointXYZI>);
-    pcl::fromROSMsg(*msg, *raw);
+    pcl::fromROSMsg(cloud_transformed, *raw);
 
     if (raw->empty()) return;
 
@@ -126,9 +157,9 @@ private:
 
     // Publish filtered cloud (for visualisation / debugging)
     if (pub_filtered_->get_subscription_count() > 0) {
-      sensor_msgs::msg::PointCloud2::UniquePtr filtered_msg;
+      auto filtered_msg = std::make_unique<sensor_msgs::msg::PointCloud2>();
       pcl::toROSMsg(*obstacle_cloud, *filtered_msg);
-      filtered_msg->header = msg->header;
+      filtered_msg->header = cloud_transformed.header;
       pub_filtered_->publish(std::move(filtered_msg)); // handle ownership transfer with std::move
     }
 
@@ -137,7 +168,7 @@ private:
 
     // ── Classification & publish ─────────────────────────────────────────
     plant_detector::msg::PlantClusterArray cluster_array;
-    cluster_array.header = msg->header;
+    cluster_array.header = cloud_transformed.header;
 
     visualization_msgs::msg::MarkerArray marker_array;
     // Delete old markers first
@@ -154,7 +185,7 @@ private:
 
       // ── Fill message ───────────────────────────────────────────────────
       plant_detector::msg::PlantCluster cluster_msg;
-      cluster_msg.header      = msg->header;
+      cluster_msg.header      = cloud_transformed.header;
       cluster_msg.id          = plant_id;
       cluster_msg.position.x  = cr.cx;
       cluster_msg.position.y  = cr.cy;
@@ -178,7 +209,7 @@ private:
       // ── Bounding-box marker ────────────────────────────────────────────
       {
         visualization_msgs::msg::Marker bbox;
-        bbox.header    = msg->header;
+        bbox.header    = cloud_transformed.header;
         bbox.ns        = "plant_bbox";
         bbox.id        = plant_id;
         bbox.type      = visualization_msgs::msg::Marker::CUBE;
@@ -202,7 +233,7 @@ private:
       // ── Text label ────────────────────────────────────────────────────
       {
         visualization_msgs::msg::Marker txt;
-        txt.header    = msg->header;
+        txt.header    = cloud_transformed.header;
         txt.ns        = "plant_label";
         txt.id        = plant_id;
         txt.type      = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
@@ -240,6 +271,8 @@ private:
   std::unique_ptr<GroundRemover>    ground_remover_;
   std::unique_ptr<EuclideanCluster> clusterer_;
   std::unique_ptr<PlantClassifier>  classifier_;
+  std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
+  std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
 
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr   sub_cloud_;
   rclcpp::Publisher<plant_detector::msg::PlantClusterArray>::SharedPtr pub_clusters_;

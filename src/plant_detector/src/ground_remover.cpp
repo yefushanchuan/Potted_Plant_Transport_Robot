@@ -55,12 +55,14 @@ void GroundRemover::remove(
   seg.setMethodType(pcl::SAC_RANSAC);
   seg.setDistanceThreshold(params_.ransac_distance_thresh);
   seg.setMaxIterations(params_.ransac_max_iter);
-  // Constrain normal to be mostly vertical (z-axis) — avoids fitting walls
-  seg.setAxis(Eigen::Vector3f(0.0f, 0.0f, 1.0f));
-  seg.setEpsAngle(static_cast<float>(15.0 * M_PI / 180.0));  // ±15 deg
 
   seg.setInputCloud(filtered);
   seg.segment(*inliers, *coefficients);
+
+  if (inliers->indices.empty()) {
+    cloud_out = filtered;
+    return;
+  }
 
   // ── 3. Extract non-ground points ──────────────────────────────────────
   pcl::ExtractIndices<pcl::PointXYZI> extractor;
