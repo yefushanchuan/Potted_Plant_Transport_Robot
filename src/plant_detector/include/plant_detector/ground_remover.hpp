@@ -14,10 +14,12 @@ struct GroundRemoverParams
   double  max_ground_z           =  0.3;  // rough upper bound for ground seed selection
 
   // Pass-through filter applied before ground removal
-  double  min_range  =  0.3;   // m
-  double  max_range  = 15.0;   // m
-  double  min_height = -2.0;   // sensor-relative z
-  double  max_height =  3.0;
+  double  min_range  =  0.3;   // x
+  double  max_range  = 15.0;   // x
+  double  min_width  = -3.0;   // y
+  double  max_width  =  3.0;   // y
+  double  min_height = -2.0;   // z
+  double  max_height =  3.0;   // z
 };
 
 class GroundRemover

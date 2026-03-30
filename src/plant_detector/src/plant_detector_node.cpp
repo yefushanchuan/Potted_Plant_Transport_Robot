@@ -45,6 +45,8 @@ public:
     gp.max_range              = get_parameter("ground.max_range").as_double();
     gp.min_height             = get_parameter("ground.min_height").as_double();
     gp.max_height             = get_parameter("ground.max_height").as_double();
+    gp.min_width              = get_parameter("ground.min_width").as_double();
+    gp.max_width              = get_parameter("ground.max_width").as_double();
     ground_remover_ = std::make_unique<GroundRemover>(gp);
 
     // ── Euclidean cluster ────────────────────────────────────────────────
@@ -63,6 +65,17 @@ public:
     clp.min_depth            = static_cast<float>(get_parameter("classifier.min_depth").as_double());
     clp.max_depth            = static_cast<float>(get_parameter("classifier.max_depth").as_double());
     clp.confidence_threshold = static_cast<float>(get_parameter("classifier.confidence_threshold").as_double());
+    clp.max_bottom_z         = static_cast<float>(get_parameter("classifier.max_bottom_z").as_double());
+    clp.min_aspect_ratio     = static_cast<float>(get_parameter("classifier.min_aspect_ratio").as_double());
+    clp.max_aspect_ratio     = static_cast<float>(get_parameter("classifier.max_aspect_ratio").as_double());
+    clp.ideal_height         = static_cast<float>(get_parameter("classifier.ideal_height").as_double());
+    clp.height_tolerance     = static_cast<float>(get_parameter("classifier.height_tolerance").as_double());
+    clp.ideal_aspect_ratio   = static_cast<float>(get_parameter("classifier.ideal_aspect_ratio").as_double());
+    clp.aspect_tolerance     = static_cast<float>(get_parameter("classifier.aspect_tolerance").as_double());
+    clp.max_points_for_score = static_cast<float>(get_parameter("classifier.max_points_for_score").as_double());
+    clp.weight_height        = static_cast<float>(get_parameter("classifier.weight_height").as_double());
+    clp.weight_aspect        = static_cast<float>(get_parameter("classifier.weight_aspect").as_double());
+    clp.weight_density       = static_cast<float>(get_parameter("classifier.weight_density").as_double());
     classifier_ = std::make_unique<PlantClassifier>(clp);
 
     // ── TF listener ───────────────────────────────────────────────────────
@@ -100,6 +113,8 @@ private:
     declare_parameter("ground.max_range",              15.0);
     declare_parameter("ground.min_height",             -2.0);
     declare_parameter("ground.max_height",              3.0);
+    declare_parameter("ground.min_width",                  -3.0);
+    declare_parameter("ground.max_width",                   3.0);
 
     // Cluster
     declare_parameter("cluster.tolerance",  0.15);
@@ -114,6 +129,17 @@ private:
     declare_parameter("classifier.min_depth",            0.05);
     declare_parameter("classifier.max_depth",            0.80);
     declare_parameter("classifier.confidence_threshold", 0.35);
+    declare_parameter("classifier.max_bottom_z",         0.15);
+    declare_parameter("classifier.min_aspect_ratio",     0.3);
+    declare_parameter("classifier.max_aspect_ratio",     4.0);
+    declare_parameter("classifier.ideal_height",         0.25);
+    declare_parameter("classifier.height_tolerance",     0.3);
+    declare_parameter("classifier.ideal_aspect_ratio",   1.0);
+    declare_parameter("classifier.aspect_tolerance",     1.0);
+    declare_parameter("classifier.max_points_for_score", 150.0);
+    declare_parameter("classifier.weight_height",        0.40);
+    declare_parameter("classifier.weight_aspect",        0.30);
+    declare_parameter("classifier.weight_density",       0.30);
   }
 
   // ── Main callback ──────────────────────────────────────────────────────
@@ -122,7 +148,7 @@ private:
     auto t0 = std::chrono::steady_clock::now();
 
     // TF transform to target frame
-    std::string target_frame = "base_link"; // 或者 "base_link", "odom"
+    std::string target_frame = "base_footprint";
     sensor_msgs::msg::PointCloud2 cloud_transformed;
 
     try {

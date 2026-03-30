@@ -15,7 +15,7 @@ void GroundRemover::remove(
   pcl::PointCloud<pcl::PointXYZI>::Ptr             & cloud_out,
   pcl::PointCloud<pcl::PointXYZI>::Ptr             * ground_out)
 {
-  // ── 1. Pass-through filter (range + height) ────────────────────────────
+  // ── 1. Pass-through filter (range + width + height) ────────────────────────────
   pcl::PointCloud<pcl::PointXYZI>::Ptr filtered(new pcl::PointCloud<pcl::PointXYZI>);
 
   // height (z)
@@ -35,8 +35,19 @@ void GroundRemover::remove(
     pass.setInputCloud(filtered);
     pass.setFilterFieldName("x");
     pass.setFilterLimits(
-      static_cast<float>(-params_.max_range),
+      static_cast<float>(-params_.min_range),
       static_cast<float>( params_.max_range));
+    pass.filter(*filtered);
+  }
+
+  // width (y)  — filter out points too far on the sides
+  {
+    pcl::PassThrough<pcl::PointXYZI> pass;
+    pass.setInputCloud(filtered);
+    pass.setFilterFieldName("y");
+    pass.setFilterLimits(
+      static_cast<float>(params_.min_width),
+      static_cast<float>(params_.max_width));
     pass.filter(*filtered);
   }
 

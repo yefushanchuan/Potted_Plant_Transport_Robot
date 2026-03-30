@@ -1,38 +1,61 @@
 /**:
   ros__parameters:
+    # ==========================================
+    # 输入话题配置
+    # ==========================================
+    lidar_topic: "/livox/lidar"  # 雷达点云输入话题
 
-    # ── Input ──────────────────────────────────────────────────────────────
-    # Default topic for Livox MID-360 (livox_ros_driver2)
-    lidar_topic: "/livox/lidar"
-
-    # ── Ground removal ─────────────────────────────────────────────────────
+    # ==========================================
+    # 1. 地面过滤参数 (Ground Remover)
+    # ==========================================
     ground:
-      # RANSAC inlier distance (m) — increase on rough floors
-      ransac_distance_thresh: 0.05
-      ransac_max_iter: 100
-      # Pass-through range filter
-      min_range: 0.1
-      max_range: 3.0
-      # Pass-through height filter (sensor-relative z, m)
-      min_height: -0.1
-      max_height:  0.4
+      ransac_distance_thresh: 0.05  # RANSAC判断为地面的距离阈值(m)。地面越不平，此值应稍大
+      ransac_max_iter: 100          # RANSAC算法的最大迭代次数
+      min_range: 0.1                # 直通滤波：最小有效探测距离(m)，过滤掉雷达自身的近距离噪点
+      max_range: 3.0                # 直通滤波：最大有效探测距离(m)，只处理近处点云以提高计算效率
+      min_height: -0.1              # 直通滤波：相对于 base_footprint 的最小Z高度(m)
+      max_height: 0.4               # 直通滤波：相对于 base_footprint 的最大Z高度(m)，提前滤除高处物体
+      min_width: -3                 # 直通滤波：相对于 base_footprint 的最小Y轴限制(m)
+      max_width:  3                 # 直通滤波：相对于 base_footprint 的最大Y轴限制(m)
 
-    # ── Euclidean clustering ────────────────────────────────────────────────
+    # ==========================================
+    # 2. 欧式聚类参数 (Euclidean Cluster)
+    # ==========================================
     cluster:
-      # Max distance (m) between neighbouring points to be in the same cluster
-      tolerance: 0.05
-      # Min / max number of points to form a valid cluster
-      min_size:   30
-      max_size: 2000
+      tolerance: 0.05               # 聚类容差(m)，两点之间距离小于此值则认为属于同一个物体
+      min_size: 30                  # 成为一个独立聚类簇所需的最少点云数量 (去噪)
+      max_size: 2000                # 一个聚类簇包含的最多点云数量，超过则被忽略 (过滤大块墙壁或大件家具)
 
-    # ── Plant classifier ────────────────────────────────────────────────────
+    # ==========================================
+    # 3. 盆栽分类与评分参数 (Plant Classifier)
+    # ==========================================
     classifier:
-      # Bounding-box size limits (m)
-      min_height: 0.08
-      max_height: 0.30
-      min_width:  0.14
-      max_width:  0.40
-      min_depth:  0.01
-      max_depth:  0.40
-      # Minimum confidence [0-1] to report a cluster as a plant
-      confidence_threshold: 0.35
+      # --- 基础尺寸过滤 (硬限制：不在范围内直接得0分被丢弃) ---
+      min_height: 0.08              # 盆栽最小高度(m)
+      max_height: 0.30              # 盆栽最大高度(m)
+      min_width: 0.14               # 盆栽最小宽度(m)
+      max_width: 0.40               # 盆栽最大宽度(m)
+      min_depth: 0.01               # 盆栽最小深度/厚度(m) (由于单面雷达扫描可能只扫到一个弧面，厚度极薄，所以设得很小)
+      max_depth: 0.40               # 盆栽最大深度/厚度(m)
+      
+      # --- 空间位置过滤 ---
+      max_bottom_z: 0.15            # 聚类簇底部的最大Z坐标(m)。用于过滤悬空物体/天花板垂下来的噪点 (假设地面Z为0)
+
+      # --- 形状比例过滤 (正面宽高比 = 高度/宽度) ---
+      min_aspect_ratio: 0.3         # 最小宽高比(极度矮胖型)，低于此比例直接剔除
+      max_aspect_ratio: 4.0         # 最大宽高比(极度瘦高型)，高于此比例直接剔除
+
+      # --- 软评分打分机制 (Soft Scoring: 计算0~1分的平滑曲线) ---
+      ideal_height: 0.25            # 最理想的盆栽高度(m)，越接近此值高度得分越高
+      height_tolerance: 0.3         # 高度评分容差(高斯分布分母)，值越大对高度偏差的包容度越高
+      ideal_aspect_ratio: 1.0       # 最理想的正面宽高比(正方形为1.0)
+      aspect_tolerance: 1.0         # 宽高比评分容差(高斯分布分母)
+      max_points_for_score: 150.0   # 达到满分所需的点云数量(如点数>=150则密度拿满分，更少则按比例降低得分)
+
+      # --- 最终得分权重 (三项相加应等于1.0) ---
+      weight_height: 0.40           # 高度得分在总分中的占比 (40%)
+      weight_aspect: 0.30           # 宽高比得分在总分中的占比 (30%)
+      weight_density: 0.30          # 点云密度(总点数)得分在总分中的占比 (30%)
+
+      # --- 最终输出阈值 ---
+      confidence_threshold: 0.35    # 最终综合得分[0~1]必须大于此阈值，才会作为盆栽发布并显示在 RViz 中
