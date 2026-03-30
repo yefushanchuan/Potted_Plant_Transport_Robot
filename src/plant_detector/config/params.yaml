@@ -22,17 +22,17 @@
       # Max distance (m) between neighbouring points to be in the same cluster
       tolerance: 0.15
       # Min / max number of points to form a valid cluster
-      min_size:   20
-      max_size: 5000
+      min_size:   15
+      max_size: 2000
 
     # ── Plant classifier ────────────────────────────────────────────────────
     classifier:
       # Bounding-box size limits (m)
-      min_height: 0.10
-      max_height: 0.25
-      min_width:  0.10
-      max_width:  0.35
+      min_height: 0.08
+      max_height: 0.30
+      min_width:  0.14
+      max_width:  0.40
       min_depth:  0.01
-      max_depth:  0.25
+      max_depth:  0.20
       # Minimum confidence [0-1] to report a cluster as a plant
       confidence_threshold: 0.35
