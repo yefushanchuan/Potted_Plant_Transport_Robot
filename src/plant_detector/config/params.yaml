@@ -11,12 +11,12 @@
     ground:
       ransac_distance_thresh: 0.05  # RANSAC判断为地面的距离阈值(m)。地面越不平，此值应稍大
       ransac_max_iter: 100          # RANSAC算法的最大迭代次数
-      min_range: 0.1                # 直通滤波：最小有效探测距离(m)，过滤掉雷达自身的近距离噪点
-      max_range: 3.0                # 直通滤波：最大有效探测距离(m)，只处理近处点云以提高计算效率
-      min_height: -0.1              # 直通滤波：相对于 base_footprint 的最小Z高度(m)
+      min_range: 0.0                # 直通滤波：相对于 base_footprint 的最小X轴范围(m)，提前滤除过近的点云
+      max_range: 3.0                # 直通滤波：相对于 base_footprint 的最大X轴范围(m)，提前滤除过远的点云
+      min_height: -0.1              # 直通滤波：相对于 base_footprint 的最小Z高度(m)，提前滤除高处物体
       max_height: 0.4               # 直通滤波：相对于 base_footprint 的最大Z高度(m)，提前滤除高处物体
-      min_width: -3                 # 直通滤波：相对于 base_footprint 的最小Y轴限制(m)
-      max_width:  3                 # 直通滤波：相对于 base_footprint 的最大Y轴限制(m)
+      min_width: -3                 # 直通滤波：相对于 base_footprint 的最小Y轴限制(m)，过滤掉两侧过远的点云（如墙壁或家具）
+      max_width:  3                 # 直通滤波：相对于 base_footprint 的最大Y轴限制(m)，过滤掉两侧过远的点云（如墙壁或家具）
 
     # ==========================================
     # 2. 欧式聚类参数 (Euclidean Cluster)
