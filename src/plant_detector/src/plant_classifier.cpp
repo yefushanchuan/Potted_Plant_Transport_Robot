@@ -14,6 +14,14 @@ float PlantClassifier::classify(const ClusterResult & c) const
   const float w = c.width();
   const float d = c.depth();
 
+  float actual_w = std::max(w, d); 
+  float actual_d = std::min(w, d);
+
+  // ── 0. 悬空与天花板噪点过滤 (新增) ──────────────────────────────────
+  // 假设 base_link 的 Z=0 是地面。允许 RANSAC 误差，花盆的底部最高不能超过地面 15cm
+  // 如果你的 base_link 在雷达中心处(离地23cm)，那么地面Z是 -0.23，这里就改为 c.min_z > -0.05f
+  if (c.min_z > 0.15f) return 0.0f; 
+  
   // ── 1. 基础尺寸过滤 (硬拒绝) ──────────────────────────────────────────
   if (h < params_.min_height || h > params_.max_height) return 0.0f;
   if (w < params_.min_width  || w > params_.max_width)  return 0.0f;

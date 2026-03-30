@@ -14,15 +14,15 @@
       min_range: 0.1
       max_range: 3.0
       # Pass-through height filter (sensor-relative z, m)
-      min_height: -0.4
-      max_height:  1.0
+      min_height: -0.1
+      max_height:  0.4
 
     # ── Euclidean clustering ────────────────────────────────────────────────
     cluster:
       # Max distance (m) between neighbouring points to be in the same cluster
-      tolerance: 0.15
+      tolerance: 0.05
       # Min / max number of points to form a valid cluster
-      min_size:   15
+      min_size:   30
       max_size: 2000
 
     # ── Plant classifier ────────────────────────────────────────────────────
@@ -33,6 +33,6 @@
       min_width:  0.14
       max_width:  0.40
       min_depth:  0.01
-      max_depth:  0.20
+      max_depth:  0.40
       # Minimum confidence [0-1] to report a cluster as a plant
       confidence_threshold: 0.35
