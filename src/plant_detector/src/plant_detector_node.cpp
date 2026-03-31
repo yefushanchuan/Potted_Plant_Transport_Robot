@@ -113,8 +113,8 @@ private:
     declare_parameter("ground.max_range",              15.0);
     declare_parameter("ground.min_height",             -2.0);
     declare_parameter("ground.max_height",              3.0);
-    declare_parameter("ground.min_width",                  -3.0);
-    declare_parameter("ground.max_width",                   3.0);
+    declare_parameter("ground.min_width",              -3.0);
+    declare_parameter("ground.max_width",               3.0);
 
     // Cluster
     declare_parameter("cluster.tolerance",  0.15);
