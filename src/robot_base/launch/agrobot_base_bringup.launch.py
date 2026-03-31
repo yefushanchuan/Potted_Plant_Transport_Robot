@@ -131,11 +131,11 @@ def generate_launch_description():
         name='livox_lidar_publisher',
         output='screen',
         parameters=[
-            {'xfer_format': 0}, # 0=标准点云格式 /livox/lidar, 1=Livox自定义格式 /livox/lidar_custom
+            {'xfer_format': 1}, # 0=标准点云格式 /livox/lidar, 1=Livox自定义格式 /livox/lidar_custom
             {'multi_topic': 0}, # 0=单话题模式, 1=多话题模式（多雷达时使用）
             {'data_src': 0}, # 0=在线雷达数据, 1=从ROS bag读取, 2=从LVX文件读取
             {'publish_freq': 10.0}, # 点云发布频率 (Hz)
-            {'output_data_type': 0}, # 0=PointCloud2, 1=自定义 Livox 点云格式
+            {'output_data_type': 1}, # 0=PointCloud2, 1=自定义 Livox 点云格式
             {'frame_id': 'front_laser_link'}, # 点云数据的坐标系ID，必须与 URDF 中的 link 名称一致
             {'user_config_path': PathJoinSubstitution([
                 FindPackageShare("livox_ros_driver2"), "config", "MID360_config.json"
