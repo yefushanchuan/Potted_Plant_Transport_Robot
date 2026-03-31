@@ -35,8 +35,8 @@ void GroundRemover::remove(
     pass.setInputCloud(filtered);
     pass.setFilterFieldName("x");
     pass.setFilterLimits(
-      static_cast<float>(-params_.min_range),
-      static_cast<float>( params_.max_range));
+      static_cast<float>(params_.min_range),
+      static_cast<float>(params_.max_range));
     pass.filter(*filtered);
   }
 
