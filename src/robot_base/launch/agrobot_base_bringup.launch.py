@@ -171,9 +171,9 @@ def generate_launch_description():
                 parameters=[
                     {
                         'target_frame': 'base_link',
-                        'min_x': -0.3,'max_x': 0.3,
-                        'min_y': -0.3,'max_y': 0.3,
-                        'min_z': -0.1,'max_z': 0.5,
+                        'min_x': -0.0,'max_x': 0.2,
+                        'min_y': -0.271,'max_y': 0.271,
+                        'min_z': -0.1,'max_z': 0.65,
                         # negative=True 表示删除盒子内部点
                         # False则只保留盒子内部点
                         'negative': True
