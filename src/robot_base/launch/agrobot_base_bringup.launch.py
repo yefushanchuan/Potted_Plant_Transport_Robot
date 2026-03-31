@@ -121,29 +121,72 @@ def generate_launch_description():
         output="screen",
     )
 
-    # Livox 激光雷达驱动
-    # 作用: 驱动 Livox MID360 激光雷达，发布点云数据
-    # 输出: /livox/lidar_raw
-    # 坐标系: 点云数据的 frame_id = 'front_laser_link'（需在 URDF 中定义该 link）
-    livox_lidar_node = Node(
-        package='livox_ros_driver2',
-        executable='livox_ros_driver2_node',
-        name='livox_lidar_publisher',
-        output='screen',
-        parameters=[
-            {'xfer_format': 0}, # 0=标准点云格式 /livox/lidar, 1=Livox自定义格式 /livox/lidar
-            {'multi_topic': 0}, # 0=单话题模式, 1=多话题模式（多雷达时使用）
-            {'data_src': 0}, # 0=在线雷达数据, 1=从ROS bag读取, 2=从LVX文件读取
-            {'publish_freq': 10.0}, # 点云发布频率 (Hz)
-            {'output_data_type': 0}, # 0=PointCloud2, 1=自定义 Livox 点云格式
-            {'frame_id': 'front_laser_link'}, # 点云数据的坐标系ID，必须与 URDF 中的 link 名称一致
-            {'user_config_path': PathJoinSubstitution([
-                FindPackageShare("livox_ros_driver2"), "config", "MID360_config.json"
-            ])} # 雷达硬件配置文件路径（包含IP、端口等参数）
+    # Livox激光雷达 + 点云过滤 组合组件容器
+    # 作用:
+    #   使用 ROS2 Component 机制把 Livox 驱动和点云 CropBox 过滤放到同一个进程
+    #   通过 intra_process_comms 实现零拷贝，提高点云处理效率
+    # 数据流:
+    #   MID360 → /livox/lidar_raw → CropBox过滤 → /livox/lidar
+    lidar_and_filter_container = ComposableNodeContainer(
+        name='lidar_and_filter_container',   # 组件容器名称
+        namespace='',                        # 命名空间（空表示全局）
+        package='rclcpp_components',         # ROS2组件管理包
+        executable='component_container',   # 组件容器可执行文件
+
+        composable_node_descriptions=[
+            # Livox 激光雷达驱动组件
+            # 输出:
+            #   /livox/lidar_raw (原始点云)
+            # 坐标系:
+            #   frame_id = front_laser_link
+            ComposableNode(
+                package='livox_ros_driver2',
+                plugin='livox_ros::DriverNode',
+                name='livox_lidar_publisher',
+                parameters=[
+                    {'xfer_format': 0},      # 0=标准PointCloud2格式
+                    {'multi_topic': 0},     # 单雷达使用单topic
+                    {'data_src': 0},        # 0=真实雷达
+                    {'publish_freq': 10.0}, # 发布频率 Hz
+                    {'output_data_type': 0}, # 0=PointCloud2
+                    {'frame_id': 'front_laser_link'},
+                    {'user_config_path': PathJoinSubstitution([
+                        FindPackageShare("livox_ros_driver2"),
+                        "config",
+                        "MID360_config.json"
+                    ])}
+                ],
+                remappings=[('/livox/lidar', '/livox/lidar_raw')], # 话题重映射
+                extra_arguments=[{'use_intra_process_comms': True}] # 开启进程内通信(零拷贝)
+            ),
+            # CropBox 点云过滤组件
+            # 输入:
+            #   /livox/lidar_raw
+            # 输出:
+            #   /livox/lidar (过滤后点云)
+            ComposableNode(
+                package='robot_base',
+                plugin='robot_base_utils::CropBoxComponent',
+                name='livox_crop_box',
+                parameters=[
+                    {
+                        'target_frame': 'base_link',
+                        'min_x': -0.3,'max_x': 0.3,
+                        'min_y': -0.3,'max_y': 0.3,
+                        'min_z': -0.1,'max_z': 0.5,
+                        # negative=True 表示删除盒子内部点
+                        # False则只保留盒子内部点
+                        'negative': True
+                    }
+                ],
+                remappings=[
+                    ('input', '/livox/lidar_raw'),
+                    ('output', '/livox/lidar')
+                ],
+                extra_arguments=[{'use_intra_process_comms': True}]
+            )
         ],
-        remappings=[
-        ('/livox/lidar', '/livox/lidar_raw')
-        ]
+        output='screen' # 日志输出到终端
     )
 
     # ================= 时序依赖控制 (Event Handlers) =================
@@ -172,7 +215,7 @@ def generate_launch_description():
         delay_robot_controller_spawner,  # 时序控制2
         ekf_node,
         imu_node,
-        livox_lidar_node
+        lidar_and_filter_container
     ]
 
     # 根据命名空间是否为空来决定是否使用 PushRosNamespace 和 TF 重映射

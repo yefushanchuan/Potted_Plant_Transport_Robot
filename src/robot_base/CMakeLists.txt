@@ -19,7 +19,9 @@ find_path(LIBSERIAL_INCLUDE_DIR NAMES libserial/SerialPort.h)
 find_library(LIBSERIAL_LIBRARY NAMES serial)
 find_package(rclcpp_components REQUIRED)
 find_package(tf2 REQUIRED)
+find_package(tf2_ros REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
 # find_package(livox_ros_driver2 REQUIRED)
 find_package(eigen3_cmake_module REQUIRED)
 find_package(Eigen3 REQUIRED)
@@ -52,6 +54,33 @@ rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME} "rosidl_typ
 target_link_libraries(agrobot_hardware_interface ${LIBSERIAL_LIBRARY} ${cpp_typesupport_target})
 
 pluginlib_export_plugin_description_file(hardware_interface config/agrobot_hardware.xml)
+
+# =============== cropbox component node ==================================
+add_library(cropbox_component SHARED src/cropbox_component.cpp)
+
+target_include_directories(cropbox_component PRIVATE include)
+target_compile_features(cropbox_component PUBLIC cxx_std_17)
+
+ament_target_dependencies(cropbox_component 
+  rclcpp 
+  rclcpp_components 
+  sensor_msgs
+  tf2
+  tf2_ros
+  tf2_geometry_msgs
+  geometry_msgs
+)
+
+rclcpp_components_register_node(cropbox_component
+  PLUGIN "robot_base_utils::CropBoxComponent"
+  EXECUTABLE cropbox_node
+)
+
+install(TARGETS cropbox_component
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
+)
 
 # ================ laser filter node  ==================================
 add_library(laser_filter_node SHARED
