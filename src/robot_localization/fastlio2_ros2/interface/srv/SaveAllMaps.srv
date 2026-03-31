@@ -1,0 +1,9 @@
+string map_name          # 自定义名称，空则使用时间戳 YYYYMMDD_HHMMSS
+bool save_pgm true       # 是否保存PGM (2D栅格)
+bool save_pcd true       # 是否保存PCD (3D点云)
+bool save_patches false  # 是否保存patches
+---
+bool success
+string message
+string pgm_path          # PGM保存路径
+string pcd_path          # PCD保存路径

@@ -39,8 +39,6 @@ public:
 
     // ── Ground remover ───────────────────────────────────────────────────
     GroundRemoverParams gp;
-    gp.ransac_distance_thresh = get_parameter("ground.ransac_distance_thresh").as_double();
-    gp.ransac_max_iter        = get_parameter("ground.ransac_max_iter").as_int();
     gp.min_range              = get_parameter("ground.min_range").as_double();
     gp.max_range              = get_parameter("ground.max_range").as_double();
     gp.min_height             = get_parameter("ground.min_height").as_double();
@@ -107,8 +105,6 @@ private:
     declare_parameter("lidar_topic",              "/livox/lidar");
 
     // Ground remover
-    declare_parameter("ground.ransac_distance_thresh", 0.05);
-    declare_parameter("ground.ransac_max_iter",         100);
     declare_parameter("ground.min_range",               0.3);
     declare_parameter("ground.max_range",              15.0);
     declare_parameter("ground.min_height",             -2.0);

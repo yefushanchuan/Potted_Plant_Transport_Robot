@@ -9,12 +9,10 @@
     # 1. 地面过滤参数 (Ground Remover)
     # ==========================================
     ground:
-      ransac_distance_thresh: 0.04  # RANSAC判断为地面的距离阈值(m)。地面越不平，此值应稍大
-      ransac_max_iter: 100          # RANSAC算法的最大迭代次数
       min_range: 0.05               # 直通滤波：相对于 base_footprint 的最小X轴范围(m)，提前滤除过近的点云
       max_range: 3.0                # 直通滤波：相对于 base_footprint 的最大X轴范围(m)，提前滤除过远的点云
-      min_height: 0.02              # 直通滤波：相对于 base_footprint 的最小Z高度(m)，提前滤除高处物体
-      max_height: 0.5               # 直通滤波：相对于 base_footprint 的最大Z高度(m)，提前滤除高处物体
+      min_height: 0.03              # 直通滤波：相对于 base_footprint 的最小Z高度(m)，提前滤除高处物体
+      max_height: 0.25               # 直通滤波：相对于 base_footprint 的最大Z高度(m)，提前滤除高处物体
       min_width: -2.0               # 直通滤波：相对于 base_footprint 的最小Y轴限制(m)，过滤掉两侧过远的点云（如墙壁或家具）
       max_width:  2.0               # 直通滤波：相对于 base_footprint 的最大Y轴限制(m)，过滤掉两侧过远的点云（如墙壁或家具）
 
@@ -24,7 +22,7 @@
     cluster:
       tolerance: 0.10               # 聚类容差(m)，两点之间距离小于此值则认为属于同一个物体
       min_size: 100                 # 成为一个独立聚类簇所需的最少点云数量 (去噪)
-      max_size: 1000                # 一个聚类簇包含的最多点云数量，超过则被忽略 (过滤大块墙壁或大件家具)
+      max_size: 600                 # 一个聚类簇包含的最多点云数量，超过则被忽略 (过滤大块墙壁或大件家具)
 
     # ==========================================
     # 3. 盆栽分类与评分参数 (Plant Classifier)
