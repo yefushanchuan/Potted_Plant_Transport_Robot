@@ -123,7 +123,7 @@ def generate_launch_description():
 
     # Livox 激光雷达驱动
     # 作用: 驱动 Livox MID360 激光雷达，发布点云数据
-    # 输出: /livox/lidar（lidar_custom）
+    # 输出: /livox/lidar
     # 坐标系: 点云数据的 frame_id = 'front_laser_link'（需在 URDF 中定义该 link）
     livox_lidar_node = Node(
         package='livox_ros_driver2',
@@ -131,7 +131,7 @@ def generate_launch_description():
         name='livox_lidar_publisher',
         output='screen',
         parameters=[
-            {'xfer_format': 0}, # 0=标准点云格式 /livox/lidar, 1=Livox自定义格式 /livox/lidar_custom
+            {'xfer_format': 0}, # 0=标准点云格式 /livox/lidar, 1=Livox自定义格式 /livox/lidar
             {'multi_topic': 0}, # 0=单话题模式, 1=多话题模式（多雷达时使用）
             {'data_src': 0}, # 0=在线雷达数据, 1=从ROS bag读取, 2=从LVX文件读取
             {'publish_freq': 10.0}, # 点云发布频率 (Hz)
