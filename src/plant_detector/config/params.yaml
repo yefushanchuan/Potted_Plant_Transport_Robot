@@ -9,10 +9,10 @@
     # 1. 地面过滤参数 (Ground Remover)
     # ==========================================
     ground:
-      min_range: 0.05               # 直通滤波：相对于 base_footprint 的最小X轴范围(m)，提前滤除过近的点云
+      min_range: 0.0                # 直通滤波：相对于 base_footprint 的最小X轴范围(m)，提前滤除过近的点云
       max_range: 3.0                # 直通滤波：相对于 base_footprint 的最大X轴范围(m)，提前滤除过远的点云
       min_height: 0.03              # 直通滤波：相对于 base_footprint 的最小Z高度(m)，提前滤除高处物体
-      max_height: 0.25               # 直通滤波：相对于 base_footprint 的最大Z高度(m)，提前滤除高处物体
+      max_height: 0.25              # 直通滤波：相对于 base_footprint 的最大Z高度(m)，提前滤除高处物体
       min_width: -2.0               # 直通滤波：相对于 base_footprint 的最小Y轴限制(m)，过滤掉两侧过远的点云（如墙壁或家具）
       max_width:  2.0               # 直通滤波：相对于 base_footprint 的最大Y轴限制(m)，过滤掉两侧过远的点云（如墙壁或家具）
 
