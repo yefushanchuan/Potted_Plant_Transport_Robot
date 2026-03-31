@@ -36,16 +36,9 @@ public:
     }
 
 private:
-    void callback(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
-        auto output = std::make_unique<sensor_msgs::msg::PointCloud2>();
-        output->header = msg->header;
-        output->height = 1;
-        output->fields = msg->fields;
-        output->is_bigendian = msg->is_bigendian;
-        output->point_step = msg->point_step;
-        output->is_dense = msg->is_dense;
-        output->data.resize(msg->data.size()); 
-
+    private:
+    void callback(sensor_msgs::msg::PointCloud2::UniquePtr msg) {
+        
         int x_offset = -1, y_offset = -1, z_offset = -1;
         for (const auto& field : msg->fields) {
             if (field.name == "x") x_offset = field.offset;
@@ -74,14 +67,14 @@ private:
         size_t valid_points = 0;
         const size_t point_step = msg->point_step;
         const size_t num_points = msg->width * msg->height;
-        const uint8_t* in_data = msg->data.data();
-        uint8_t* out_data = output->data.data();
+        
+        uint8_t* data_ptr = msg->data.data();
 
         for (size_t i = 0; i < num_points; ++i) {
             float x, y, z;
-            std::memcpy(&x, in_data + i * point_step + x_offset, sizeof(float));
-            std::memcpy(&y, in_data + i * point_step + y_offset, sizeof(float));
-            std::memcpy(&z, in_data + i * point_step + z_offset, sizeof(float));
+            std::memcpy(&x, data_ptr + i * point_step + x_offset, sizeof(float));
+            std::memcpy(&y, data_ptr + i * point_step + y_offset, sizeof(float));
+            std::memcpy(&z, data_ptr + i * point_step + z_offset, sizeof(float));
 
             float check_x = x, check_y = y, check_z = z;
 
@@ -100,16 +93,19 @@ private:
             bool keep = negative_ ? !in_box : in_box;
 
             if (keep) {
-                std::memcpy(out_data + valid_points * point_step, 
-                            in_data + i * point_step, point_step);
+                if (valid_points != i) {
+                    std::memcpy(data_ptr + valid_points * point_step, 
+                                data_ptr + i * point_step, point_step);
+                }
                 valid_points++;
             }
         }
 
-        output->width = valid_points;
-        output->row_step = valid_points * point_step;
-        output->data.resize(output->row_step);
-        pub_->publish(std::move(output));
+        msg->width = valid_points;
+        msg->row_step = valid_points * point_step;
+        msg->data.resize(msg->row_step);
+
+        pub_->publish(std::move(msg));
     }
 
     double x_min_, x_max_, y_min_, y_max_, z_min_, z_max_;
