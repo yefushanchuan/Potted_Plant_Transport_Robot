@@ -123,7 +123,7 @@ def generate_launch_description():
 
     # Livox 激光雷达驱动
     # 作用: 驱动 Livox MID360 激光雷达，发布点云数据
-    # 输出: /livox/lidar
+    # 输出: /livox/lidar_raw
     # 坐标系: 点云数据的 frame_id = 'front_laser_link'（需在 URDF 中定义该 link）
     livox_lidar_node = Node(
         package='livox_ros_driver2',
@@ -139,10 +139,36 @@ def generate_launch_description():
             {'frame_id': 'front_laser_link'}, # 点云数据的坐标系ID，必须与 URDF 中的 link 名称一致
             {'user_config_path': PathJoinSubstitution([
                 FindPackageShare("livox_ros_driver2"), "config", "MID360_config.json"
-            ])}, # 雷达硬件配置文件路径（包含IP、端口等参数）
+            ])} # 雷达硬件配置文件路径（包含IP、端口等参数）
+        ],
+        remappings=[
+        ('/livox/lidar', '/livox/lidar_raw') # 将原始点云话题重映射为 /livox/lidar_raw
         ]
     )
 
+    # CropBox 点云过滤节点
+    # 作用: 使用 CropBox 滤波器去除机器人自身车体点云
+    # 输入: /livox/lidar_raw（原始激光雷达点云）
+    # 输出: /livox/lidar（去除车体后的干净点云，供下游算法使用）
+    # 坐标系: 继承输入点云的 frame_id（front_laser_link）
+    cropbox_node = Node(
+        package='pcl_ros',
+        executable='crop_box_node',
+        name='livox_crop_box',
+        output='screen',
+        parameters=[
+            {
+                'min_x': -0.4, 'max_x': 0.4,  # 机器人车体前后范围 (m)
+                'min_y': -0.3, 'max_y': 0.3,  # 机器人车体左右范围 (m)
+                'min_z': -0.5, 'max_z': 0.2,  # 机器人车体上下范围 (m)
+                'negative': True              # True: 删除框内(车体)点，保留框外点
+            }
+        ],
+        remappings=[
+            ('input', '/livox/lidar_raw'),   # 订阅原始雷达数据
+            ('output', '/livox/lidar')       # 发布过滤后的点云
+        ]
+    )
     # ================= 时序依赖控制 (Event Handlers) =================
     
     # 1. 只有当 ros2_control_node 启动后，才去启动 joint_state_broadcaster
@@ -169,7 +195,8 @@ def generate_launch_description():
         delay_robot_controller_spawner,  # 时序控制2
         ekf_node,
         imu_node,
-        livox_lidar_node
+        livox_lidar_node,
+        cropbox_node
     ]
 
     # 根据命名空间是否为空来决定是否使用 PushRosNamespace 和 TF 重映射
