@@ -22,11 +22,11 @@ float PlantClassifier::classify(const ClusterResult & c) const
   
   // ── 1. 基础尺寸过滤 (硬拒绝) ──────────────────────────────────────────
   if (h < params_.min_height || h > params_.max_height) return 0.0f;
-  if (w < params_.min_width  || w > params_.max_width)  return 0.0f;
-  if (d < params_.min_depth  || d > params_.max_depth)  return 0.0f;
+  if (actual_w < params_.min_width || actual_w > params_.max_width) return 0.0f;
+  if (actual_d < params_.min_depth || actual_d > params_.max_depth) return 0.0f;  
 
   // ── 2. 单面视角特征提取 (2.5D 逻辑) ──────────────────────────────────
-  float front_aspect = h / std::max(w, 0.001f); // 数学安全保护
+  float front_aspect = h / std::max(actual_w, 0.001f); // 数学安全保护
   if (front_aspect < params_.min_aspect_ratio || front_aspect > params_.max_aspect_ratio) return 0.0f;
 
   // ── 3. 评分系统 (Soft Scoring 0~1) ───────────────────────────────────
@@ -45,6 +45,8 @@ float PlantClassifier::classify(const ClusterResult & c) const
   float score = params_.weight_height * h_score
               + params_.weight_aspect * asp_score
               + params_.weight_density * density_score;
+
+  score = 0.8f + 0.2f * std::sqrt(score);
 
   return std::clamp(score, 0.0f, 1.0f);
 }
