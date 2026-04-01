@@ -14,8 +14,19 @@ out_dir="${base_dir}/${timestamp}"
 # 创建文件夹
 mkdir -p "${out_dir}"
 
-# 调用 ROS 2 服务保存地图
 echo "Requesting Map Save to: ${out_dir} ..."
-ros2 service call /pgo/save_maps interface/srv/SaveMaps "{file_path: '${out_dir}', save_patches: false}"
 
-echo "✅ Map saved successfully to: ${out_dir}"
+# 调用 ROS 2 服务并捕获输出
+RESPONSE=$(ros2 service call /pgo/save_maps interface/srv/SaveMaps "{file_path: '${out_dir}', save_patches: false}")
+
+# 打印出服务返回的信息
+echo "$RESPONSE"
+
+# 判断返回值中是否包含 success=True
+if [[ "$RESPONSE" == *"success=True"* ]]; then
+    echo "✅ Map saved successfully to: ${out_dir}"
+else
+    echo "❌ Failed to save map! Reason: Map backend returned an error (e.g., NO POSES)."
+    # 如果保存失败，可以选择把刚才建的空文件夹删掉
+    rm -rf "${out_dir}"
+fi
