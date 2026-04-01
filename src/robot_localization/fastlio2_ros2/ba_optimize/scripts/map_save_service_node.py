@@ -18,10 +18,23 @@ class MapSaveServiceNode(Node):
     def __init__(self):
         super().__init__('map_save_service_node')
         
-        # 基础路径
-        self.base_path = '/home/qiaowen/rpp_ws/src/robot_localization/fastlio2_ros2/map'
+        # 自动识别当前用户的家目录
+        home_dir = os.path.expanduser('~')
+        # 你的工程根目录名字
+        project_name = "Potted_Plant_Transport_Robot"
+        
+        # 基础路径：/home/zx/Potted_Plant_Transport_Robot/map
+        self.base_path = os.path.join(home_dir, project_name, 'map')
+        
+        # 拼接 pgm 和 pcd 目录
         self.pgm_base = os.path.join(self.base_path, 'pgm')
         self.pcd_base = os.path.join(self.base_path, 'pcd')
+
+        # 确保这些目录确实存在，不存在就创建
+        os.makedirs(self.pgm_base, exist_ok=True)
+        os.makedirs(self.pcd_base, exist_ok=True)
+        
+        self.get_logger().info(f"地图保存服务已启动。基础路径: {self.base_path}")
         
         # 创建服务
         self.srv = self.create_service(

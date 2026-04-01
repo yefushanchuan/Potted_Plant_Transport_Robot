@@ -70,7 +70,7 @@ init_roll: 0.0
 init_pitch: 0.0
 init_yaw: 0.0
 
-map_filename: "/home/qiaowen/rpp_ws/src/robot_bringup/pcd/map.pcd"   #点云地图名称(使用绝对路径)
+map_filename: "/home/zx/Potted_Plant_Transport_Robot/map/pcd/map.pcd"   #点云地图名称(使用绝对路径)
 map_pub_topic: "/pcd_map"                      #发布全局pcd点云地图话题数据
 
 # imu_topic: "/livox/imu"                        #IMU话题

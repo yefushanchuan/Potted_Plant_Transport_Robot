@@ -30,10 +30,14 @@ from launch_ros.substitutions import FindPackageShare
 
 
 # ========== 地图目录配置 ==========
-# 默认地图目录（可以修改为您的地图存放路径）
-DEFAULT_MAP_DIR = "/home/qiaowen/rpp_ws/src/robot_localization/fastlio2_ros2/map/pgm"
-# 备用固定地图路径（如果找不到最新地图则使用此路径）
-FALLBACK_MAP_PATH = "/home/qiaowen/bdh_route_ws/src/robot_localization/fastlio2_ros2/map/pgm/20260127_162908/map.yaml"
+# 获取当前用户的家目录（即 /home/zx）
+HOME = os.path.expanduser('~')
+# 动态拼接你的工作空间和地图目录
+WORKSPACE_NAME = "Potted_Plant_Transport_Robot"
+DEFAULT_MAP_DIR = os.path.join(HOME, WORKSPACE_NAME, "map", "pgm")
+
+# 备用固定地图路径（可以指向一个确定存在的初始图）
+FALLBACK_MAP_PATH = os.path.join(DEFAULT_MAP_DIR, "default/map.yaml")
 
 
 def _find_latest_map(map_dir):
