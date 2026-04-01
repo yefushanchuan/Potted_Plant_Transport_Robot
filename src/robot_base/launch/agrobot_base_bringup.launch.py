@@ -7,7 +7,8 @@ from launch.event_handlers import OnProcessStart, OnProcessExit
 from launch.substitutions import Command, FindExecutable, LaunchConfiguration, PathJoinSubstitution
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
-from launch_ros.actions import Node, PushRosNamespace, SetRemap
+from launch_ros.actions import Node, PushRosNamespace, SetRemap, ComposableNodeContainer
+from launch_ros.descriptions import ComposableNode
 
 def generate_launch_description():
     """启动 robot_base 相关底盘/IMU/EKF 节点."""
