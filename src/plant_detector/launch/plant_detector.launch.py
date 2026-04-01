@@ -2,6 +2,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch.launch_description_sources import PythonLaunchDescriptionSource
+
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
@@ -22,6 +23,10 @@ def generate_launch_description():
         description="Path to the YAML parameter file",
     )
 
+    rviz_config = PathJoinSubstitution(
+        [pkg, "config", "rviz", "plant_detect_result.rviz"]
+    )
+
     # ── Node ───────────────────────────────────────────────────────────────
     detector_node = Node(
         package="plant_detector",
@@ -37,6 +42,15 @@ def generate_launch_description():
             # ("/livox/lidar", "/your/custom/topic"),
         ],
     )
+
+    rviz_node = Node(
+        package="rviz2",
+        executable="rviz2",
+        name="rviz2",
+        output="screen",
+        arguments=["-d", rviz_config],
+    )
+
     # ── Include launch ─────────────────────────────────────────────
     robot_base_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -56,4 +70,5 @@ def generate_launch_description():
         params_file_arg,
         detector_node,
         robot_base_launch,
+        rviz_node,
     ])
