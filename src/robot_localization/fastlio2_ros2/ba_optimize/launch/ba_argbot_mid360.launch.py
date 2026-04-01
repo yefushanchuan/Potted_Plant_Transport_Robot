@@ -10,7 +10,6 @@ def generate_launch_description():
     use_sim_time = LaunchConfiguration("use_sim_time", default="false")
     play_bag = LaunchConfiguration("play_bag", default="false")
     bag_path = LaunchConfiguration("bag_path", default="")
-    enable_tilt_compensator = LaunchConfiguration("enable_tilt_compensator", default="false")
 
     rviz_cfg = PathJoinSubstitution(
         [FindPackageShare("ba_optimize"), "rviz", "BA.rviz"]
@@ -40,27 +39,22 @@ def generate_launch_description():
                 default_value="",
                 description="rosbag2 folder or .db3 path when play_bag:=true",
             ),
-            DeclareLaunchArgument(
-                "enable_tilt_compensator",
-                default_value="false",
-                description="Enable robot_base tilt_compensator (default: false)",
-            ),
             SetLaunchConfiguration(
                 "use_sim_time",
                 "true",
                 condition=IfCondition(play_bag),
             ),
-            # IncludeLaunchDescription(
-            #     PythonLaunchDescriptionSource(
-            #         PathJoinSubstitution(
-            #             [FindPackageShare("robot_base"), "launch", "agrobot_base_bringup.launch.py"]
-            #         )
-            #     ),
-            #     launch_arguments={
-            #         "use_sim_time": use_sim_time,
-            #         "enable_tilt_compensator": enable_tilt_compensator,
-            #     }.items(),
-            # ),
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    PathJoinSubstitution(
+                        [FindPackageShare("robot_base"), "launch", "agrobot_base_bringup.launch.py"]
+                    )
+                ),
+                launch_arguments={
+                    "use_sim_time": use_sim_time,
+                    "use_ekf": "false",  # 不启动 EKF，直接使用 IMU 数据
+                }.items(),
+            ),
             launch_ros.actions.Node(
                 package="fastlio2",
                 namespace="fastlio2",

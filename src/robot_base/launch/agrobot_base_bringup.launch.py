@@ -9,6 +9,7 @@ from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 from launch_ros.actions import Node, PushRosNamespace, SetRemap, ComposableNodeContainer
 from launch_ros.descriptions import ComposableNode
+from launch.conditions import IfCondition
 
 def generate_launch_description():
     """启动 robot_base 相关底盘/IMU/EKF 节点."""
@@ -17,12 +18,13 @@ def generate_launch_description():
 
     declared_arguments =[
         DeclareLaunchArgument("use_sim_time", default_value="false", description="Use sim time if true"),
-        DeclareLaunchArgument("imu_topic", default_value="imu", description="The topic name for the IMU"),
         DeclareLaunchArgument("namespace", default_value="", description="ROS2 namespace (optional)"),
+        DeclareLaunchArgument("use_ekf",default_value="true",description="Whether to launch EKF node"),
     ]
 
     use_sim_time = LaunchConfiguration("use_sim_time")
     namespace = LaunchConfiguration("namespace")
+    use_ekf = LaunchConfiguration("use_ekf")
 
     imu_config = os.path.join(
         get_package_share_directory("hipnuc_imu"), "config", "hipnuc_config.yaml"
@@ -107,7 +109,8 @@ def generate_launch_description():
         name='ekf_filter_node',
         output='screen',
         parameters=[ekf_config_path, base_params],
-        remappings=[('odometry/filtered', 'odom')]
+        remappings=[('odometry/filtered', 'odom')],
+        condition=IfCondition(use_ekf)
     )
 
     # IMU 数据发布
