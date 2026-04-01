@@ -26,11 +26,11 @@ public:
         tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
         sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
-            "input", rclcpp::SensorDataQoS(),
+            "input", 10,
             std::bind(&CropBoxComponent::callback, this, std::placeholders::_1));
             
         pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(
-            "output", rclcpp::SensorDataQoS());
+            "output", 10);
             
         RCLCPP_INFO(this->get_logger(), "Custom TF-Aware CropBox Component Started!");
     }
