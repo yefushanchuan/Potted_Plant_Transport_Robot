@@ -16,6 +16,6 @@ mkdir -p "${out_dir}"
 
 # 调用 ROS 2 服务保存地图
 echo "Requesting Map Save to: ${out_dir} ..."
-ros2 service call /ba_optimize/save_maps interface/srv/SaveMaps "{file_path: '${out_dir}', save_patches: false}"
+ros2 service call /pgo/save_maps interface/srv/SaveMaps "{file_path: '${out_dir}', save_patches: false}"
 
 echo "✅ Map saved successfully to: ${out_dir}"
