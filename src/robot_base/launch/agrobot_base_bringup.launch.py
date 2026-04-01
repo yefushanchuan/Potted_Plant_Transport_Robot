@@ -177,7 +177,7 @@ def generate_launch_description():
                         'min_z': -0.1,'max_z': 0.65,
                         # negative=True 表示删除盒子内部点
                         # False则只保留盒子内部点
-                        'negative': False
+                        'negative': True
                     }
                 ],
                 remappings=[
