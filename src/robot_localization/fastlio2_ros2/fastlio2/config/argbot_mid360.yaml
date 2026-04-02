@@ -11,7 +11,7 @@ lidar_min_range: 0.2 #雷达范围，单位：m
 lidar_max_range: 40.0
 lidar_z_min: -100.0   #Z轴最小高度过滤，单位：m（负值表示向下）(机械图纸结构获得)
 lidar_z_max: 100.0    #Z轴最大高度过滤，单位：m（正值表示向上）
-scan_down_sampling_rate: 0.1 #输入雷达点云采样，单位：m
+scan_down_sampling_rate: 0.1 #输入雷达点云采样
 map_resolution: 0.1  #kd树地图体素降采样，单位：m
 
 cube_len: 30 #局部地图的立方体边长
