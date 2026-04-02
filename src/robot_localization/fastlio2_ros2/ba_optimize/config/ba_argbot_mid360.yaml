@@ -6,9 +6,9 @@ map_frame: map
 
 local_frame: odom
 
-key_pose_delta_deg: 10.0            # 关键帧角度变化阈值（单位：度），超过此角度变化会生成新的关键帧
+key_pose_delta_deg: 5.0             # 关键帧角度变化阈值（单位：度），超过此角度变化会生成新的关键帧
 
-key_pose_delta_trans: 3.0           # 关键帧平移变化阈值（单位：米），超过此距离变化会生成新的关键帧
+key_pose_delta_trans: 0.5           # 关键帧平移变化阈值（单位：米），超过此距离变化会生成新的关键帧
 
 loop_search_radius: 30.0            # 回环检测时的搜索半径（单位：米），只在该半径内查找可能的回环候选帧
 
