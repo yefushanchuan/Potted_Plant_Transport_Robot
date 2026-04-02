@@ -93,7 +93,7 @@ def generate_launch_description():
                     ("tf", "/tf"),
                     ("tf_static", "/tf_static"),
                 ],
-                arguments=["-d", rviz_cfg.perform(launch.LaunchContext())],
+                arguments=["-d", rviz_cfg],
                 parameters=[
                     {"use_sim_time": use_sim_time}
                 ],
