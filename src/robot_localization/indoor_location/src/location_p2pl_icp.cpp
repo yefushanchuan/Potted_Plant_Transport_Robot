@@ -431,9 +431,25 @@ public:
         pc_map_pub_ = nh_->create_publisher<sensor_msgs::msg::PointCloud2>(map_pub_topic_, rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable()); // 发布全局pcd点云地图话题数据
         RCLCPP_INFO(nh_->get_logger(), "map_pub_topic_: %s", map_pub_topic_.c_str());
 
-        map_file_path = config["map_filename"].as<std::string>(); // 地图路径
+        std::string ros_map_filename;
+        nh_->declare_parameter<std::string>("map_filename", ""); // 声明参数，默认值为空
+        nh_->get_parameter("map_filename", ros_map_filename);
+
+        // 如果 Launch 文件或终端传了 map_filename，则覆盖 YAML 配置
+        if (!ros_map_filename.empty()) {
+            map_file_path = ros_map_filename;
+            RCLCPP_INFO(nh_->get_logger(), "Loc: [Launch Overwrite] map_file_path: %s", map_file_path.c_str());
+        } 
+        else {
+            // 回退到读取 YAML 文件配置
+            if (config["map_filename"]) {
+                map_file_path = config["map_filename"].as<std::string>();
+                RCLCPP_INFO(nh_->get_logger(), "Loc: [YAML Config] map_file_path: %s", map_file_path.c_str());
+            } else {
+                RCLCPP_ERROR(nh_->get_logger(), "Loc: No map_filename provided in Launch args or YAML config!");
+            }
+        }
         map_cloud.reset(new pcl::PointCloud<PointType>);
-        RCLCPP_INFO(nh_->get_logger(), "Loc: map_file_path file: %s", map_file_path.c_str());
 
         // 直接加载为PointType类型，避免类型转换循环
         if (pcl::io::loadPCDFile(map_file_path.c_str(), *map_cloud) == -1)
