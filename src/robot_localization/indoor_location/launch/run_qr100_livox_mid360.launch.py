@@ -14,7 +14,6 @@ def generate_launch_description():
 
     return LaunchDescription([
         # Declare launch arguments
-        DeclareLaunchArgument('package', default_value='indoor_location', description='Package name'),
         DeclareLaunchArgument('rviz_config_path', default_value=[FindPackageShare('indoor_location'), '/config/rviz/livox_rviz_config.rviz'], description='RViz config path'),
         # Run RViz
         Node(
