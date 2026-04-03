@@ -8,7 +8,7 @@ from launch_ros.substitutions import FindPackageShare
 from launch_ros.actions import Node
 
 def _resolve_map_path(raw_map_file, raw_map_dir, raw_map_name):
-    """仅仅负责拼接地图的字符串路径，不操作任何文件！"""
+    """仅仅负责拼接地图路径"""
     map_file = (raw_map_file or "").strip()
     map_dir = (raw_map_dir or "").strip()
     map_name = (raw_map_name or "").strip()
@@ -29,20 +29,40 @@ def _resolve_map_path(raw_map_file, raw_map_dir, raw_map_name):
     return ""
 
 def _launch_setup(context):
-    """解析 LaunchConfiguration 后创建节点"""
+    """在此动态推断参数并生成所有节点"""
     map_file = LaunchConfiguration("map_file").perform(context)
     map_dir = LaunchConfiguration("map_dir").perform(context)
     map_name = LaunchConfiguration("map_name").perform(context)
-    use_sim_time = LaunchConfiguration("use_sim_time").perform(context).lower() == 'true'
+    bag_path = LaunchConfiguration("bag_path").perform(context).strip()
     
+    # 获取 use_sim_time 参数
+    use_sim_time_arg = LaunchConfiguration("use_sim_time").perform(context).lower()
+    
+    # 智能推断
+    if use_sim_time_arg == 'auto':
+        # 如果是 auto：有 bag_path 就是 True，没有 bag_path 就是 False
+        use_sim_time = bool(bag_path) 
+    else:
+        # 否则尊重用户的强制设定 (true 或 false)
+        use_sim_time = (use_sim_time_arg == 'false')
+
     pkg_share = get_package_share_directory("indoor_location")
-    location_config_path = os.path.join(pkg_share, "config", "qr100_config_livox_mid360.yaml")
+    location_config_path = os.path.join(pkg_share, "config", "argbot_mid360.yaml")
     eskf_cfg_path = os.path.join(pkg_share, "config", "eskf_cfg.yaml")
     
-    # 得到最终的地图绝对路径字符串
     resolved_map_file = _resolve_map_path(map_file, map_dir, map_name)
 
     return[
+        Node(
+            package='rviz2', 
+            executable='rviz2', 
+            name='rviz2',
+            arguments=['-d', LaunchConfiguration('rviz_config_path')],
+            output='screen',
+            parameters=[{'use_sim_time': use_sim_time}],
+        ),
+        
+        # 定位核心节点
         Node(
             package='indoor_location',
             executable='location_node',
@@ -53,7 +73,7 @@ def _launch_setup(context):
                 "config_file": location_config_path,
                 "eskf_cfg_file": eskf_cfg_path,
                 "use_sim_time": use_sim_time,
-                "map_filename": resolved_map_file # <--- C++ 支持后，直接原生地传参！
+                "map_filename": resolved_map_file
             }],
             arguments=['--ros-args', '--log-level', 'WARN'],
         )
@@ -61,25 +81,18 @@ def _launch_setup(context):
 
 def generate_launch_description():
     return LaunchDescription([
-        DeclareLaunchArgument('use_sim_time', default_value='true'),
-        DeclareLaunchArgument('bag_path', default_value=''), # 默认为空，不传则不播放
+        DeclareLaunchArgument('use_sim_time', default_value='auto', 
+                              description="true/false/auto. If 'auto', becomes true when bag_path is set."),
+        DeclareLaunchArgument('bag_path', default_value=''), 
         DeclareLaunchArgument('map_file', default_value=''),
         DeclareLaunchArgument('map_dir', default_value=os.environ.get('ROBOT_MAP_DIR', '')),
         DeclareLaunchArgument('map_name', default_value='map.pcd'),
         DeclareLaunchArgument('rviz_config_path', default_value=PathJoinSubstitution([FindPackageShare('indoor_location'), 'config/rviz/livox_rviz_config.rviz'])),
-
-        # Rviz
-        Node(
-            package='rviz2', executable='rviz2', name='rviz2',
-            arguments=['-d', LaunchConfiguration('rviz_config_path')],
-            output='screen',
-            parameters=[{'use_sim_time': LaunchConfiguration('use_sim_time')}],
-        ),
         
-        # 启动核心节点
+        # 统一启动节点
         OpaqueFunction(function=_launch_setup),
 
-        # 播放 Rosbag，仅当终端传了 bag_path 时激活
+        # 播放 Rosbag
         ExecuteProcess(
             condition=IfCondition(
                 python_expression=["'", LaunchConfiguration('bag_path'), "' != ''"]
