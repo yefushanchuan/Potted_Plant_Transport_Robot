@@ -45,23 +45,19 @@ pose_refine_static_v_th: 0.03
 pose_refine_static_w_th: 0.05
 pose_refine_tf_lookup_timeout_sec: 0.08
 
-# lidar2base_x: 0.206                           #lidar2base transform，单位米
-lidar2base_x: 0.150                           #lidar2base transform，单位米
-lidar2base_y: 0.00
-lidar2base_z: 0.138
+lidar2base_x: 0.084                           #lidar2base transform，单位米
+lidar2base_y: -0.241
+lidar2base_z: 0.2475
 lidar2base_roll: 0.0                          #单位弧度
-lidar2base_pitch: 0.0
+lidar2base_pitch: 0.785398                    #对应xacro中的 M_PI/4 (即45度)
 lidar2base_yaw: 0.0
 
-# imu2base_x: 0.056                             #imu2base transform，单位米
-imu2base_x: 0.0                             #imu2base transform，单位米
+imu2base_x: -0.493                            #imu2base transform，单位米
 imu2base_y: 0.00
-imu2base_z: 0.072
+imu2base_z: 0.1575
 imu2base_roll: 0.0                            #单位弧度
 imu2base_pitch: 0.0
 imu2base_yaw: 0.0
-
-
 
 init_x: 0.0                                   #定位系统输入的初始化位姿
 init_y: 0.0
