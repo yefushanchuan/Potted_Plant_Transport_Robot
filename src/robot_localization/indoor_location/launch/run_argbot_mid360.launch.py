@@ -44,7 +44,7 @@ def _launch_setup(context):
         use_sim_time = bool(bag_path) 
     else:
         # 否则尊重用户的强制设定 (true 或 false)
-        use_sim_time = (use_sim_time_arg == 'false')
+        use_sim_time = (use_sim_time_arg == 'true')
 
     pkg_share = get_package_share_directory("indoor_location")
     location_config_path = os.path.join(pkg_share, "config", "argbot_mid360.yaml")
@@ -95,7 +95,7 @@ def generate_launch_description():
         # 播放 Rosbag
         ExecuteProcess(
             condition=IfCondition(
-                PythonExpression["'", LaunchConfiguration('bag_path'), "' != ''"]
+                PythonExpression(["'", LaunchConfiguration('bag_path'), "' != ''"])
             ),
             cmd=['ros2', 'bag', 'play', LaunchConfiguration('bag_path'), '--clock', '--rate', '1.0'],
             output='screen'
