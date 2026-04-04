@@ -3,9 +3,3 @@ build/
 install/
 log/
 .vscode/
-__pycache__/
-src/base_driver/vanjee_lidar/vanjee_lidar_sdk/src/vanjee_driver/cmake/vanjee_driverConfig.cmake
-AGENTS.md
-.codex/
-src/realsense2_rgbd_plugin/
-.cache/
