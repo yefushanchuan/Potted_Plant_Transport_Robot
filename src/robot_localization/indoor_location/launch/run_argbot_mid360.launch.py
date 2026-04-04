@@ -2,7 +2,7 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess, OpaqueFunction
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression
 from launch.conditions import IfCondition
 from launch_ros.substitutions import FindPackageShare
 from launch_ros.actions import Node
@@ -95,7 +95,7 @@ def generate_launch_description():
         # 播放 Rosbag
         ExecuteProcess(
             condition=IfCondition(
-                python_expression=["'", LaunchConfiguration('bag_path'), "' != ''"]
+                PythonExpression["'", LaunchConfiguration('bag_path'), "' != ''"]
             ),
             cmd=['ros2', 'bag', 'play', LaunchConfiguration('bag_path'), '--clock', '--rate', '1.0'],
             output='screen'
