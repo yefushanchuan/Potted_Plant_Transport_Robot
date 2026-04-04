@@ -7,15 +7,13 @@ set(CMAKE_CXX_STANDARD 17)
 # 设置 CMP0074 策略以消除警告
 cmake_policy(SET CMP0074 NEW)
 
-# ==================== 新增：性能核弹级优化 ====================
 # 强制开启 Release 模式
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build." FORCE)
 endif()
 
 # -O3: 最高级别优化
-# -march=native: 针对你的 i7-1195G7 开启特有的 AVX512 向量化指令集，极大加速 PCL 和 Eigen 计算！
-set(CMAKE_CXX_FLAGS "-O3 -Wall -march=native ${CMAKE_CXX_FLAGS}")
+set(CMAKE_CXX_FLAGS "-O3 -Wall ${CMAKE_CXX_FLAGS}")
 
 # 查找 ROS 2 的依赖
 find_package(ament_cmake REQUIRED)
