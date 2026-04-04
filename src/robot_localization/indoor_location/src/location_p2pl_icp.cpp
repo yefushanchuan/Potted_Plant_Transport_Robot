@@ -413,9 +413,9 @@ public:
         // 初始化订阅，发布器（直接订阅原始Livox话题）
         std::string lidar_topic = config["lidar_topic"].as<std::string>();
 
-        // 防止算法处理慢导致丢帧，同时不会引入过大延迟,LiDAR队列=3: 10Hz频率，算法处理50-80ms，队列3可缓存300ms
+        // 强制队列长度为 1，只保留最新的一帧点云
         cloud_sub_ = nh_->create_subscription<sensor_msgs::msg::PointCloud2>(
-            lidar_topic, 10, std::bind(&location::robosense_cb, this, std::placeholders::_1));
+            lidar_topic, rclcpp::QoS(rclcpp::KeepLast(1)), std::bind(&location::robosense_cb, this, std::placeholders::_1));
         
         std::string cmd_topic = config["cmd_topic"].as<std::string>();
         cmd_sub_ = nh_->create_subscription<std_msgs::msg::String>(cmd_topic, 10, std::bind(&location::command_cb, this, std::placeholders::_1));
