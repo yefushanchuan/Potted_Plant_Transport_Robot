@@ -422,8 +422,13 @@ public:
 
         // 单线程executor模式,IMU队列=200: 200Hz频率,队列200可缓存1秒数据,应对处理线程短时繁忙
         std::string imu_topic = config["imu_topic"].as<std::string>();
+        
+        // 自定义 QoS: 队列长度200，并显式指定 BEST_EFFORT 以匹配底层硬件驱动
+        rclcpp::QoS imu_qos(200);
+        imu_qos.best_effort();
+        
         imu_sub_ = nh_->create_subscription<sensor_msgs::msg::Imu>(
-            imu_topic, 200, std::bind(&location::imu_cb, this, std::placeholders::_1));
+            imu_topic, imu_qos, std::bind(&location::imu_cb, this, std::placeholders::_1));
 
         init_pose_sub_ = nh_->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>("/initialpose", 1, std::bind(&location::initpose_cb, this, std::placeholders::_1)); // 手动重定位订阅
 
