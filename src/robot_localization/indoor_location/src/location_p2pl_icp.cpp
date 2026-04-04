@@ -1036,11 +1036,28 @@ public:
                 RCLCPP_WARN(nh_->get_logger(), "[LiDAR回调] 消息乱序,清空缓冲");
                 std::deque<std::pair<double, pcl::PointCloud<PointType>::Ptr>>().swap(
                     m_state_data.lidar_buffer);
+                    m_state_data.lidar_pushed = false; // 乱序时也必须重置标志位
             }
             
             m_state_data.lidar_buffer.emplace_back(msg_timestamp, processed_cloud);
             m_state_data.last_lidar_time = msg_timestamp;
             
+            // 内部防积压机制: 如果积压超过2帧，强制丢弃历史帧，保留最新一帧，重置同步标志
+            if (m_state_data.lidar_buffer.size() > 2) {
+                // 1. 备份最新的一帧
+                auto latest_cloud = m_state_data.lidar_buffer.back(); 
+                // 2. 清空所有积压历史帧
+                m_state_data.lidar_buffer.clear();                    
+                // 3. 把最新的一帧放回去
+                m_state_data.lidar_buffer.push_back(latest_cloud);    
+                
+                // 4. 重置同步标志，强迫 syncPackage 放弃老帧，重新打包这帧最新数据！
+                m_state_data.lidar_pushed = false; 
+                
+                RCLCPP_WARN_THROTTLE(nh_->get_logger(), *nh_->get_clock(), 2000, 
+                                     "🚨 算法处理慢于接收，触发内部防积压机制！已强制丢弃历史帧，保证绝对实时！");
+            }
+
             // 记录处理时间用于诊断
             RCLCPP_DEBUG(nh_->get_logger(), "[LiDAR回调] 点云处理耗时=%.1fms", process_time_ms);
         }

@@ -1,6 +1,6 @@
 ###############cloud preprocess############
 lidar_type: "livox"        #雷达类型: "livox" 或 "rs16"
-filter_leaf_size: 0.6      #输入定位系统的点云体素滤波体素大小
+filter_leaf_size: 0.4      #输入定位系统的点云体素滤波体素大小
 min_range: 0.6             #建图盲区blind用的就是0.6，相当于球面过滤的半径0.6米
 max_range: 30.0
 N_SCANS: 4
@@ -20,7 +20,7 @@ pub_cloud_topic: "/deskew_cloud"              #去畸变点云话题
 use_reloc: true                               #是否使用重定位
 imu_scale: 9.81                               #IMU加速度计比例因子
 reloc_threshold: 0.51                         #重定位阈值
-map_filtr_leaf_size: 0.5                      #定位线程使用的全局地图滤波体素大小，使用配p2picp算法不能太大，不然拟合平面内找不到邻域点（p2picp 0.3,ndt 0.5）
+map_filtr_leaf_size: 0.3                      #定位线程使用的全局地图滤波体素大小，使用配p2picp算法不能太大，不然拟合平面内找不到邻域点（p2picp 0.3,ndt 0.5）
 enable_undistort: true                        #是否启用点云去畸变功能（使用IMU进行运动补偿）
 
 map_frame    : "map"                          #发布定位系统tf发布所需的坐标系
