@@ -91,7 +91,9 @@ private:
   double yaw_offset_;
   double yaw_resolution_;
   geometry_msgs::msg::Pose initial_pose_;
+  geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr latest_rviz_guess_;
 
+  bool wait_for_new_cloud_ = false; 
   bool is_ready_;
   bool first_scan_;
   bool is_first_time_transform;

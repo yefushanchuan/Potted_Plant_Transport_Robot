@@ -179,58 +179,83 @@ IcpNode::~IcpNode() {
   }
 }
 
+void IcpNode::initialPoseCallback(
+    const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg) {
+  
+  std::lock_guard<std::mutex> lock(mutex_);
+  latest_rviz_guess_ = msg;
+  wait_for_new_cloud_ = true; // 打开阀门
+  
+  RCLCPP_INFO(this->get_logger(), "Received Initial Pose request. Waiting for the NEXT Lidar frame...");
+}
+
 void IcpNode::pointcloudCallback(
     const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
   
-  // 更新最新的雷达帧，用于随时可能的对齐
-  pcl::fromROSMsg(*msg, *cloud_in_);
-  
+  // 1. 处理第一次扫描时的 auto_init 逻辑
   if (first_scan_) {
-    // 【如果开启了自动初始化，当作收到了一次虚拟的 RViz 点击】
-    if (auto_init_) {
-      RCLCPP_INFO(this->get_logger(), "Auto-init is ON! Using prior pose from YAML to align...");
-      
-      auto pose_msg = std::make_shared<geometry_msgs::msg::PoseWithCovarianceStamped>();
-      pose_msg->header = msg->header;
-      pose_msg->pose.pose = initial_pose_; // 使用 YAML 里配置的 initial_pose
-      
-      // 触发核心计算
-      initialPoseCallback(pose_msg);
-
-    } else {
-      // 【如果没有开启自动初始化，就只提示一次，安静地等待】
-      RCLCPP_INFO_ONCE(this->get_logger(), "Auto-init is OFF. Waiting for Human RViz click on [%s]...", rviz_pose_topic_.c_str());
-    }
-    
-    // 无论如何，只执行一次判断逻辑
     first_scan_ = false;
+    if (auto_init_) {
+      RCLCPP_INFO(this->get_logger(), "Auto-init is ON! Triggering ICP with prior pose from YAML...");
+      std::lock_guard<std::mutex> lock(mutex_);
+      latest_rviz_guess_ = std::make_shared<geometry_msgs::msg::PoseWithCovarianceStamped>();
+      latest_rviz_guess_->header = msg->header;
+      latest_rviz_guess_->pose.pose = initial_pose_; // 使用 YAML 里的配置
+      wait_for_new_cloud_ = true; // 自动打开阀门
+    } else {
+      RCLCPP_INFO_ONCE(this->get_logger(), "Auto-init is OFF. IcpNode is SLEEPING until Human clicks RViz [%s]...", rviz_pose_topic_.c_str());
+    }
   }
-}
 
-void IcpNode::initialPoseCallback(
-    const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg) {
+  // 2. 如果阀门关着，直接 return！完全不消耗 CPU 处理点云
+  bool should_process = false;
+  {
+      std::lock_guard<std::mutex> lock(mutex_);
+      should_process = wait_for_new_cloud_;
+  }
+  
+  if (!should_process) {
+      return; 
+  }
 
-  // 1. 获取 RViz 人为点击的粗糙初始位姿
-  Eigen::Vector3d pos(msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z);
-  Eigen::Quaterniond q(msg->pose.pose.orientation.w, msg->pose.pose.orientation.x,
-                       msg->pose.pose.orientation.y, msg->pose.pose.orientation.z);
+  RCLCPP_INFO(this->get_logger(), "Captured ONE fresh Lidar frame. Starting Heavy ICP Alignment...");
+  
+  // 抓取并转换点云
+  pcl::fromROSMsg(*msg, *cloud_in_);
+
+  // 立刻关闭阀门！保证下一帧雷达数据继续被拦截，避免重复运算
+  {
+      std::lock_guard<std::mutex> lock(mutex_);
+      wait_for_new_cloud_ = false;
+  }
+
+  // 3. 提取刚刚人类给的（或 YAML里的）粗略初始位姿
+  Eigen::Vector3d pos(latest_rviz_guess_->pose.pose.position.x, 
+                      latest_rviz_guess_->pose.pose.position.y, 
+                      latest_rviz_guess_->pose.pose.position.z);
+  Eigen::Quaterniond q(latest_rviz_guess_->pose.pose.orientation.w, 
+                       latest_rviz_guess_->pose.pose.orientation.x,
+                       latest_rviz_guess_->pose.pose.orientation.y, 
+                       latest_rviz_guess_->pose.pose.orientation.z);
+                       
   Eigen::Matrix4d initial_guess = Eigen::Matrix4d::Identity();
   initial_guess.block<3, 3>(0, 0) = q.toRotationMatrix();
   initial_guess.block<3, 1>(0, 3) = pos;
 
-  // 2. 执行 ICP 暴力对齐，得出极其精准的 map_to_laser 变换
-  RCLCPP_INFO(this->get_logger(), "Aligning the pointcloud...");
+  // 4. 执行多重暴力 ICP 对齐 (极耗 CPU)
   Eigen::Matrix4d map_to_laser = multiAlignSync(cloud_in_, initial_guess);
   
   if (!success_) {
     map_to_laser = initial_guess;
-    RCLCPP_ERROR(this->get_logger(), "ICP failed, using rough initial guess.");
+    RCLCPP_ERROR(this->get_logger(), "ICP matching failed, falling back to rough initial guess.");
+  } else {
+    RCLCPP_INFO(this->get_logger(), "ICP matching SUCCESS!");
   }
 
-  // 不再依赖 TF 树中转
+  // 5. 解耦计算底盘坐标 (查询静态外参)
   Eigen::Matrix4d laser_to_base = Eigen::Matrix4d::Identity();
   try {
-    // 只需要查询雷达到底盘的静态外参 (TimePointZero即获取最新静态TF)
+    // 仅查询雷达到底盘的静态外参，稳如老狗
     auto transform_l2b = tf_buffer_->lookupTransform(laser_frame_id_, base_frame_id_, tf2::TimePointZero);
     Eigen::Vector3d t_l2b(transform_l2b.transform.translation.x,
                           transform_l2b.transform.translation.y,
@@ -240,15 +265,16 @@ void IcpNode::initialPoseCallback(
     laser_to_base.block<3, 3>(0, 0) = q_l2b.toRotationMatrix();
     laser_to_base.block<3, 1>(0, 3) = t_l2b;
   } catch (tf2::TransformException &ex) {
-    RCLCPP_ERROR(this->get_logger(), "Failed to get Static TF (laser->base): %s", ex.what());
+    RCLCPP_ERROR(this->get_logger(), "Failed to get Static TF (laser->base): %s. (Is robot state publisher running?)", ex.what());
     return;
   }
 
-  // 3. 纯数学计算：map_to_base = map_to_laser * laser_to_base
+  // 纯数学矩阵运算：得到底盘在世界地图中的绝对坐标
   Eigen::Matrix4d map_to_base = map_to_laser * laser_to_base;
+
+  // 6. 发布逻辑
   if (publish_tf_) {
     std::lock_guard lock(mutex_);
-    // 因为这里没有走里程计，为了补齐树，直接把 odom 和 base_footprint 重合发布即可
     map_to_odom_.transform.translation.x = map_to_base(0, 3);
     map_to_odom_.transform.translation.y = map_to_base(1, 3);
     map_to_odom_.transform.translation.z = map_to_base(2, 3);
@@ -258,12 +284,12 @@ void IcpNode::initialPoseCallback(
     map_to_odom_.transform.rotation.x = q_eigen.x();
     map_to_odom_.transform.rotation.y = q_eigen.y();
     map_to_odom_.transform.rotation.z = q_eigen.z();
-    is_ready_ = true; // 唤醒 TF 广播线程
+    is_ready_ = true; 
   }
+  
   if (publish_pose_) {
-    // 4. 将纯数学算出来的精准坐标打包发送给 tracking 节点
     geometry_msgs::msg::PoseWithCovarianceStamped pose_msg;
-    pose_msg.header.stamp = now();
+    pose_msg.header.stamp = msg->header.stamp; // 使用当前雷达帧的时间戳
     pose_msg.header.frame_id = map_frame_id_;
     
     pose_msg.pose.pose.position.x = map_to_base(0, 3);
@@ -278,7 +304,7 @@ void IcpNode::initialPoseCallback(
     pose_msg.pose.pose.orientation.z = q_out.z();
 
     pose_pub_->publish(pose_msg);
-    RCLCPP_INFO(this->get_logger(), "Successfully Published EXACT INITIAL POSE to Tracker!");
+    RCLCPP_INFO(this->get_logger(), "Successfully Published EXACT INITIAL POSE to Tracker! IcpNode is now going back to sleep.");
   }
 }
 
