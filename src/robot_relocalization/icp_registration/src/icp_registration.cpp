@@ -227,7 +227,7 @@ void IcpNode::initialPoseCallback(
     RCLCPP_ERROR(this->get_logger(), "ICP failed, using rough initial guess.");
   }
 
-  // ================= 🚨 终极修复区域：不再依赖 TF 树中转 =================
+  // 不再依赖 TF 树中转
   Eigen::Matrix4d laser_to_base = Eigen::Matrix4d::Identity();
   try {
     // 只需要查询雷达到底盘的静态外参 (TimePointZero即获取最新静态TF)
@@ -245,7 +245,6 @@ void IcpNode::initialPoseCallback(
   }
 
   // 3. 纯数学计算：map_to_base = map_to_laser * laser_to_base
-  // 这就是此时此刻机器人的精准绝对坐标！不依赖任何动态 TF 树！
   Eigen::Matrix4d map_to_base = map_to_laser * laser_to_base;
   if (publish_tf_) {
     std::lock_guard lock(mutex_);
