@@ -28,5 +28,7 @@
     yaw_offset: 30.0              # 在人为点击的偏航角周围，正负 30 度范围内试探
     yaw_resolution: 10.0          # 每隔 10 度生成一个试探角度（这三个参数决定了它会生成 3x3x7=63 个猜测）
     
+    # --- 是否开启开机自动初始化 ---
+    auto_init: false              # 设为 true 则开机自动在 initial_pose 附近暴力搜索，设为 false 则等 RViz 点击
     # 如果 RViz 不给初始位姿，默认用这个兜底（x, y, z, roll, pitch, yaw）
     initial_pose:[0.0, 0.0, 0.0, 0.0, 0.0, 0.0]

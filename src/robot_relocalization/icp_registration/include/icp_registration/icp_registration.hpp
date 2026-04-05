@@ -96,6 +96,7 @@ private:
   bool first_scan_;
   bool is_first_time_transform;
   bool is_move_;
+  bool auto_init_;
 };
 } // namespace icp
 #endif
