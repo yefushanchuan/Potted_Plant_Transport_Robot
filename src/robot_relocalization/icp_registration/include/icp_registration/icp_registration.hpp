@@ -80,9 +80,9 @@ private:
   PointCloudXYZIN::Ptr rough_map_;
   geometry_msgs::msg::TransformStamped map_to_odom_;
   geometry_msgs::msg::TransformStamped temp_map_to_odom_;
-  std::filesystem::path pcd_path_;
+  std::string map_filename_;
   std::string map_frame_id_, odom_frame_id_, laser_frame_id_, base_frame_id_;
-  std::string pose_topic_;
+  std::string pose_topic_, rviz_pose_topic_;
   bool publish_pose_;
   bool success_;
   double score_;

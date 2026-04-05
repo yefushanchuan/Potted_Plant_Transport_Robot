@@ -1,19 +1,32 @@
 /icp_registration:
   ros__parameters:
+    # --- 基础系统配置 ---
     use_sim_time: false 
-    rough_leaf_size: 0.4
-    refine_leaf_size: 0.1
-    #pcd_path: "/home/jlcv30/NUDT_navigation/src/rm_localization/faster-lio/PCD/306_3.pcd"
-    pcd_path: "/home/suja/voxel_ws/test.pcd"
-    map_frame_id: "map"
-    odom_frame_id: "odom"
-    laser_frame_id: "livox_frame"
-    base_frame_id: "base_link"
-    pointcloud_topic: "/cloud_registered_body"
-    thresh: 1.0
-    xy_offset: 0.5
-    yaw_offset: 30.0
-    yaw_resolution: 10.0
-    initial_pose: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0] # x,y,z,roll,pitch,yaw
-    publish_pose: true
-    pose_topic: "/icp_pose"
+    
+    # 是否由 ICP 节点发布 map -> odom 的 TF 变换。
+    publish_tf: false             
+    
+    # --- 地图滤波配置 (为了加速搜索) ---
+    rough_leaf_size: 0.4          # 粗匹配体素滤波大小 (0.4米，越大概略搜索越快)
+    refine_leaf_size: 0.1         # 精匹配体素滤波大小 (0.1米，越小最终对齐越准)
+    
+    # --- TF 坐标系配置 ---
+    map_frame_id: "map"                 # 全局地图坐标系
+    odom_frame_id: "odom"               # 里程计坐标系
+    laser_frame_id: "front_laser_link"  # 激光雷达坐标系
+    base_frame_id: "base_footprint"     # 机器人底盘投影中心坐标系
+
+    # --- 话题通讯配置 (流水线架构的核心) ---
+    pointcloud_topic: "/livox/lidar"    # 监听的实时雷达点云话题
+    rviz_pose_topic: "/initialpose"     # 【输入】听取 RViz 发来的鼠标点击粗略位姿（人给的）
+    pose_topic: "/icp_pose"             # 【输出】ICP算完后，把极其精准的位姿发给这个话题（给追踪器用）
+    publish_pose: true                  # 允许向 pose_topic 发布位姿
+
+    # --- 暴力多假设搜索 (Grid Search) 参数 ---
+    thresh: 1.0                   # ICP 匹配的适应度阈值（超过此值认为匹配失败）
+    xy_offset: 0.5                # 在人为点击的 XY 坐标周围，按 0.5 米的步长向四周生成试探点
+    yaw_offset: 30.0              # 在人为点击的偏航角周围，正负 30 度范围内试探
+    yaw_resolution: 10.0          # 每隔 10 度生成一个试探角度（这三个参数决定了它会生成 3x3x7=63 个猜测）
+    
+    # 如果 RViz 不给初始位姿，默认用这个兜底（x, y, z, roll, pitch, yaw）
+    initial_pose:[0.0, 0.0, 0.0, 0.0, 0.0, 0.0]

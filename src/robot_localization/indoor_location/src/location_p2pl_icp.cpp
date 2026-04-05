@@ -412,10 +412,8 @@ public:
 
         // 初始化订阅，发布器（直接订阅原始Livox话题）
         std::string lidar_topic = config["lidar_topic"].as<std::string>();
-
         // 强制队列长度为 1，只保留最新的一帧点云
-        cloud_sub_ = nh_->create_subscription<sensor_msgs::msg::PointCloud2>(
-            lidar_topic, rclcpp::QoS(rclcpp::KeepLast(1)), std::bind(&location::robosense_cb, this, std::placeholders::_1));
+        cloud_sub_ = nh_->create_subscription<sensor_msgs::msg::PointCloud2>(lidar_topic, rclcpp::QoS(rclcpp::KeepLast(1)), std::bind(&location::robosense_cb, this, std::placeholders::_1));
         
         std::string cmd_topic = config["cmd_topic"].as<std::string>();
         cmd_sub_ = nh_->create_subscription<std_msgs::msg::String>(cmd_topic, 10, std::bind(&location::command_cb, this, std::placeholders::_1));
@@ -423,14 +421,13 @@ public:
         // 单线程executor模式,IMU队列=200: 200Hz频率,队列200可缓存1秒数据,应对处理线程短时繁忙
         std::string imu_topic = config["imu_topic"].as<std::string>();
         
-        // 自定义 QoS: 队列长度200，并显式指定 BEST_EFFORT 以匹配底层硬件驱动
-        rclcpp::QoS imu_qos(200);
+        rclcpp::QoS imu_qos(200); // 自定义 QoS: 队列长度200，并显式指定 BEST_EFFORT 以匹配底层硬件驱动
         imu_qos.best_effort();
         
-        imu_sub_ = nh_->create_subscription<sensor_msgs::msg::Imu>(
-            imu_topic, imu_qos, std::bind(&location::imu_cb, this, std::placeholders::_1));
+        imu_sub_ = nh_->create_subscription<sensor_msgs::msg::Imu>(imu_topic, imu_qos, std::bind(&location::imu_cb, this, std::placeholders::_1));
 
-        init_pose_sub_ = nh_->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>("/initialpose", 1, std::bind(&location::initpose_cb, this, std::placeholders::_1)); // 手动重定位订阅
+        std::string init_pose_topic = config["init_pose_topic"].as<std::string>();
+        init_pose_sub_ = nh_->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(init_pose_topic, 1, std::bind(&location::initpose_cb, this, std::placeholders::_1)); // 手动重定位订阅
 
         std::string map_pub_topic_ = config["map_pub_topic"].as<std::string>();
         pc_map_pub_ = nh_->create_publisher<sensor_msgs::msg::PointCloud2>(map_pub_topic_, rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable()); // 发布全局pcd点云地图话题数据
