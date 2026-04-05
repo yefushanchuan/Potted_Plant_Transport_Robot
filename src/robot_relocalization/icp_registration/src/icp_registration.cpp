@@ -80,7 +80,7 @@ IcpNode::IcpNode(const rclcpp::NodeOptions &options)
   publish_pose_ =
       this->declare_parameter("publish_pose", true);
   rviz_pose_topic_ =
-      this->declare_parameter("rviz_pose_topic", std::string("/icp_pose_rviz"));
+      this->declare_parameter("rviz_pose_topic", std::string("/initialpose"));
   thresh_ = this->declare_parameter("thresh", 0.15);
   xy_offset_ = this->declare_parameter("xy_offset", 0.2);
   yaw_offset_ = this->declare_parameter("yaw_offset", 30.0) * M_PI / 180.0;
