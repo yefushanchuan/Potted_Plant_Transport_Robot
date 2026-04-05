@@ -1022,7 +1022,9 @@ public:
             RCLCPP_ERROR(nh_->get_logger(), "[LiDAR回调] 未知雷达类型: %s", lidar_type_.c_str());
             return;
         }
-        
+        if (processed_cloud == nullptr || processed_cloud->points.empty()) {
+            return;
+        }
         auto process_end = std::chrono::high_resolution_clock::now();
         double process_time_ms = std::chrono::duration<double, std::milli>(
             process_end - process_start).count();
@@ -1052,10 +1054,7 @@ public:
                 m_state_data.lidar_buffer.push_back(latest_cloud);    
                 
                 // 4. 重置同步标志，强迫 syncPackage 放弃老帧，重新打包这帧最新数据！
-                m_state_data.lidar_pushed = false; 
-                
-                RCLCPP_WARN_THROTTLE(nh_->get_logger(), *nh_->get_clock(), 2000, 
-                                     "🚨 算法处理慢于接收，触发内部防积压机制！已强制丢弃历史帧，保证绝对实时！");
+                m_state_data.lidar_pushed = false;
             }
 
             // 记录处理时间用于诊断
@@ -1070,26 +1069,28 @@ public:
     // 同步IMU和LiDAR数据包（完全对齐lio_node.cpp的逻辑）
     bool syncPackage()
     {
-        // 如果IMU缓冲区或LiDAR缓冲区为空，无法同步（与lio_node一致）
+        // 保护队列不被底层回调线程（如 clear操作）同时修改，彻底杜绝 -11 崩溃！
+        std::scoped_lock lock(m_state_data.imu_mutex, m_state_data.lidar_mutex);
+
+        // 如果IMU缓冲区或LiDAR缓冲区为空，无法同步
         if (m_state_data.imu_buffer.empty() || m_state_data.lidar_buffer.empty())
             return false;
 
         // 如果还未处理当前帧雷达数据
         if (!m_state_data.lidar_pushed)
         {
-            // 取出当前帧雷达点云
+            // 取出当前帧雷达点云（现在有锁保护，绝对安全！）
             m_package.cloud = m_state_data.lidar_buffer.front().second;
 
-            // 按照点的曲率（curvature）排序（与lio_node一致）
+            // 按照点的曲率（curvature）排序
             std::sort(m_package.cloud->points.begin(), m_package.cloud->points.end(),
                       [](PointType &p1, PointType &p2)
                       { return p1.curvature < p2.curvature; });
 
-            // 设置当前点云开始时间（由lidar_buffer的时间戳确定）
+            // 设置当前点云开始时间
             m_package.cloud_start_time = m_state_data.lidar_buffer.front().first;
 
-            // 设置当前点云的结束时间：开始时间 + 最后一个点的曲率（毫秒转秒）
-            // 通常曲率字段被复用为点的相对时间（毫秒），因此除以1000变成秒
+            // 设置当前点云的结束时间
             m_package.cloud_end_time = m_package.cloud_start_time +
                                        m_package.cloud->points.back().curvature / 1000.0;
 
@@ -1097,30 +1098,19 @@ public:
             m_state_data.lidar_pushed = true;
         }
 
-        // 丢弃这帧点云,等待下一帧(参考Livox的SyncMeasure)
-        // if (m_state_data.imu_buffer.front().time > m_package.cloud_start_time)
-        // {
-        //     RCLCPP_WARN(nh_->get_logger(), 
-        //                "[同步] IMU数据不足: IMU首帧(%.6f) > 点云开始(%.6f), 丢弃点云帧",
-        //                m_state_data.imu_buffer.front().time, m_package.cloud_start_time);
-        //     m_state_data.lidar_buffer.pop_front();
-        //     m_state_data.lidar_pushed = false;  // 【关键】必须重置标志,否则下次不会取新点云
-        //     return false;
-        // }
-
         // 如果最新的IMU时间还没有覆盖到当前点云的结束时间，则等待更多的IMU数据
         if (m_state_data.last_imu_time < m_package.cloud_end_time)
             return false;
 
-        // 清空上一帧打包的IMU数据（与lio_node一致使用Vec<IMUData>().swap()）
+        // 清空上一帧打包的IMU数据
         std::vector<IMUData>().swap(m_package.imus);
 
-        // 将所有时间 < 点云结束时间的IMU数据打包进m_package.imus（与lio_node完全一致）
+        // 将所有时间 < 点云结束时间的IMU数据打包进m_package.imus
         while (!m_state_data.imu_buffer.empty() &&
                m_state_data.imu_buffer.front().time < m_package.cloud_end_time)
         {
             m_package.imus.emplace_back(m_state_data.imu_buffer.front());
-            m_state_data.imu_buffer.pop_front(); // 从队列中弹出已使用的IMU数据
+            m_state_data.imu_buffer.pop_front(); 
         }
 
         // 移除已处理的雷达数据帧
