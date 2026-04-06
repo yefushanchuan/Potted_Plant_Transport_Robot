@@ -31,4 +31,4 @@
     # --- 是否开启开机自动初始化 ---
     auto_init: false              # 设为 true 则开机自动在 initial_pose 附近暴力搜索，设为 false 则等 RViz 点击
     # 如果 RViz 不给初始位姿，默认用这个兜底（x, y, z, roll, pitch, yaw）
-    initial_pose:[0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    initial_pose: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
