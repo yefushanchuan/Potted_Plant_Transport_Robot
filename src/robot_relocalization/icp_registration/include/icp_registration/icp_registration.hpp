@@ -84,6 +84,7 @@ private:
   std::string map_frame_id_, odom_frame_id_, laser_frame_id_, base_frame_id_;
   std::string pose_topic_, rviz_pose_topic_;
   bool publish_pose_;
+  bool publish_tf_;
   bool success_;
   double score_;
   double thresh_;
