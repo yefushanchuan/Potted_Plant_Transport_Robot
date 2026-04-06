@@ -3,7 +3,7 @@
     # --- 基础系统配置 ---
     use_sim_time: false 
     
-    # 是否由 ICP 节点发布 map -> odom 的 TF 变换。
+    # 是否由此节点发布 map -> odom 的 TF 变换。
     publish_tf: false             
     
     # --- 地图滤波配置 (为了加速搜索) ---
