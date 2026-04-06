@@ -18,7 +18,7 @@ pub_cloud_topic: "/deskew_cloud"              #去畸变点云话题
 
 ###################location################
 use_reloc: true                               #是否使用重定位
-imu_scale: 1.0                                #IMU加速度计比例因子
+imu_scale: 9.81                               #IMU加速度计比例因子
 reloc_threshold: 0.55                         #重定位阈值
 map_filtr_leaf_size: 0.3                      #定位线程使用的全局地图滤波体素大小，使用配p2picp算法不能太大，不然拟合平面内找不到邻域点（p2picp 0.3,ndt 0.5）
 enable_undistort: true                        #是否启用点云去畸变功能（使用IMU进行运动补偿）
