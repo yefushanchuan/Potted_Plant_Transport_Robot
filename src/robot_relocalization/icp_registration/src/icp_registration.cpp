@@ -255,7 +255,7 @@ void IcpNode::pointcloudCallback(
   // 5. 解耦计算底盘坐标 (查询静态外参)
   Eigen::Matrix4d laser_to_base = Eigen::Matrix4d::Identity();
   try {
-    // 仅查询雷达到底盘的静态外参，稳如老狗
+    // 仅查询雷达到底盘的静态外参
     auto transform_l2b = tf_buffer_->lookupTransform(laser_frame_id_, base_frame_id_, tf2::TimePointZero);
     Eigen::Vector3d t_l2b(transform_l2b.transform.translation.x,
                           transform_l2b.transform.translation.y,
