@@ -151,28 +151,24 @@ def generate_launch_description():
 
     # Pointcloud to LaserScan - 直接使用原始点云（不经过地面分割）
     pointcloud_to_laserscan_node = Node(
-        package='pointcloud_to_laserscan',
+        package='pointcloud_to_laserscan', 
         executable='pointcloud_to_laserscan_node',
-        name='pointcloud_to_laserscan',
-        output='screen',
+        remappings=[('cloud_in', '/livox/lidar'),
+                    ('scan', '/scan_raw')],
         parameters=[{
-            'target_frame': 'base_link',
-            'transform_tolerance': 0.1,
-            'min_height': 0.05,            # 过滤地面点：只保留 base_link 上方 5cm 以上的点（地面约在 -0.11m）
-            'max_height': 1.5,             # 最大高度 1.5m，过滤天花板等高处障碍
-            'angle_min': -3.14159,         # 360度视野
-            'angle_max': 3.14159,
-            'angle_increment': 0.0043,
-            'scan_time': 0.1,
-            'range_min': 0.6,              # 过滤车体附近的点
-            'range_max': 100.0,
+            'target_frame': 'base_footprint',  # 用地面中心作为基准
+            'transform_tolerance': 0.05,       # 稍微加大一点容忍度，防止TF延迟导致丢帧
+            'min_height': 0.15,                # 离地15cm以上
+            'max_height': 1.0,                 # 只要不超过车身高度，尽量设高点，弥补雷达倾斜带来的数据丢失
+            'angle_min': -3.14159,             # 小车底盘的正后方(右转180度)
+            'angle_max': 3.14159,              # 小车底盘的正后方(左转180度)
+            'angle_increment': 0.0087,         # 0.5度
+            'scan_time': 0.1,                  # 10Hz
+            'range_min': 0.2,                  # 滤掉车体自身
+            'range_max': 15.0,                 # 探测15米
             'use_inf': True,
             'inf_epsilon': 1.0
         }],
-        remappings=[
-            ('cloud_in', '/livox/lidar'),  # 直接使用原始点云
-            ('scan', '/scan_raw')                      # 输出未过滤的激光数据
-        ]
     )
 
     # Laser Filter - 过滤离群点
