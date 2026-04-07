@@ -15,7 +15,7 @@ def generate_launch_description():
     # 定义组件节点
     lidar_filter_component = ComposableNode(
         package="robot_base",
-        plugin="robot_base::LidarFilter2D", # 对应 CMakeLists 里的 PLUGIN 名称
+        plugin="robot_base_utils::LidarFilter2D", # 对应 CMakeLists 里的 PLUGIN 名称
         name="lidar_filter",
         parameters=[
             {"source_topic": source_topic},

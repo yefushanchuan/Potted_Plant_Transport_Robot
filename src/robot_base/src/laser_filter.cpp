@@ -6,7 +6,7 @@
 #include <memory>
 #include <utility>
 
-namespace robot_base 
+namespace robot_base_utils 
 {
 
 class LidarFilter2D : public rclcpp::Node
@@ -103,8 +103,8 @@ void LidarFilter2D::lidarCallback(sensor_msgs::msg::LaserScan::UniquePtr scan)
 
   scan_pub_->publish(std::move(scan));
 }
-} // namespace robot_base
+} // namespace robot_base_utils
 
 // 注册组件
 #include "rclcpp_components/register_node_macro.hpp"
-RCLCPP_COMPONENTS_REGISTER_NODE(robot_base::LidarFilter2D)
+RCLCPP_COMPONENTS_REGISTER_NODE(robot_base_utils::LidarFilter2D)

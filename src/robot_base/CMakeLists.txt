@@ -95,7 +95,7 @@ ament_target_dependencies(laser_filter_node
   rclcpp_components
 )
 rclcpp_components_register_node(laser_filter_node 
-  PLUGIN "robot_base::LidarFilter2D" 
+  PLUGIN "robot_base_utils::LidarFilter2D" 
   EXECUTABLE "laser_filter_node_exe"
 )
 

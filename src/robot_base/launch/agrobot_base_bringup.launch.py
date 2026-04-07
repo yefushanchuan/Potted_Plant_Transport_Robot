@@ -98,61 +98,82 @@ def generate_launch_description():
         name="robot_controller_spawner",
     )
 
-    # EKF 融合定位
-    # 作用: 融合 IMU 和轮式里程计数据，输出滤波后的位姿估计，
-    #       发布到 /odom 话题，并广播 odom → base_footprint 的 TF 变换
-    # 输入: /imu (IMU数据), /diff_drive_controller/odom (轮式里程计)
-    # 输出: /odom (融合后的里程计), TF: odom → base_footprint (动态更新)
-    ekf_node = Node(
-        package='robot_localization',
-        executable='ekf_node',
-        name='ekf_filter_node',
+    # ========================================================================
+    # 容器 1: 状态估计组件容器 (State Estimation Container)
+    # 包含: IMU 硬件驱动 -> IMU 滤波 -> EKF 融合
+    # 特点: 高频、低延迟、零拷贝，独立线程池保证实时性，不受雷达处理影响
+    # ========================================================================
+    state_estimation_container = ComposableNodeContainer(
+        name='state_estimation_container',
+        namespace='',
+        package='rclcpp_components',
+        executable='component_container_mt', # 使用多线程容器
         output='screen',
-        parameters=[ekf_config_path, base_params],
-        remappings=[('odometry/filtered', 'odom')],
-        condition=IfCondition(use_ekf)
-    )
-
-    # IMU 数据发布
-    # 作用: 驱动 hipnuc IMU 硬件，读取原始传感器数据，
-    #       发布 IMU 消息到 /imu 话题，供 EKF 和其他节点使用
-    # 输出: /imu 
-    imu_node = Node(
-        package="hipnuc_imu",
-        executable="talker",
-        name="IMU_publisher",
-        parameters=[imu_config],
-        output="screen",
-    )
-
-    # Livox激光雷达 + 点云过滤 组合组件容器
-    # 作用:
-    #   使用 ROS2 Component 机制把 Livox 驱动和点云 CropBox 过滤放到同一个进程
-    #   通过 intra_process_comms 实现零拷贝，提高点云处理效率
-    # 数据流:
-    #   MID360 → /livox/lidar_raw → CropBox过滤 → /livox/lidar
-    lidar_and_filter_container = ComposableNodeContainer(
-        name='lidar_and_filter_container',   # 组件容器名称
-        namespace='',                        # 命名空间（空表示全局）
-        package='rclcpp_components',         # ROS2组件管理包
-        executable='component_container',   # 组件容器可执行文件
-
         composable_node_descriptions=[
-            # Livox 激光雷达驱动组件
-            # 输出:
-            #   /livox/lidar_raw (原始点云)
-            # 坐标系:
-            #   frame_id = front_laser_link
+            # 1. IMU 硬件驱动组件
+            ComposableNode(
+                package='hipnuc_imu',
+                plugin='hipnuc_driver::IMUPublisher', # 你查到的插件名字
+                name='IMU_publisher',
+                parameters=[imu_config],
+                remappings=[('/imu', '/imu_raw')], # 输出原始数据给滤波器
+                extra_arguments=[{'use_intra_process_comms': True}]
+            ),
+            
+            # 2. IMU 互补滤波组件
+            ComposableNode(
+                package='imu_complementary_filter',
+                plugin='imu_complementary_filter::ComplementaryFilterNode',
+                name='imu_filter_node',
+                parameters=[{
+                    'use_mag': False,
+                    'publish_tf': False,
+                    'do_bias_estimation': True,
+                    'do_adaptive_gain': True
+                }],
+                remappings=[
+                    ('imu/data_raw', '/imu_raw'),
+                    ('imu/data', '/imu')  # 输出干净数据给 EKF
+                ],
+                extra_arguments=[{'use_intra_process_comms': True}]
+            ),
+
+            # 3. EKF 融合定位组件 (官方提供的组件版)
+            ComposableNode(
+                package='robot_localization',
+                plugin='robot_localization::RosEkf',
+                name='ekf_filter_node',
+                parameters=[ekf_config_path, base_params],
+                remappings=[('odometry/filtered', 'odom')],
+                condition=IfCondition(use_ekf),
+                extra_arguments=[{'use_intra_process_comms': True}]
+            )
+        ]
+    )
+
+    # ========================================================================
+    # 容器 2: 感知流水线组件容器 (Perception Pipeline Container)
+    # 包含: Livox驱动 -> CropBox -> PC2Scan -> 2D Lidar Filter
+    # 特点: 高带宽点云数据处理，零拷贝极大节省 CPU 内存拷贝开销
+    # ========================================================================
+    lidar_and_filter_container = ComposableNodeContainer(
+        name='lidar_and_filter_container',   
+        namespace='',                        
+        package='rclcpp_components',         
+        executable='component_container_mt',   
+        output='screen',
+        composable_node_descriptions=[
+            # 1. Livox 激光雷达驱动
             ComposableNode(
                 package='livox_ros_driver2',
                 plugin='livox_ros::DriverNode',
                 name='livox_lidar_publisher',
                 parameters=[
-                    {'xfer_format': 0},      # 0=标准PointCloud2格式
-                    {'multi_topic': 0},     # 单雷达使用单topic
-                    {'data_src': 0},        # 0=真实雷达
-                    {'publish_freq': 10.0}, # 发布频率 Hz
-                    {'output_data_type': 0}, # 0=PointCloud2
+                    {'xfer_format': 0},      
+                    {'multi_topic': 0},     
+                    {'data_src': 0},        
+                    {'publish_freq': 10.0}, 
+                    {'output_data_type': 0}, 
                     {'frame_id': 'front_laser_link'},
                     {'user_config_path': PathJoinSubstitution([
                         FindPackageShare("livox_ros_driver2"),
@@ -160,37 +181,68 @@ def generate_launch_description():
                         "MID360_config.json"
                     ])}
                 ],
-                remappings=[('/livox/lidar', '/livox/lidar_raw')], # 话题重映射
-                extra_arguments=[{'use_intra_process_comms': True}] # 开启进程内通信(零拷贝)
+                remappings=[('/livox/lidar', '/livox/lidar_raw')],
+                extra_arguments=[{'use_intra_process_comms': True}]
             ),
-            # CropBox 点云过滤组件
-            # 输入:
-            #   /livox/lidar_raw
-            # 输出:
-            #   /livox/lidar (过滤后点云)
+
+            # 2. CropBox 点云过滤
             ComposableNode(
                 package='robot_base',
                 plugin='robot_base_utils::CropBoxComponent',
                 name='livox_crop_box',
-                parameters=[
-                    {
-                        'target_frame': 'base_link',
-                        'min_x': -0.5,'max_x': 0.25,
-                        'min_y': -0.275,'max_y': 0.275,
-                        'min_z': -0.1,'max_z': 0.6,
-                        # negative=True 表示删除盒子内部点
-                        # False则只保留盒子内部点
-                        'negative': True
-                    }
-                ],
+                parameters=[{
+                    'target_frame': 'base_link',
+                    'min_x': -0.5, 'max_x': 0.25,
+                    'min_y': -0.275, 'max_y': 0.275,
+                    'min_z': -0.1, 'max_z': 0.6,
+                    'negative': True
+                }],
                 remappings=[
                     ('input', '/livox/lidar_raw'),
                     ('output', '/livox/lidar')
                 ],
                 extra_arguments=[{'use_intra_process_comms': True}]
+            ),
+
+            # 3. PointCloud to LaserScan 
+            ComposableNode(
+                package='pointcloud_to_laserscan', 
+                plugin='pointcloud_to_laserscan::PointCloudToLaserScanNode',
+                name='pointcloud_to_laserscan_node',
+                remappings=[
+                    ('cloud_in', '/livox/lidar'),
+                    ('scan', '/scan_raw')  
+                ],
+                parameters=[{
+                    'target_frame': 'base_footprint',
+                    'transform_tolerance': 0.05,       
+                    'min_height': 0.15,                
+                    'max_height': 1.0,                 
+                    'angle_min': -3.14159,             
+                    'angle_max': 3.14159,              
+                    'angle_increment': 0.0087,         
+                    'scan_time': 0.1,                  
+                    'range_min': 0.2,                  
+                    'range_max': 15.0,                 
+                    'use_inf': True,
+                    'inf_epsilon': 1.0
+                }],
+                extra_arguments=[{'use_intra_process_comms': True}]
+            ),
+
+            # 4. 2D Lidar Filter 
+            ComposableNode(
+                package='robot_base',
+                plugin='robot_base::LidarFilter2D', 
+                name='lidar_filter2d_node',
+                parameters=[{
+                    'source_topic': '/scan_raw', 
+                    'pub_topic': '/scan',        
+                    'outlier_threshold': 0.1
+                }],
+                extra_arguments=[{'use_intra_process_comms': True}]
             )
-        ],
-        output='screen' # 日志输出到终端
+        ]
     )
 
     # ================= 时序依赖控制 (Event Handlers) =================
@@ -217,9 +269,8 @@ def generate_launch_description():
         ros2_control_node,
         delay_joint_state_spawner,       # 时序控制1
         delay_robot_controller_spawner,  # 时序控制2
-        ekf_node,
-        imu_node,
-        lidar_and_filter_container
+        state_estimation_container,
+        lidar_and_filter_container   
     ]
 
     # 根据命名空间是否为空来决定是否使用 PushRosNamespace 和 TF 重映射
