@@ -1551,7 +1551,11 @@ public:
                 auto reg_end = std::chrono::high_resolution_clock::now();
                 perf_stat.cloud_registration_time_ms = 
                     std::chrono::duration<double, std::milli>(reg_end - reg_start).count();
-                
+                    
+                act_pose.pos(2) = 0.0;     // 强制 Z = 0
+                act_pose.orient(0) = 0.0;  // 强制 Roll = 0
+                act_pose.orient(1) = 0.0;  // 强制 Pitch = 0
+
                 // ESKF校正
                 if (!m_package.imus.empty()) {
                     auto eskf_start = std::chrono::high_resolution_clock::now();

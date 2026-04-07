@@ -86,6 +86,7 @@ IcpNode::IcpNode(const rclcpp::NodeOptions &options)
   yaw_offset_ = this->declare_parameter("yaw_offset", 30.0) * M_PI / 180.0;
   yaw_resolution_ =
       this->declare_parameter("yaw_resolution", 10.0) * M_PI / 180.0;
+  yaw_steps_ = std::round(yaw_offset_ / yaw_resolution_);
   std::vector<double> initial_pose_vec = this->declare_parameter(
       "initial_pose", std::vector<double>{0, 0, 0, 0, 0, 0});
   try {
@@ -238,11 +239,33 @@ void IcpNode::pointcloudCallback(
                        latest_rviz_guess_->pose.pose.orientation.y, 
                        latest_rviz_guess_->pose.pose.orientation.z);
                        
-  Eigen::Matrix4d initial_guess = Eigen::Matrix4d::Identity();
-  initial_guess.block<3, 3>(0, 0) = q.toRotationMatrix();
-  initial_guess.block<3, 1>(0, 3) = pos;
+  // 4. 获取人类在 RViz 给的底盘位姿 (Map -> Base)
+  Eigen::Matrix4d base_guess = Eigen::Matrix4d::Identity();
+  base_guess.block<3, 3>(0, 0) = q.toRotationMatrix();
+  base_guess.block<3, 1>(0, 3) = pos;
 
-  // 4. 执行多重暴力 ICP 对齐 (极耗 CPU)
+  // 5. 获取 Base 到 Laser 的静态外参 (Base -> Laser)
+  Eigen::Matrix4d base_to_laser = Eigen::Matrix4d::Identity();
+  try {
+    auto transform_b2l = tf_buffer_->lookupTransform(base_frame_id_, laser_frame_id_, tf2::TimePointZero);
+    Eigen::Vector3d t_b2l(transform_b2l.transform.translation.x,
+                          transform_b2l.transform.translation.y,
+                          transform_b2l.transform.translation.z);
+    Eigen::Quaterniond q_b2l(transform_b2l.transform.rotation.w, transform_b2l.transform.rotation.x,
+                             transform_b2l.transform.rotation.y, transform_b2l.transform.rotation.z);
+    base_to_laser.block<3, 3>(0, 0) = q_b2l.toRotationMatrix();
+    base_to_laser.block<3, 1>(0, 3) = t_b2l;
+  } catch (tf2::TransformException &ex) {
+    RCLCPP_ERROR(this->get_logger(), "Failed to get Static TF (base->laser): %s", ex.what());
+    std::lock_guard<std::mutex> lock(mutex_);
+    wait_for_new_cloud_ = true; 
+    return;
+  }
+
+  // 6. 计算雷达的初始猜想位姿: Map_to_Laser = Map_to_Base * Base_to_Laser
+  Eigen::Matrix4d initial_guess = base_guess * base_to_laser;
+
+  // 7. 执行多重暴力 ICP 对齐 (极耗 CPU)
   Eigen::Matrix4d map_to_laser = multiAlignSync(cloud_in_, initial_guess);
   
   if (!success_) {
@@ -252,7 +275,7 @@ void IcpNode::pointcloudCallback(
     RCLCPP_INFO(this->get_logger(), "ICP matching SUCCESS!");
   }
 
-  // 5. 解耦计算底盘坐标 (查询静态外参)
+  // 8. 解耦计算底盘坐标 (查询静态外参)
   Eigen::Matrix4d laser_to_base = Eigen::Matrix4d::Identity();
   try {
     // 仅查询雷达到底盘的静态外参
@@ -266,13 +289,26 @@ void IcpNode::pointcloudCallback(
     laser_to_base.block<3, 1>(0, 3) = t_l2b;
   } catch (tf2::TransformException &ex) {
     RCLCPP_ERROR(this->get_logger(), "Failed to get Static TF (laser->base): %s. (Is robot state publisher running?)", ex.what());
+    std::lock_guard<std::mutex> lock(mutex_);
+    wait_for_new_cloud_ = true; 
     return;
   }
 
   // 纯数学矩阵运算：得到底盘在世界地图中的绝对坐标
   Eigen::Matrix4d map_to_base = map_to_laser * laser_to_base;
 
-  // 6. 发布逻辑
+  // 强制 2D 约束
+  // 消除 Z, Roll, Pitch，只保留 X, Y, Yaw
+  Eigen::Vector3d euler_angles = map_to_base.block<3,3>(0,0).eulerAngles(2, 1, 0); // Yaw, Pitch, Roll
+  double yaw = euler_angles(0); 
+  Eigen::AngleAxisd rollAngle(0.0, Eigen::Vector3d::UnitX());
+  Eigen::AngleAxisd pitchAngle(0.0, Eigen::Vector3d::UnitY());
+  Eigen::AngleAxisd yawAngle(yaw, Eigen::Vector3d::UnitZ());
+  Eigen::Quaterniond q_2d = yawAngle * pitchAngle * rollAngle;
+  
+  map_to_base.block<3,3>(0,0) = q_2d.toRotationMatrix();
+  map_to_base(2, 3) = 0.0; // 强制 Z = 0
+  // 9. 发布逻辑
   if (publish_tf_) {
     std::lock_guard lock(mutex_);
     map_to_odom_.transform.translation.x = map_to_base(0, 3);
@@ -374,11 +410,9 @@ Eigen::Matrix4d IcpNode::multiAlignSync(PointCloudXYZI::Ptr source,
 
   for (int i = -1; i <= 1; i++) {
     for (int j = -1; j <= 1; j++) {
-      for (int k = -yaw_offset_; k <= yaw_offset_; k++) {
-        Eigen::Vector3f pos(xyz(0) + i * xy_offset_, xyz(1) + j * xy_offset_,
-                            xyz(2));
-        Eigen::AngleAxisf yawAngle(rpy(2) + k * yaw_resolution_,
-                                   Eigen::Vector3f::UnitZ());
+      for (int k = -yaw_steps_; k <= yaw_steps_; k++) {
+        Eigen::Vector3f pos(xyz(0) + i * xy_offset_, xyz(1) + j * xy_offset_, xyz(2));
+        Eigen::AngleAxisf yawAngle(rpy(2) + k * yaw_resolution_, Eigen::Vector3f::UnitZ());
         temp_pose.setIdentity();
         temp_pose.block<3, 3>(0, 0) =
             (rollAngle * pitchAngle * yawAngle).toRotationMatrix();

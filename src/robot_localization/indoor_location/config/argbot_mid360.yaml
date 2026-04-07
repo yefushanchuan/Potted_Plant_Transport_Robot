@@ -17,7 +17,7 @@ pub_cloud_topic: "/deskew_cloud"              #去畸变点云话题
 ###############cloud preprocess############
 
 ###################location################
-use_reloc: true                               #是否使用重定位
+use_reloc: false                               #是否使用重定位
 imu_scale: 9.81                               #重力加速度常数(G)。代码会自动判断：若IMU输出>5则判定为m/s²并除以该值归一化，最终再统一乘以该值输出标准m/s²。
 reloc_threshold: 0.55                         #重定位阈值
 map_filtr_leaf_size: 0.3                      #定位线程使用的全局地图滤波体素大小，使用配p2picp算法不能太大，不然拟合平面内找不到邻域点（p2picp 0.3,ndt 0.5）

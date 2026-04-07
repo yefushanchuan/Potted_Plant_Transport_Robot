@@ -91,6 +91,7 @@ private:
   double xy_offset_;
   double yaw_offset_;
   double yaw_resolution_;
+  int yaw_steps_;
   geometry_msgs::msg::Pose initial_pose_;
   geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr latest_rviz_guess_;
 

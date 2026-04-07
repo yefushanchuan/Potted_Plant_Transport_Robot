@@ -17,7 +17,7 @@
     base_frame_id: "base_footprint"     # 机器人底盘投影中心坐标系
 
     # --- 话题通讯配置 (流水线架构的核心) ---
-    pointcloud_topic: "/deskew_cloud"    # 监听的后端去畸变雷达点云话题
+    pointcloud_topic: "/livox/lidar"    # 监听的雷达点云话题
     rviz_pose_topic: "/initialpose"     # 【输入】听取 RViz 发来的鼠标点击粗略位姿（人给的）
     pose_topic: "/icp_pose"             # 【输出】ICP算完后，把极其精准的位姿发给这个话题（给追踪器用）
     publish_pose: true                  # 允许向 pose_topic 发布位姿
