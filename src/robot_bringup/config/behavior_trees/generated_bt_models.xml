@@ -1,0 +1,98 @@
+<root>
+    <TreeNodesModel>
+        <Action ID="CameraCapture">
+            <input_port name="pot_id" type="std::string">盆栽ID（字符串）</input_port>
+            <input_port name="task_id" type="std::string">任务ID</input_port>
+            <input_port name="timeout_ms" type="int" default="8000">等待服务响应超时时间(毫秒)</input_port>
+        </Action>
+        <Action ID="CancelNavToPose">
+            <input_port name="brake_duration_ms" type="int" default="300">取消导航后发布零速的持续时间，单位毫秒</input_port>
+            <input_port name="timeout_ms" type="int" default="1000">等待取消指令完成的超时时间，单位毫秒</input_port>
+            <output_port name="action_feedback" type="std::string"/>
+            <output_port name="progress" type="double"/>
+        </Action>
+        <Action ID="ClearTaskCommand">
+            <output_port name="nav_source_room" type="std::string"/>
+            <output_port name="nav_target_room" type="std::string"/>
+            <output_port name="target_pot_ids" type="std::vector&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::allocator&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt; &gt;"/>
+            <output_port name="target_pot_num" type="int"/>
+            <output_port name="task_command" type="std::string"/>
+            <output_port name="task_id" type="std::string"/>
+        </Action>
+        <Action ID="GetGoalFromRoom">
+            <input_port name="nav_target_room" type="std::string"/>
+            <output_port name="goal" type="geometry_msgs::msg::PoseStamped_&lt;std::allocator&lt;void&gt; &gt;"/>
+        </Action>
+        <Condition ID="IsBatteryLow"/>
+        <Condition ID="IsCharging"/>
+        <Condition ID="IsGoalReached">
+            <input_port name="goal" type="geometry_msgs::msg::PoseStamped_&lt;std::allocator&lt;void&gt; &gt;"/>
+            <input_port name="tolerance" type="double" default="0.150000">允许的距离容差</input_port>
+        </Condition>
+        <Condition ID="IsRobotInitSuccess">
+            <input_port name="robot_init_success" type="bool"/>
+        </Condition>
+        <Condition ID="IsRobotStarted">
+            <input_port name="robot_started" type="bool"/>
+        </Condition>
+        <Condition ID="IsRosNodeOk">
+            <input_port name="node_name" type="std::string"/>
+            <input_port name="topic_name" type="std::string"/>
+        </Condition>
+        <Condition ID="IsTaskCommand">
+            <input_port name="task_command" type="std::string"/>
+            <input_port name="task_type" type="std::string"/>
+        </Condition>
+        <Condition ID="IsTimeForAction">
+            <input_port name="min_interval_sec" type="int" default="3600">两次触发的最小间隔</input_port>
+            <input_port name="trigger_hour" type="int" default="-1">触发小时[0-23]，-1 表示忽略小时</input_port>
+            <input_port name="trigger_minute" type="int" default="0">在第几分钟触发[0-59]</input_port>
+            <input_port name="window_seconds" type="int" default="5">触发秒宽度，避免重复触发</input_port>
+        </Condition>
+        <Action ID="LaunchManager">
+            <input_port name="command" type="std::string" default="start">要发送给 launch_manager 的指令（start/stop/restart/start_mapping/start_navigation）</input_port>
+            <input_port name="timeout_ms" type="int" default="5000">等待服务响应的超时时间，单位毫秒</input_port>
+            <output_port name="result_message" type="std::string">launch_manager 返回的信息</output_port>
+        </Action>
+        <Condition ID="LogError"/>
+        <Action ID="NavToPose">
+            <input_port name="goal" type="geometry_msgs::msg::PoseStamped_&lt;std::allocator&lt;void&gt; &gt;">Goal pose to send to Nav2</input_port>
+            <output_port name="action_feedback" type="std::string"/>
+            <output_port name="progress" type="double"/>
+        </Action>
+        <Control ID="RecoveryNode">
+            <input_port name="number_of_retries" type="int" default="1">Number of retries</input_port>
+        </Control>
+        <Decorator ID="RepeatWithBlackboard">
+            <input_port name="repeat_type" type="int"/>
+            <input_port name="target_pot_num" type="int"/>
+        </Decorator>
+        <Decorator ID="Retry">
+            <input_port name="retry" type="int">Maximum retry attempts</input_port>
+        </Decorator>
+        <Action ID="SetIcpActive">
+            <input_port name="icp_active" type="bool"/>
+        </Action>
+        <Action ID="SetRobotState">
+            <input_port name="robot_state" type="std::string">Robot working state (e.g., IDLE, NAVIGATING, CHARGING)</input_port>
+        </Action>
+        <Action ID="SetTaskLocked">
+            <input_port name="task_locked" type="bool"/>
+        </Action>
+        <Condition ID="TaskUpdate">
+            <input_port name="robot_state_msg" type="robot_ctrl::msg::RobotState_&lt;std::allocator&lt;void&gt; &gt;"/>
+            <input_port name="task_locked" type="bool"/>
+            <output_port name="nav_source_room" type="std::string"/>
+            <output_port name="nav_target_room" type="std::string"/>
+            <output_port name="target_pot_ids" type="std::vector&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;, std::allocator&lt;std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt; &gt; &gt;"/>
+            <output_port name="target_pot_num" type="int"/>
+            <output_port name="task_command" type="std::string"/>
+            <output_port name="task_id" type="std::string"/>
+        </Condition>
+        <Action ID="TaskfileUpload">
+            <input_port name="task_id" type="std::string">任务ID</input_port>
+            <input_port name="timeout_ms" type="int" default="1200">调用 taskfile_upload action 超时时间(毫秒)</input_port>
+            <output_port name="result_message" type="std::string">执行结果文本</output_port>
+        </Action>
+    </TreeNodesModel>
+</root>

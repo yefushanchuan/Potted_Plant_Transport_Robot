@@ -1,0 +1,29 @@
+# pheno_module_controller 默认参数配置
+pheno_module_controller:
+  ros__parameters:
+    # TCP 连接参数
+    tcp_remote_host: "192.168.33.23"
+    tcp_remote_port: 9010
+    tcp_local_bind_ip: ""
+    connect_timeout_ms: 1000
+    request_timeout_ms: 10000
+    capture_response_timeout_ms: 30000
+    heartbeat_timeout_ms: 7000
+    reconnect_interval_ms: 1000
+    max_retries: 2
+    capture_action_pot_id_start: 1   # Action内部pot_id起点，格式固定为六位零填充（如 000001）
+    log_raw_protocol: true
+
+    # Windows 路径与 Linux 挂载映射
+    # 挂载脚本：src/pheno_module_controller/scripts/mount_win.bash（需 sudo）
+    # 需与脚本内参数保持一致：
+    #   WIN_IP      -> Windows IP
+    #   SHARE_NAME  -> 共享目录名
+    #   MOUNT_POINT -> linux_mount_root
+    windows_data_root: "D:/camera_data"
+    linux_mount_root: "/mnt/camera_data"
+
+    # 文件上传参数
+    upload_base_url: "http://192.168.33.23"  # HTTP服务器地址
+    http_timeout_ms: 10000
+    verify_ssl: true

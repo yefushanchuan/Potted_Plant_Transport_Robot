@@ -1,0 +1,489 @@
+frame_id: map
+nodes:
+  - id: 16
+    x: 0.041995168469046815
+    y: 0.013679348677951751
+    yaw: 0.09589759006323438
+    is_station: true
+    name: 原点
+    room_type: 0
+    visibility_level: 1
+    tags: ''
+  - id: 17
+    x: 0.6666330204688514
+    y: 0.04002386738884626
+    yaw: 0.0844530608034053
+    is_station: true
+    name: '1'
+    room_type: 4
+    visibility_level: 1
+    tags: ''
+  - id: 18
+    x: 0.6338452030177386
+    y: 1.2024337461821775
+    yaw: 1.6347616244834278
+    is_station: true
+    name: '2'
+    room_type: 4
+    visibility_level: 1
+    tags: ''
+  - id: 19
+    x: 0.4056869684473128
+    y: 4.0398052421642605
+    yaw: 1.6416162850638985
+    is_station: true
+    name: '3'
+    room_type: 4
+    visibility_level: 1
+    tags: ''
+  - id: 20
+    x: 0.05756630024730214
+    y: 11.343037966206406
+    yaw: 1.6497749877304106
+    is_station: true
+    name: '4'
+    room_type: 4
+    visibility_level: 1
+    tags: ''
+  - id: 21
+    x: -0.1966560829367064
+    y: 15.842466174022412
+    yaw: 1.6227830887727293
+    is_station: true
+    name: '5'
+    room_type: 4
+    visibility_level: 1
+    tags: ''
+  - id: 22
+    x: 1.1894027595507772
+    y: 17.27002856842545
+    yaw: -1.521515363737412
+    is_station: true
+    name: 会议室2
+    room_type: 1
+    visibility_level: 1
+    tags: ''
+  - id: 23
+    x: 1.3115725009119525
+    y: 14.782882178287467
+    yaw: -1.5446134454467577
+    is_station: true
+    name: '6'
+    room_type: 4
+    visibility_level: 1
+    tags: ''
+  - id: 24
+    x: 2.327935734207969
+    y: 13.61793743972212
+    yaw: 0.0634781728784198
+    is_station: true
+    name: '7'
+    room_type: 4
+    visibility_level: 1
+    tags: ''
+  - id: 25
+    x: 6.475148506148711
+    y: 13.876050515736186
+    yaw: 0.061342144207058004
+    is_station: true
+    name: 楼梯口
+    room_type: 1
+    visibility_level: 1
+    tags: ''
+  - id: 26
+    x: 11.124948831587021
+    y: 14.011138752266476
+    yaw: 0.04641791254963576
+    is_station: true
+    name: '8'
+    room_type: 4
+    visibility_level: 1
+    tags: ''
+  - id: 27
+    x: 15.343162120674473
+    y: 14.18820955548923
+    yaw: 0.06857401339849681
+    is_station: true
+    name: '9'
+    room_type: 4
+    visibility_level: 1
+    tags: ''
+  - id: 28
+    x: 13.484879939162434
+    y: 12.516934834126985
+    yaw: -1.4597015442577377
+    is_station: true
+    name: '10'
+    room_type: 4
+    visibility_level: 1
+    tags: ''
+  - id: 29
+    x: 13.780425906817337
+    y: 7.685508398334335
+    yaw: -1.5428094443130964
+    is_station: true
+    name: 电梯
+    room_type: 1
+    visibility_level: 1
+    tags: ''
+  - id: 30
+    x: 13.917256607508042
+    y: 4.897841947299555
+    yaw: -1.506555902240202
+    is_station: true
+    name: '11'
+    room_type: 4
+    visibility_level: 1
+    tags: ''
+  - id: 31
+    x: 15.512618205284292
+    y: 3.2267893526020215
+    yaw: 0.04078996882944877
+    is_station: true
+    name: '12'
+    room_type: 4
+    visibility_level: 1
+    tags: ''
+  - id: 32
+    x: 25.667067771213347
+    y: 3.505149791261041
+    yaw: 0.06935678332585685
+    is_station: true
+    name: '13'
+    room_type: 4
+    visibility_level: 1
+    tags: ''
+  - id: 33
+    x: 26.892133082871943
+    y: 5.162709662135268
+    yaw: 1.613544685391284
+    is_station: true
+    name: '14'
+    room_type: 4
+    visibility_level: 1
+    tags: ''
+  - id: 34
+    x: 26.511956060040323
+    y: 12.886219045128508
+    yaw: 1.6448339227290392
+    is_station: true
+    name: 茶水间
+    room_type: 1
+    visibility_level: 1
+    tags: ''
+  - id: 35
+    x: 24.969232634154643
+    y: 14.471849889834807
+    yaw: -3.106769016475065
+    is_station: true
+    name: '15'
+    room_type: 4
+    visibility_level: 1
+    tags: ''
+  - id: 36
+    x: 13.28458851356371
+    y: 14.078724681127639
+    yaw: -3.0839274004800243
+    is_station: true
+    name: 展厅
+    room_type: 1
+    visibility_level: 1
+    tags: ''
+  - id: 37
+    x: 12.406525704717533
+    y: 3.145008359288206
+    yaw: -3.096816380453876
+    is_station: true
+    name: '16'
+    room_type: 4
+    visibility_level: 1
+    tags: ''
+  - id: 38
+    x: 2.185503214756375
+    y: 2.6531693254567577
+    yaw: -3.137955950691555
+    is_station: true
+    name: '17'
+    room_type: 4
+    visibility_level: 1
+    tags: ''
+  - id: 39
+    x: 2.3344542879070502
+    y: -1.331977843551985
+    yaw: 1.6309387411461813
+    is_station: true
+    name: 会议室1
+    room_type: 1
+    visibility_level: 1
+    tags: ''
+  - id: 1
+    x: 2.207221999591681
+    y: 1.433800260889405
+    yaw: 0
+    is_station: false
+    name: N1
+    room_type: 4
+    visibility_level: 1
+    tags: ''
+  - id: 2
+    x: 3.423076651066239
+    y: 2.762977108790314
+    yaw: 0
+    is_station: false
+    name: N2
+    room_type: 4
+    visibility_level: 1
+    tags: ''
+edges:
+  - id: 1
+    from: 17
+    to: 16
+    bidirectional: true
+    weight: 0
+    speed_limit: 0
+    geometry_type: 0
+  - id: 2
+    from: 16
+    to: 18
+    bidirectional: true
+    weight: 0
+    speed_limit: 0
+    geometry_type: 1
+    control_x: 0.6047819253842679
+    control_y: 0.4751929970131128
+  - id: 3
+    from: 18
+    to: 19
+    bidirectional: true
+    weight: 0
+    speed_limit: 0
+    geometry_type: 0
+  - id: 4
+    from: 19
+    to: 20
+    bidirectional: true
+    weight: 0
+    speed_limit: 0
+    geometry_type: 0
+  - id: 5
+    from: 20
+    to: 21
+    bidirectional: true
+    weight: 0
+    speed_limit: 0
+    geometry_type: 0
+  - id: 6
+    from: 21
+    to: 22
+    bidirectional: true
+    weight: 0
+    speed_limit: 0
+    geometry_type: 1
+    control_x: 0.09455931616782298
+    control_y: 16.94637944573435
+  - id: 7
+    from: 22
+    to: 23
+    bidirectional: true
+    weight: 0
+    speed_limit: 0
+    geometry_type: 0
+  - id: 8
+    from: 23
+    to: 24
+    bidirectional: true
+    weight: 0
+    speed_limit: 0
+    geometry_type: 1
+    control_x: 1.5988395127213388
+    control_y: 14.006845270965918
+  - id: 9
+    from: 20
+    to: 24
+    bidirectional: true
+    weight: 0
+    speed_limit: 0
+    geometry_type: 1
+    control_x: 0.574919295931991
+    control_y: 13.09708912719913
+  - id: 10
+    from: 24
+    to: 25
+    bidirectional: true
+    weight: 0
+    speed_limit: 0
+    geometry_type: 0
+  - id: 11
+    from: 25
+    to: 26
+    bidirectional: true
+    weight: 0
+    speed_limit: 0
+    geometry_type: 0
+  - id: 12
+    from: 26
+    to: 36
+    bidirectional: true
+    weight: 0
+    speed_limit: 0
+    geometry_type: 0
+  - id: 13
+    from: 36
+    to: 27
+    bidirectional: true
+    weight: 0
+    speed_limit: 0
+    geometry_type: 0
+  - id: 14
+    from: 26
+    to: 28
+    bidirectional: true
+    weight: 0
+    speed_limit: 0
+    geometry_type: 1
+    control_x: 12.548217004887212
+    control_y: 13.648306579516817
+  - id: 15
+    from: 28
+    to: 27
+    bidirectional: true
+    weight: 0
+    speed_limit: 0
+    geometry_type: 1
+    control_x: 14.115821527293756
+    control_y: 13.684138762039826
+  - id: 16
+    from: 27
+    to: 35
+    bidirectional: true
+    weight: 0
+    speed_limit: 0
+    geometry_type: 0
+  - id: 17
+    from: 35
+    to: 34
+    bidirectional: true
+    weight: 0
+    speed_limit: 0
+    geometry_type: 1
+    control_x: 26.189208212623257
+    control_y: 14.139478396608562
+  - id: 18
+    from: 34
+    to: 33
+    bidirectional: true
+    weight: 0
+    speed_limit: 0
+    geometry_type: 0
+  - id: 19
+    from: 33
+    to: 32
+    bidirectional: true
+    weight: 0
+    speed_limit: 0
+    geometry_type: 1
+    control_x: 26.54859847389083
+    control_y: 4.0697212475493325
+  - id: 20
+    from: 32
+    to: 31
+    bidirectional: true
+    weight: 0
+    speed_limit: 0
+    geometry_type: 0
+  - id: 21
+    from: 28
+    to: 29
+    bidirectional: true
+    weight: 0
+    speed_limit: 0
+    geometry_type: 0
+  - id: 22
+    from: 29
+    to: 30
+    bidirectional: true
+    weight: 0
+    speed_limit: 0
+    geometry_type: 0
+  - id: 23
+    from: 31
+    to: 37
+    bidirectional: true
+    weight: 0
+    speed_limit: 0
+    geometry_type: 0
+  - id: 24
+    from: 30
+    to: 31
+    bidirectional: true
+    weight: 0
+    speed_limit: 0
+    geometry_type: 1
+    control_x: 14.33564670891383
+    control_y: 3.8127540684492347
+  - id: 25
+    from: 30
+    to: 37
+    bidirectional: true
+    weight: 0
+    speed_limit: 0
+    geometry_type: 1
+    control_x: 13.575675946822928
+    control_y: 3.723071357163092
+  - id: 27
+    from: 18
+    to: 38
+    bidirectional: true
+    weight: 0
+    speed_limit: 0
+    geometry_type: 1
+    control_x: 1.1336453660524142
+    control_y: 2.2102818775071165
+  - id: 29
+    from: 1
+    to: 39
+    bidirectional: true
+    weight: 0
+    speed_limit: 0
+    geometry_type: 0
+  - id: 30
+    from: 17
+    to: 39
+    bidirectional: true
+    weight: 0
+    speed_limit: 0
+    geometry_type: 1
+    control_x: 1.9390436820514343
+    control_y: -0.11293124447134129
+  - id: 31
+    from: 38
+    to: 19
+    bidirectional: true
+    weight: 0
+    speed_limit: 0
+    geometry_type: 1
+    control_x: 1.0032538764410623
+    control_y: 2.948328244635284
+  - id: 26
+    from: 38
+    to: 2
+    bidirectional: true
+    weight: 0
+    speed_limit: 0
+    geometry_type: 0
+  - id: 28
+    from: 2
+    to: 37
+    bidirectional: true
+    weight: 0
+    speed_limit: 0
+    geometry_type: 0
+  - id: 32
+    from: 2
+    to: 1
+    bidirectional: true
+    weight: 0
+    speed_limit: 0
+    geometry_type: 1
+    control_x: 2.5881293882519207
+    control_y: 2.306053486486448
