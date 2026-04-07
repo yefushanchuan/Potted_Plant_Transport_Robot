@@ -35,15 +35,14 @@ def _launch_setup(context):
     map_name = LaunchConfiguration("map_name").perform(context)
     bag_path = LaunchConfiguration("bag_path").perform(context).strip()
     
-    # 获取 use_sim_time 参数
+    # 获取参数配置
+    use_icp = LaunchConfiguration("use_icp")
     use_sim_time_arg = LaunchConfiguration("use_sim_time").perform(context).lower()
     
-    # 智能推断
+    # 智能推断仿真时间
     if use_sim_time_arg == 'auto':
-        # 如果是 auto：有 bag_path 就是 True，没有 bag_path 就是 False
         use_sim_time = bool(bag_path) 
     else:
-        # 否则尊重用户的强制设定 (true 或 false)
         use_sim_time = (use_sim_time_arg == 'true')
 
     pkg_share = get_package_share_directory("indoor_location")
@@ -52,7 +51,11 @@ def _launch_setup(context):
     
     resolved_map_file = _resolve_map_path(map_file, map_dir, map_name)
 
-    return[
+    # ICP 配置路径
+    icp_pkg_dir = get_package_share_directory('icp_registration')
+    icp_params_file = os.path.join(icp_pkg_dir, 'config', 'icp.yaml')
+
+    return [
         Node(
             package='rviz2', 
             executable='rviz2', 
@@ -62,7 +65,7 @@ def _launch_setup(context):
             parameters=[{'use_sim_time': use_sim_time}],
         ),
         
-        # 定位核心节点
+        # 1. 定位核心节点
         Node(
             package='indoor_location',
             executable='location_node',
@@ -76,6 +79,19 @@ def _launch_setup(context):
                 "map_filename": resolved_map_file
             }],
             arguments=['--ros-args', '--log-level', 'WARN'],
+        ),
+
+        # 2. ICP 匹配节点 (受 use_icp 参数控制，默认启动)
+        Node(
+            condition=IfCondition(use_icp),
+            package='icp_registration',
+            executable='icp_registration_node',
+            output='screen',
+            parameters=[
+                icp_params_file,
+                {'map_filename': resolved_map_file}, 
+                {'use_sim_time': use_sim_time}
+            ]
         )
     ]
 
@@ -83,6 +99,8 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('use_sim_time', default_value='auto', 
                               description="true/false/auto. If 'auto', becomes true when bag_path is set."),
+        DeclareLaunchArgument('use_icp', default_value='true', 
+                              description="Whether to launch the ICP registration node"),
         DeclareLaunchArgument('bag_path', default_value=''), 
         DeclareLaunchArgument('map_file', default_value=''),
         DeclareLaunchArgument('map_dir', default_value=os.environ.get('ROBOT_MAP_DIR', '')),

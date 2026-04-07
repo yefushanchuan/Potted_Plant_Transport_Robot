@@ -25,6 +25,11 @@ def generate_launch_description():
     return launch.LaunchDescription(
         [
             DeclareLaunchArgument(
+                "launch_base",
+                default_value="true",
+                description="Launch robot base bringup"
+            ),
+            DeclareLaunchArgument(
                 "use_sim_time",
                 default_value="false",
                 description="Use sim time if true",
@@ -54,6 +59,7 @@ def generate_launch_description():
                     "use_sim_time": use_sim_time,
                     "use_ekf": "false",  # 不启动 EKF，直接使用 IMU 数据
                 }.items(),
+                condition=IfCondition(LaunchConfiguration("launch_base")),
             ),
             launch_ros.actions.Node(
                 package="fastlio2",
