@@ -136,6 +136,26 @@ def generate_launch_description():
         ]
     )
 
+    # EKF 融合定位节点
+    # 作用: 融合 IMU 数据（/imu）和轮式里程计（/diff_drive_controller/odom），
+    #       使用扩展卡尔曼滤波（EKF）估计机器人位姿，发布融合后的里程计 /odom
+    #       并发布 odom→base_link 的 TF 变换
+    # 输入: /imu (滤波后的 IMU 数据), /diff_drive_controller/odom (轮式里程计)
+    # 输出: /odom (融合后的里程计), /tf (odom→base_link)
+    # 注意: 由参数 use_ekf 控制是否启动；imu_filter_node 必须 publish_tf:=False，避免 TF 冲突
+    ekf_node = Node(
+        package='robot_localization',
+        executable='ekf_node',
+        name='ekf_filter_node',
+        output='screen',
+        parameters=[ekf_config_path],  # EKF 专用配置文件
+        remappings=[
+            ('odometry/filtered', 'odom'),           # 融合后里程计输出
+            ('/diff_drive_controller/odom', 'odom'),  # 轮式里程计输入（根据实际话题调整）
+        ],
+        condition=IfCondition(use_ekf)
+    )
+    
     # ========================================================================
     # 容器 感知流水线组件容器 (Perception Pipeline Container)
     # 包含: Livox驱动 -> CropBox -> PC2Scan -> 2D Lidar Filter
