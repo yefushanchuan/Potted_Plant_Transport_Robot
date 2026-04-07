@@ -98,64 +98,54 @@ def generate_launch_description():
         name="robot_controller_spawner",
     )
 
-    # IMU 硬件驱动节点
-    # 作用: 通过串口与 HiPNUC IMU 硬件通信，读取原始加速度、陀螺仪数据，
-    #       发布原始 IMU 数据到 /imu_raw 话题，供后续滤波节点处理
-    # 输入: 串口设备（参数配置），硬件寄存器数据
-    # 输出: /imu_raw (sensor_msgs/Imu)
-    # 注意: 使用 talker 可执行文件（发布者模式），非组件形式，独立进程启动
+    # IMU 数据发布 (硬件驱动)
+    # 作用: 驱动 hipnuc IMU 硬件，读取原始传感器数据。
+    # 输出: 原本直接发 /imu，现在重映射为 /imu_raw，把它交给下面的滤波节点。
     imu_node = Node(
-        package='hipnuc_imu',
-        executable='talker',
-        name='IMU_publisher',
-        output='screen',
+        package="hipnuc_imu",
+        executable="talker",
+        name="IMU_publisher",
         parameters=[imu_config],
+        output="screen",
         remappings=[('/imu', '/imu_raw')]
     )
-    
+
     # IMU 互补滤波节点
-    # 作用: 接收原始 IMU 数据，应用互补滤波算法融合加速度计和陀螺仪数据，
-    #       补偿漂移并输出平滑的姿态估计，不依赖磁力计（use_mag:=False）
-    # 输入: /imu_raw (原始 IMU 数据)
-    # 输出: /imu (滤波后的干净 IMU 数据，供 EKF 融合使用)
-    # 注意: 非组件形式，独立进程启动；不发布 TF（publish_tf:=False），避免与 EKF 冲突
+    # 作用: 接收原始 IMU 数据，过滤高频噪声，融合加速度计和陀螺仪估算平滑姿态。
+    # 输入: /imu_raw (订阅上一级的原始数据)
+    # 输出: /imu (发布干净的数据给下一级的 EKF)
     imu_filter_node = Node(
         package='imu_complementary_filter',
         executable='complementary_filter_node',
         name='imu_filter_node',
         output='screen',
         parameters=[{
-            'use_mag': False,           # 禁用磁力计（室内环境磁干扰大）
-            'publish_tf': False,        # 禁用 TF 发布（由 EKF 统一发布 odom->base_link）
-            'do_bias_estimation': True, # 启用陀螺仪零偏估计
-            'do_adaptive_gain': True    # 启用自适应增益（动态调整信任度）
+            'use_mag': False,           # 室内不用磁力计
+            'publish_tf': False,        # 坚决不发 TF，全权交给 EKF，避免冲突
+            'do_bias_estimation': True, # 消除陀螺仪静态漂移
+            'do_adaptive_gain': True
         }],
         remappings=[
-            ('imu/data_raw', '/imu_raw'),  # 订阅原始数据
-            ('imu/data', '/imu')            # 发布滤波后数据
+            ('imu/data_raw', '/imu_raw'),  
+            ('imu/data', '/imu')           
         ]
     )
 
-    # EKF 融合定位节点
-    # 作用: 融合 IMU 数据（/imu）和轮式里程计（/diff_drive_controller/odom），
-    #       使用扩展卡尔曼滤波（EKF）估计机器人位姿，发布融合后的里程计 /odom
-    #       并发布 odom→base_link 的 TF 变换
-    # 输入: /imu (滤波后的 IMU 数据), /diff_drive_controller/odom (轮式里程计)
-    # 输出: /odom (融合后的里程计), /tf (odom→base_link)
-    # 注意: 由参数 use_ekf 控制是否启动；imu_filter_node 必须 publish_tf:=False，避免 TF 冲突
+    # EKF 融合定位
+    # 作用: 融合 IMU 和轮式里程计数据，输出滤波后的位姿估计，
+    #       发布到 /odom 话题，并广播 odom → base_footprint 的 TF 变换
+    # 输入: /imu (经过上面过滤后的干净IMU数据), /diff_drive_controller/odom
+    # 输出: /odom (融合后的里程计), TF: odom → base_footprint (动态更新)
     ekf_node = Node(
         package='robot_localization',
         executable='ekf_node',
         name='ekf_filter_node',
         output='screen',
-        parameters=[ekf_config_path],  # EKF 专用配置文件
-        remappings=[
-            ('odometry/filtered', 'odom'),           # 融合后里程计输出
-            ('/diff_drive_controller/odom', 'odom'),  # 轮式里程计输入（根据实际话题调整）
-        ],
-        condition=IfCondition(use_ekf)
+        parameters=[ekf_config_path, base_params],
+        remappings=[('odometry/filtered', 'odom')],
+        condition=IfCondition(use_ekf) # 保持按需启动的逻辑
     )
-    
+
     # ========================================================================
     # 容器 感知流水线组件容器 (Perception Pipeline Container)
     # 包含: Livox驱动 -> CropBox -> PC2Scan -> 2D Lidar Filter
