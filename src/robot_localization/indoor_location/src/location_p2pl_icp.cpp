@@ -313,43 +313,52 @@ public:
         std::string lidar_frame_ = config["lidar_frame"] ? config["lidar_frame"].as<std::string>() : "livox_frame";
         std::string imu_frame_   = config["imu_frame"]   ? config["imu_frame"].as<std::string>()   : "imu_link";
 
-        RCLCPP_INFO(nh_->get_logger(), "等待获取静态 TF 树: %s -> %s & %s", 
-                    base_frame_.c_str(), lidar_frame_.c_str(), imu_frame_.c_str());
+        RCLCPP_INFO(nh_->get_logger(), "雷达类型: %s", lidar_type_.c_str());
+        RCLCPP_INFO(nh_->get_logger(), "等待获取静态 TF 树: Source[%s] -> Target[%s] & Source[%s] -> Target[%s]", 
+                    lidar_frame_.c_str(), base_frame_.c_str(), imu_frame_.c_str(), base_frame_.c_str());
 
         geometry_msgs::msg::TransformStamped lidar2base_msg;
         geometry_msgs::msg::TransformStamped imu2base_msg;
 
-        // 1. 阻塞等待：Base -> Lidar 的 TF
+        // 1. 阻塞等待：Lidar -> Base 的 TF
         while (rclcpp::ok()) {
             try {
-                // 注意：这里查询的 target_frame 是 base_frame_, source_frame 是 lidar_frame_
+                // lookupTransform 参数顺序：(target_frame, source_frame)
+                // 这里 target 是 base_frame_，source 是 lidar_frame_
+                // 计算结果正好是将点从 lidar 转换到 base，即 lidar2base
                 lidar2base_msg = tf_buffer_->lookupTransform(base_frame_, lidar_frame_, tf2::TimePointZero);
                 break;
             } catch (const tf2::TransformException &ex) {
                 RCLCPP_WARN_THROTTLE(nh_->get_logger(), *nh_->get_clock(), 2000, 
-                    "等待获取 TF [%s] -> [%s] 失败: %s", base_frame_.c_str(), lidar_frame_.c_str(), ex.what());
+                    "等待获取 TF (Source[%s] -> Target[%s]) 失败: %s", 
+                    lidar_frame_.c_str(), base_frame_.c_str(), ex.what());
                 rclcpp::sleep_for(std::chrono::milliseconds(500));
             }
         }
 
-        // 2. 阻塞等待：Base -> IMU 的 TF
+        // 2. 阻塞等待：IMU -> Base 的 TF
         while (rclcpp::ok()) {
             try {
+                // 同理，target = base, source = imu
                 imu2base_msg = tf_buffer_->lookupTransform(base_frame_, imu_frame_, tf2::TimePointZero);
                 break;
             } catch (const tf2::TransformException &ex) {
                 RCLCPP_WARN_THROTTLE(nh_->get_logger(), *nh_->get_clock(), 2000, 
-                    "等待获取 TF [%s] -> [%s] 失败: %s", base_frame_.c_str(), imu_frame_.c_str(), ex.what());
+                    "等待获取 TF (Source[%s] -> Target[%s]) 失败: %s", 
+                    imu_frame_.c_str(), base_frame_.c_str(), ex.what());
                 rclcpp::sleep_for(std::chrono::milliseconds(500));
             }
         }
 
         // ========== 解析 Lidar 到 Base 的外参 ==========
+        // 这里提取的 translation 就是你在 yaml 里的 lidar2base_x, y, z
         Eigen::Vector3f lidar2base_trans(
             lidar2base_msg.transform.translation.x,
             lidar2base_msg.transform.translation.y,
             lidar2base_msg.transform.translation.z
         );
+        
+        // 解析四元数到 Roll, Pitch, Yaw
         tf2::Quaternion q_lidar(
             lidar2base_msg.transform.rotation.x,
             lidar2base_msg.transform.rotation.y,
@@ -358,14 +367,16 @@ public:
         );
         double l_roll, l_pitch, l_yaw;
         tf2::Matrix3x3(q_lidar).getRPY(l_roll, l_pitch, l_yaw);
+        
         Eigen::Vector3f lidar2base_rpy(l_roll, l_pitch, l_yaw);
-        Eigen::Matrix3f lidar2base_rot = RPY2Mat(lidar2base_rpy);
+        Eigen::Matrix3f lidar2base_rot = RPY2Mat(lidar2base_rpy); // 完美复用你原有的 RPY 转矩阵函数
 
         RCLCPP_INFO(nh_->get_logger(), ">> 雷达外参(Lidar2Base) TF获取成功: trans=(%.3f, %.3f, %.3f), rpy=(%.3f, %.3f, %.3f)",
                     lidar2base_trans(0), lidar2base_trans(1), lidar2base_trans(2),
                     l_roll, l_pitch, l_yaw);
 
         // ========== 解析 IMU 到 Base 的外参 ==========
+        // 这里提取的 translation 就是你在 yaml 里的 imu2base_x, y, z
         imu2base_pose.pos(0) = imu2base_msg.transform.translation.x;
         imu2base_pose.pos(1) = imu2base_msg.transform.translation.y;
         imu2base_pose.pos(2) = imu2base_msg.transform.translation.z;
@@ -378,12 +389,14 @@ public:
         );
         double i_roll, i_pitch, i_yaw;
         tf2::Matrix3x3(q_imu).getRPY(i_roll, i_pitch, i_yaw);
+        
+        // 赋值给你原有的 imu2base_pose 结构体
         imu2base_pose.orient(0) = i_roll;
         imu2base_pose.orient(1) = i_pitch;
         imu2base_pose.orient(2) = i_yaw;
 
         update_q(imu2base_pose);
-        imu2link_rot_ = RPY2Mat(imu2base_pose.orient); // IMU 到 Baselink 的旋转矩阵
+        imu2link_rot_ = RPY2Mat(imu2base_pose.orient); // 生成 IMU 到 Baselink 的旋转矩阵
 
         RCLCPP_INFO(nh_->get_logger(), ">> IMU外参(IMU2Base) TF获取成功: trans=(%.3f, %.3f, %.3f), rpy=(%.3f, %.3f, %.3f)", 
             imu2base_pose.pos(0), imu2base_pose.pos(1), imu2base_pose.pos(2), 
