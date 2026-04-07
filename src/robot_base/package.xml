@@ -13,6 +13,7 @@
   <depend>std_msgs</depend>
   <depend>hardware_interface</depend>
   <depend>rclcpp_lifecycle</depend>
+  <depend>rclcpp_components</depend>
   <depend>libserial-dev</depend>
   <depend>pluginlib</depend>
   <depend>ros2_control</depend>

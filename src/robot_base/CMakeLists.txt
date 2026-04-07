@@ -94,7 +94,10 @@ ament_target_dependencies(laser_filter_node
   sensor_msgs
   rclcpp_components
 )
-rclcpp_components_register_node(laser_filter_node PLUGIN "CLidarFilter" EXECUTABLE "laser_filter_node_exe")
+rclcpp_components_register_node(laser_filter_node 
+  PLUGIN "robot_base::LidarFilter2D" 
+  EXECUTABLE "laser_filter_node_exe"
+)
 
 install(TARGETS
     agrobot_hardware_interface
