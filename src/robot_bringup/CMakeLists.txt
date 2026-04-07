@@ -8,7 +8,7 @@ endif()
 find_package(ament_cmake REQUIRED)
 
 install(
-  DIRECTORY launch config urdf rviz map route keepout roompose pcd log
+  DIRECTORY launch config urdf rviz map route keepout roompose pcd
   DESTINATION share/${PROJECT_NAME}
 )
 
