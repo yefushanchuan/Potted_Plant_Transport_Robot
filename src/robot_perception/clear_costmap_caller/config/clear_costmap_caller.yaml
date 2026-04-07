@@ -1,0 +1,16 @@
+# Clear Costmap Caller 配置文件
+# 用于定时清除 Nav2 代价地图中的过期障碍物
+
+clear_costmap_caller:
+  ros__parameters:
+    # 清除间隔（秒）- 每隔多少秒清除一次代价地图
+    clear_interval_sec: 3.0
+    
+    # 是否清除全局代价地图
+    clear_global_costmap: true
+    
+    # 是否清除局部代价地图
+    clear_local_costmap: true
+    
+    # 服务等待超时（秒）- 等待 Nav2 服务可用的超时时间
+    service_wait_timeout_sec: 1.0
