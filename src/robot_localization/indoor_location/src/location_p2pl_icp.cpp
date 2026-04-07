@@ -97,6 +97,10 @@ public:
     std::unique_ptr<scan2map3d> localizier3d;
     std::unique_ptr<ErrorStateKalmanFilter> eskf; // 误差状态卡尔曼滤波
 
+    std::atomic<bool> has_new_global_pose_{false};
+    pose_type global_pose_buffer_;
+    std::mutex global_pose_mutex_;
+    
     // IMU数据结构（与lio_node保持一致）
     struct IMUData
     {
@@ -1181,26 +1185,22 @@ public:
     // 初始位 姿反馈
     void initpose_cb(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr pose_msg)
     {
+        RCLCPP_INFO(nh_->get_logger(), "获取到全局重定位初始位姿!");
+        std::lock_guard<std::mutex> lock(global_pose_mutex_);
+        
+        global_pose_buffer_.pos(0) = pose_msg->pose.pose.position.x;
+        global_pose_buffer_.pos(1) = pose_msg->pose.pose.position.y;
+        global_pose_buffer_.pos(2) = 0.0; // 强制Z=0
 
-        RCLCPP_INFO(nh_->get_logger(), "get hand init pose!");
-        act_pose.pos(0) = pose_msg->pose.pose.position.x;
-        act_pose.pos(1) = pose_msg->pose.pose.position.y;
-        act_pose.pos(2) = 0.0;
-
-        // yaw (z-axis rotation)
         double siny_cosp = 2.0 * pose_msg->pose.pose.orientation.w * pose_msg->pose.pose.orientation.z;
         double cosy_cosp = 1.0 - 2.0 * pose_msg->pose.pose.orientation.z * pose_msg->pose.pose.orientation.z;
+        
+        global_pose_buffer_.orient(0) = 0.0; // 强制Roll=0
+        global_pose_buffer_.orient(1) = 0.0; // 强制Pitch=0
+        global_pose_buffer_.orient(2) = atan2(siny_cosp, cosy_cosp);
+        global_pose_buffer_.vel << 0.0, 0.0, 0.0;
 
-        act_pose.orient(0) = 0.0;
-        act_pose.orient(1) = 0.0;
-        act_pose.orient(2) = atan2(siny_cosp, cosy_cosp);
-
-        act_pose.vel << 0.0, 0.0, 0.0;
-        use_reloc_ = true;
-
-        // 重置ESKF状态
-        eskf->setMean(act_pose.pos.cast<double>(), act_pose.orient.cast<double>(), act_pose.vel.cast<double>());
-        eskf->reset();
+        has_new_global_pose_.store(true);
     }
 
     // 状态命 令反馈
@@ -1475,7 +1475,25 @@ public:
             // === 步骤2: 执行完整的定位算法(数据已同步) ===
             PerformanceStats perf_stat;
             auto frame_start_time = std::chrono::high_resolution_clock::now();
-            
+            if (has_new_global_pose_.load()) {
+                std::lock_guard<std::mutex> lock(global_pose_mutex_);
+                
+                // 1. 将 ICP 计算好的精确位姿直接赋给当前 act_pose
+                act_pose = global_pose_buffer_;
+                
+                // 2. 彻底重置 ESKF 的状态，避免与历史误差污染
+                eskf->setMean(act_pose.pos.cast<double>(), act_pose.orient.cast<double>(), act_pose.vel.cast<double>());
+                eskf->reset();
+                
+                // 3. 清除标志位
+                has_new_global_pose_.store(false);
+                
+                // 4. 重点：关闭本节点的重定位模式，直接进入正常点云匹配和追踪！
+                use_reloc_ = false; 
+                localizier3d->setNormalMode(); 
+                
+                RCLCPP_WARN(nh_->get_logger(), "[处理线程] 🚨 底盘 ESKF 已无缝切换至 ICP 提供的全局精确位姿！ 🚨");
+            }
             // 记录时间同步信息
             perf_stat.sync_success = true;
             perf_stat.lidar_start_time = m_package.cloud_start_time;
@@ -1551,7 +1569,7 @@ public:
                 auto reg_end = std::chrono::high_resolution_clock::now();
                 perf_stat.cloud_registration_time_ms = 
                     std::chrono::duration<double, std::milli>(reg_end - reg_start).count();
-                    
+
                 act_pose.pos(2) = 0.0;     // 强制 Z = 0
                 act_pose.orient(0) = 0.0;  // 强制 Roll = 0
                 act_pose.orient(1) = 0.0;  // 强制 Pitch = 0
