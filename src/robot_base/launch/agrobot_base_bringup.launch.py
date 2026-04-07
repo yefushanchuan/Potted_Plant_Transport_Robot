@@ -98,61 +98,46 @@ def generate_launch_description():
         name="robot_controller_spawner",
     )
 
-    # ========================================================================
-    # 容器 1: 状态估计组件容器 (State Estimation Container)
-    # 包含: IMU 硬件驱动 -> IMU 滤波 -> EKF 融合
-    # 特点: 高频、低延迟、零拷贝，独立线程池保证实时性，不受雷达处理影响
-    # ========================================================================
-    state_estimation_container = ComposableNodeContainer(
-        name='state_estimation_container',
-        namespace='',
-        package='rclcpp_components',
-        executable='component_container_mt', # 使用多线程容器
+    # IMU 硬件驱动节点
+    # 作用: 通过串口与 HiPNUC IMU 硬件通信，读取原始加速度、陀螺仪数据，
+    #       发布原始 IMU 数据到 /imu_raw 话题，供后续滤波节点处理
+    # 输入: 串口设备（参数配置），硬件寄存器数据
+    # 输出: /imu_raw (sensor_msgs/Imu)
+    # 注意: 使用 talker 可执行文件（发布者模式），非组件形式，独立进程启动
+    imu_node = Node(
+        package='hipnuc_imu',
+        executable='talker',
+        name='IMU_publisher',
         output='screen',
-        composable_node_descriptions=[
-            # 1. IMU 硬件驱动组件
-            ComposableNode(
-                package='hipnuc_imu',
-                plugin='hipnuc_driver::IMUPublisher', # 你查到的插件名字
-                name='IMU_publisher',
-                parameters=[imu_config],
-                remappings=[('/imu', '/imu_raw')], # 输出原始数据给滤波器
-                extra_arguments=[{'use_intra_process_comms': True}]
-            ),
-            
-            # 2. IMU 互补滤波组件
-            ComposableNode(
-                package='imu_complementary_filter',
-                plugin='imu_complementary_filter::ComplementaryFilterNode',
-                name='imu_filter_node',
-                parameters=[{
-                    'use_mag': False,
-                    'publish_tf': False,
-                    'do_bias_estimation': True,
-                    'do_adaptive_gain': True
-                }],
-                remappings=[
-                    ('imu/data_raw', '/imu_raw'),
-                    ('imu/data', '/imu')  # 输出干净数据给 EKF
-                ],
-                extra_arguments=[{'use_intra_process_comms': True}]
-            ),
-
-            # 3. EKF 融合定位组件 (官方提供的组件版)
-            ComposableNode(
-                package='robot_localization',
-                plugin='robot_localization::RosEkf',
-                name='ekf_filter_node',
-                parameters=[ekf_config_path, base_params],
-                remappings=[('odometry/filtered', 'odom')],
-                condition=IfCondition(use_ekf),
-                extra_arguments=[{'use_intra_process_comms': True}]
-            )
+        parameters=[imu_config],
+        remappings=[('/imu', '/imu_raw')]
+    )
+    
+    # IMU 互补滤波节点
+    # 作用: 接收原始 IMU 数据，应用互补滤波算法融合加速度计和陀螺仪数据，
+    #       补偿漂移并输出平滑的姿态估计，不依赖磁力计（use_mag:=False）
+    # 输入: /imu_raw (原始 IMU 数据)
+    # 输出: /imu (滤波后的干净 IMU 数据，供 EKF 融合使用)
+    # 注意: 非组件形式，独立进程启动；不发布 TF（publish_tf:=False），避免与 EKF 冲突
+    imu_filter_node = Node(
+        package='imu_complementary_filter',
+        executable='complementary_filter_node',
+        name='imu_filter_node',
+        output='screen',
+        parameters=[{
+            'use_mag': False,           # 禁用磁力计（室内环境磁干扰大）
+            'publish_tf': False,        # 禁用 TF 发布（由 EKF 统一发布 odom->base_link）
+            'do_bias_estimation': True, # 启用陀螺仪零偏估计
+            'do_adaptive_gain': True    # 启用自适应增益（动态调整信任度）
+        }],
+        remappings=[
+            ('imu/data_raw', '/imu_raw'),  # 订阅原始数据
+            ('imu/data', '/imu')            # 发布滤波后数据
         ]
     )
 
     # ========================================================================
-    # 容器 2: 感知流水线组件容器 (Perception Pipeline Container)
+    # 容器 感知流水线组件容器 (Perception Pipeline Container)
     # 包含: Livox驱动 -> CropBox -> PC2Scan -> 2D Lidar Filter
     # 特点: 高带宽点云数据处理，零拷贝极大节省 CPU 内存拷贝开销
     # ========================================================================
@@ -233,7 +218,7 @@ def generate_launch_description():
             # 4. 2D Lidar Filter 
             ComposableNode(
                 package='robot_base',
-                plugin='robot_base::LidarFilter2D', 
+                plugin='robot_base_utils::LidarFilter2D', 
                 name='lidar_filter2d_node',
                 parameters=[{
                     'source_topic': '/scan_raw', 
@@ -269,7 +254,9 @@ def generate_launch_description():
         ros2_control_node,
         delay_joint_state_spawner,       # 时序控制1
         delay_robot_controller_spawner,  # 时序控制2
-        state_estimation_container,
+        imu_node,
+        imu_filter_node,
+        ekf_node,
         lidar_and_filter_container   
     ]
 
