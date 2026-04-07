@@ -23,9 +23,11 @@ reloc_threshold: 0.55                         #重定位阈值
 map_filtr_leaf_size: 0.3                      #定位线程使用的全局地图滤波体素大小，使用配p2picp算法不能太大，不然拟合平面内找不到邻域点（p2picp 0.3,ndt 0.5）
 enable_undistort: true                        #是否启用点云去畸变功能（使用IMU进行运动补偿）
 
-map_frame    : "map"                          #发布定位系统tf发布所需的坐标系
+map_frame    : "map"                           #发布定位系统tf发布所需的坐标系
 odom_frame   : "odom"                          #里程计坐标系（用于 Nav2 导航）
 base_frame   : "base_footprint"                #机器人坐标系（用于 Nav2 导航）
+lidar_frame  : "front_laser_link"              #激光雷达坐标系（如果启用点云去畸变功能，则需要正确设置激光雷达坐标系以获取正确的运动补偿）
+imu_frame    : "imu_link"                      #IMU坐标系（如果启用点云去畸变功能，则需要正确设置IMU坐标系以获取正确的运动补偿）
 
 # TF 发布模式：
 #   enable_map_odom_tf: true  -> 发布 map→odom TF（需要 diff_drive_controller 发布 odom→base_footprint）
@@ -44,20 +46,6 @@ pose_refine_k_yaw_static: 0.10
 pose_refine_static_v_th: 0.03
 pose_refine_static_w_th: 0.05
 pose_refine_tf_lookup_timeout_sec: 0.08
-
-lidar2base_x: 0.084                           #lidar2base transform，单位米
-lidar2base_y: -0.241
-lidar2base_z: 0.2475
-lidar2base_roll: 0.0                          #单位弧度
-lidar2base_pitch: 0.785398                    #对应xacro中的 M_PI/4 (即45度)
-lidar2base_yaw: 0.0
-
-imu2base_x: -0.493                            #imu2base transform，单位米
-imu2base_y: 0.00
-imu2base_z: 0.1575
-imu2base_roll: 0.0                            #单位弧度
-imu2base_pitch: 0.0
-imu2base_yaw: 0.0
 
 init_x: 0.0                                   #定位系统输入的初始化位姿
 init_y: 0.0
