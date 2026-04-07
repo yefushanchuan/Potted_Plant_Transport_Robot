@@ -299,15 +299,12 @@ void IcpNode::pointcloudCallback(
 
   // 强制 2D 约束
   // 消除 Z, Roll, Pitch，只保留 X, Y, Yaw
-  Eigen::Vector3d euler_angles = map_to_base.block<3,3>(0,0).eulerAngles(2, 1, 0); // Yaw, Pitch, Roll
-  double yaw = euler_angles(0); 
-  Eigen::AngleAxisd rollAngle(0.0, Eigen::Vector3d::UnitX());
-  Eigen::AngleAxisd pitchAngle(0.0, Eigen::Vector3d::UnitY());
+  double yaw = std::atan2(map_to_base(1, 0), map_to_base(0, 0));
   Eigen::AngleAxisd yawAngle(yaw, Eigen::Vector3d::UnitZ());
-  Eigen::Quaterniond q_2d = yawAngle * pitchAngle * rollAngle;
-  
+  Eigen::Quaterniond q_2d(yawAngle);
   map_to_base.block<3,3>(0,0) = q_2d.toRotationMatrix();
   map_to_base(2, 3) = 0.0; // 强制 Z = 0
+    
   // 9. 发布逻辑
   if (publish_tf_) {
     std::lock_guard lock(mutex_);
