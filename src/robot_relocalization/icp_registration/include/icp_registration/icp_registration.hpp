@@ -40,9 +40,8 @@ private:
   void test_move(const geometry_msgs::msg::Twist::SharedPtr msg);
 
   static PointCloudXYZIN::Ptr addNorm(PointCloudXYZI::Ptr cloud);
-
-  // Eigen::Matrix4d align(PointCloudXYZI::Ptr source,
-  //                       const Eigen::Matrix4d &init_guess);
+  void addNormInPlace(pcl::PointCloud<pcl::PointXYZI>::Ptr cloud,
+                      PointCloudXYZIN::Ptr output);
 
   Eigen::Matrix4d multiAlignSync(PointCloudXYZI::Ptr source,
                                  const Eigen::Matrix4d &init_guess);
@@ -78,6 +77,15 @@ private:
   PointCloudXYZI::Ptr cloud_in_;
   PointCloudXYZIN::Ptr refine_map_;
   PointCloudXYZIN::Ptr rough_map_;
+  pcl::PointCloud<pcl::PointXYZI>::Ptr rough_source_;
+  pcl::PointCloud<pcl::PointXYZI>::Ptr refine_source_;
+  
+  PointCloudXYZIN::Ptr rough_source_norm_;
+  PointCloudXYZIN::Ptr refine_source_norm_;
+  PointCloudXYZIN::Ptr align_point_;
+  pcl::PointCloud<pcl::Normal>::Ptr normals_buffer_;
+  pcl::search::KdTree<pcl::PointXYZI>::Ptr kdtree_buffer_;
+
   geometry_msgs::msg::TransformStamped map_to_odom_;
   geometry_msgs::msg::TransformStamped temp_map_to_odom_;
   std::string map_filename_;

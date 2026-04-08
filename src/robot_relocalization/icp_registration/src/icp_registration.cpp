@@ -1,6 +1,6 @@
 #include "icp_registration/icp_registration.hpp"
-#include <Eigen/src/Geometry/Quaternion.h>
-#include <Eigen/src/Geometry/Transform.h>
+#include <Eigen/Geometry>
+#include <Eigen/Dense>
 #include <chrono>
 #include <geometry_msgs/msg/detail/pose_with_covariance_stamped__struct.hpp>
 #include <iostream>
@@ -16,10 +16,15 @@ namespace icp {
 
 IcpNode::IcpNode(const rclcpp::NodeOptions &options)
     : Node("icp_registration", options), rough_iter_(10), refine_iter_(5),
-      first_scan_(true) {
-  is_ready_ = false;
-  cloud_in_ =
-      pcl::PointCloud<pcl::PointXYZI>::Ptr(new pcl::PointCloud<pcl::PointXYZI>);
+      first_scan_(true), success_(false), is_ready_(false),
+      rough_source_(new pcl::PointCloud<pcl::PointXYZI>),
+      refine_source_(new pcl::PointCloud<pcl::PointXYZI>),
+      rough_source_norm_(new PointCloudXYZIN),
+      refine_source_norm_(new PointCloudXYZIN),
+      align_point_(new PointCloudXYZIN),
+      cloud_in_(new pcl::PointCloud<pcl::PointXYZI>),
+      normals_buffer_(new pcl::PointCloud<pcl::Normal>),
+      kdtree_buffer_(new pcl::search::KdTree<pcl::PointXYZI>) {
   // this->declare_parameter("use_sim_time", false);
   double rough_leaf_size = this->declare_parameter("rough_leaf_size", 0.4);
   double refine_leaf_size = this->declare_parameter("refine_leaf_size", 0.1);
@@ -96,6 +101,10 @@ IcpNode::IcpNode(const rclcpp::NodeOptions &options)
     tf2::Quaternion q;
     q.setRPY(initial_pose_vec.at(3), initial_pose_vec.at(4),
              initial_pose_vec.at(5));
+    initial_pose_.orientation.x = q.x();
+    initial_pose_.orientation.y = q.y();
+    initial_pose_.orientation.z = q.z();
+    initial_pose_.orientation.w = q.w();  
   } catch (const std::out_of_range &ex) {
     RCLCPP_ERROR(this->get_logger(),
                  "initial_pose is not a vector with 6 elements, what():%s",
@@ -136,21 +145,16 @@ IcpNode::IcpNode(const rclcpp::NodeOptions &options)
   }
 
   if (publish_tf_) {
-      tf_publisher_thread_ = std::make_unique<std::thread>([this]() {
-        rclcpp::Rate rate(100);
-        while (rclcpp::ok()) {
-          {
-            std::lock_guard lock(mutex_);
-            if (is_ready_) {
-              map_to_odom_.header.stamp = now();
-              map_to_odom_.header.frame_id = map_frame_id_;
-              map_to_odom_.child_frame_id = odom_frame_id_;
-              tf_broadcaster_->sendTransform(map_to_odom_);
-            }
-          }
-          rate.sleep();
-        }
-      });
+    // 使用 ROS2 的 Timer 替代 std::thread
+    timer_ = create_wall_timer(std::chrono::milliseconds(10), [this]() {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (is_ready_) {
+        map_to_odom_.header.stamp = this->now();
+        map_to_odom_.header.frame_id = map_frame_id_;
+        map_to_odom_.child_frame_id = odom_frame_id_;
+        tf_broadcaster_->sendTransform(map_to_odom_);
+      }
+    });
   }
 
   // Publish the map once
@@ -161,23 +165,10 @@ IcpNode::IcpNode(const rclcpp::NodeOptions &options)
   map_pub_->publish(map_msg);
   RCLCPP_INFO(this->get_logger(), "Published global map with %ld points", cloud->size());
 
-  // Set up the timer
-  // timer_ = create_wall_timer(std::chrono::milliseconds(10), [this]() {
-  //   if (is_ready_) {
-  //     map_to_odom_.header.stamp = now();
-  //     map_to_odom_.header.frame_id = map_frame_id_;
-  //     map_to_odom_.child_frame_id = odom_frame_id_;
-  //     tf_broadcaster_->sendTransform(map_to_odom_);
-  //   }
-  // });
-
   RCLCPP_INFO(this->get_logger(), "icp_registration initialized");
 }
 
 IcpNode::~IcpNode() {
-  if (tf_publisher_thread_->joinable()) {
-    tf_publisher_thread_->join();
-  }
 }
 
 void IcpNode::initialPoseCallback(
@@ -269,32 +260,19 @@ void IcpNode::pointcloudCallback(
   Eigen::Matrix4d map_to_laser = multiAlignSync(cloud_in_, initial_guess);
   
   if (!success_) {
-    map_to_laser = initial_guess;
-    RCLCPP_ERROR(this->get_logger(), "ICP matching failed, falling back to rough initial guess.");
-  } else {
-    RCLCPP_INFO(this->get_logger(), "ICP matching SUCCESS!");
-  }
-
-  // 8. 解耦计算底盘坐标 (查询静态外参)
-  Eigen::Matrix4d laser_to_base = Eigen::Matrix4d::Identity();
-  try {
-    // 仅查询雷达到底盘的静态外参
-    auto transform_l2b = tf_buffer_->lookupTransform(laser_frame_id_, base_frame_id_, tf2::TimePointZero);
-    Eigen::Vector3d t_l2b(transform_l2b.transform.translation.x,
-                          transform_l2b.transform.translation.y,
-                          transform_l2b.transform.translation.z);
-    Eigen::Quaterniond q_l2b(transform_l2b.transform.rotation.w, transform_l2b.transform.rotation.x,
-                             transform_l2b.transform.rotation.y, transform_l2b.transform.rotation.z);
-    laser_to_base.block<3, 3>(0, 0) = q_l2b.toRotationMatrix();
-    laser_to_base.block<3, 1>(0, 3) = t_l2b;
-  } catch (tf2::TransformException &ex) {
-    RCLCPP_ERROR(this->get_logger(), "Failed to get Static TF (laser->base): %s. (Is robot state publisher running?)", ex.what());
+    RCLCPP_ERROR(this->get_logger(), 
+                 "ICP matching failed! Discarding this frame and waiting for next...");
+    
+    // 重新打开阀门，等待下一帧雷达数据继续尝试
     std::lock_guard<std::mutex> lock(mutex_);
     wait_for_new_cloud_ = true; 
-    return;
-  }
+    return; // 立即中止，绝不发布错误坐标！
+  } 
+  
+  RCLCPP_INFO(this->get_logger(), "ICP matching SUCCESS!");
 
-  // 纯数学矩阵运算：得到底盘在世界地图中的绝对坐标
+  // 8. 数学直接求逆，消除冗余的第二次 TF 查询！！！
+  Eigen::Matrix4d laser_to_base = base_to_laser.inverse();
   Eigen::Matrix4d map_to_base = map_to_laser * laser_to_base;
 
   // 强制 2D 约束
@@ -307,7 +285,7 @@ void IcpNode::pointcloudCallback(
     
   // 9. 发布逻辑
   if (publish_tf_) {
-    std::lock_guard lock(mutex_);
+    std::lock_guard<std::mutex> lock(mutex_);
     map_to_odom_.transform.translation.x = map_to_base(0, 3);
     map_to_odom_.transform.translation.y = map_to_base(1, 3);
     map_to_odom_.transform.translation.z = map_to_base(2, 3);
@@ -340,110 +318,92 @@ void IcpNode::pointcloudCallback(
     RCLCPP_INFO(this->get_logger(), "Successfully Published EXACT INITIAL POSE to Tracker! IcpNode is now going back to sleep.");
   }
 }
-
-// Eigen::Matrix4d IcpNode::align(PointCloudXYZI::Ptr source,
-//                                const Eigen::Matrix4d &init_guess) {
-//   success_ = false;
-//   // Eigen::Vector3d xyz = init_guess.block<3, 1>(0, 3);
-
-//   pcl::PointCloud<pcl::PointXYZI>::Ptr rough_source(
-//       new pcl::PointCloud<pcl::PointXYZI>);
-//   pcl::PointCloud<pcl::PointXYZI>::Ptr refine_source(
-//       new pcl::PointCloud<pcl::PointXYZI>);
-
-//   voxel_rough_filter_.setInputCloud(source);
-//   voxel_rough_filter_.filter(*rough_source);
-//   voxel_refine_filter_.setInputCloud(source);
-//   voxel_refine_filter_.filter(*refine_source);
-
-//   PointCloudXYZIN::Ptr rough_source_norm = addNorm(rough_source);
-//   PointCloudXYZIN::Ptr refine_source_norm = addNorm(refine_source);
-//   PointCloudXYZIN::Ptr align_point(new PointCloudXYZIN);
-//   auto tic = std::chrono::system_clock::now();
-//   icp_rough_.setInputSource(rough_source_norm);
-//   icp_rough_.align(*align_point, init_guess.cast<float>());
-
-//   score_ = icp_rough_.getFitnessScore();
-//   if (!icp_rough_.hasConverged())
-//     return Eigen::Matrix4d::Zero();
-
-//   icp_refine_.setInputSource(refine_source_norm);
-//   icp_refine_.align(*align_point, icp_rough_.getFinalTransformation());
-//   score_ = icp_refine_.getFitnessScore();
-
-//   if (!icp_refine_.hasConverged())
-//     return Eigen::Matrix4d::Zero();
-//   if (score_ > thresh_)
-//     return Eigen::Matrix4d::Zero();
-//   success_ = true;
-//   auto toc = std::chrono::system_clock::now();
-//   std::chrono::duration<double> duration = toc - tic;
-//   RCLCPP_INFO(this->get_logger(), "align used: %f ms", duration.count() *
-//   1000); RCLCPP_INFO(this->get_logger(), "score: %f", score_);
-
-//   return icp_refine_.getFinalTransformation().cast<double>();
-// }
-
 Eigen::Matrix4d IcpNode::multiAlignSync(PointCloudXYZI::Ptr source,
                                         const Eigen::Matrix4d &init_guess) {
-  static auto rotate2rpy = [](Eigen::Matrix3d &rot) -> Eigen::Vector3d {
+  // 辅助lambda：旋转矩阵转RPY
+  auto rotate2rpy = [](const Eigen::Matrix3d &rot) -> Eigen::Vector3d {
     double roll = std::atan2(rot(2, 1), rot(2, 2));
-    double pitch = asin(-rot(2, 0));
+    double pitch = std::asin(-rot(2, 0));
     double yaw = std::atan2(rot(1, 0), rot(0, 0));
     return Eigen::Vector3d(roll, pitch, yaw);
   };
 
   success_ = false;
+  
+  // 提取初始位姿的位置和姿态
   Eigen::Vector3d xyz = init_guess.block<3, 1>(0, 3);
   Eigen::Matrix3d rotation = init_guess.block<3, 3>(0, 0);
   Eigen::Vector3d rpy = rotate2rpy(rotation);
+  
+  // 预计算Roll和Pitch角度（Yaw在循环内变化）
   Eigen::AngleAxisf rollAngle(rpy(0), Eigen::Vector3f::UnitX());
   Eigen::AngleAxisf pitchAngle(rpy(1), Eigen::Vector3f::UnitY());
+  
+  // 生成候选位姿网格（XY平移 + Yaw旋转）
   std::vector<Eigen::Matrix4f> candidates;
-  Eigen::Matrix4f temp_pose;
-
-  RCLCPP_INFO(this->get_logger(), "initial guess: %f, %f, %f, %f, %f, %f",
-              xyz(0), xyz(1), xyz(2), rpy(0), rpy(1), rpy(2));
-
+  candidates.reserve(9 * (2 * yaw_steps_ + 1));  // 预分配避免扩容
+  
   for (int i = -1; i <= 1; i++) {
     for (int j = -1; j <= 1; j++) {
       for (int k = -yaw_steps_; k <= yaw_steps_; k++) {
-        Eigen::Vector3f pos(xyz(0) + i * xy_offset_, xyz(1) + j * xy_offset_, xyz(2));
-        Eigen::AngleAxisf yawAngle(rpy(2) + k * yaw_resolution_, Eigen::Vector3f::UnitZ());
-        temp_pose.setIdentity();
-        temp_pose.block<3, 3>(0, 0) =
+        Eigen::Vector3f pos(xyz(0) + i * xy_offset_, 
+                            xyz(1) + j * xy_offset_, 
+                            xyz(2));
+        Eigen::AngleAxisf yawAngle(rpy(2) + k * yaw_resolution_, 
+                                   Eigen::Vector3f::UnitZ());
+        
+        Eigen::Matrix4f temp_pose = Eigen::Matrix4f::Identity();
+        temp_pose.block<3, 3>(0, 0) = 
             (rollAngle * pitchAngle * yawAngle).toRotationMatrix();
         temp_pose.block<3, 1>(0, 3) = pos;
         candidates.push_back(temp_pose);
       }
     }
   }
-  pcl::PointCloud<pcl::PointXYZI>::Ptr rough_source(
-      new pcl::PointCloud<pcl::PointXYZI>);
-  pcl::PointCloud<pcl::PointXYZI>::Ptr refine_source(
-      new pcl::PointCloud<pcl::PointXYZI>);
 
+  RCLCPP_INFO(this->get_logger(), 
+              "Initial guess: [%.2f, %.2f, %.2f], RPY: [%.2f, %.2f, %.2f], "
+              "candidates: %zu",
+              xyz(0), xyz(1), xyz(2), rpy(0), rpy(1), rpy(2), 
+              candidates.size());
+
+  // 复用类成员缓冲区进行体素滤波
+  rough_source_->clear();
+  refine_source_->clear();
+  
   voxel_rough_filter_.setInputCloud(source);
-  voxel_rough_filter_.filter(*rough_source);
+  voxel_rough_filter_.filter(*rough_source_);
+  
   voxel_refine_filter_.setInputCloud(source);
-  voxel_refine_filter_.filter(*refine_source);
+  voxel_refine_filter_.filter(*refine_source_);
 
-  PointCloudXYZIN::Ptr rough_source_norm = addNorm(rough_source);
-  PointCloudXYZIN::Ptr refine_source_norm = addNorm(refine_source);
-  PointCloudXYZIN::Ptr align_point(new PointCloudXYZIN);
+  // 复用类成员计算法线
+  addNormInPlace(rough_source_, rough_source_norm_);
+  addNormInPlace(refine_source_, refine_source_norm_);
+  
+  // 清空对齐结果缓冲区
+  align_point_->clear();
 
-  Eigen::Matrix4f best_rough_transform;
-  double best_rough_score = 10.0;
+  // 粗匹配：遍历所有候选位姿，找最优解
+  Eigen::Matrix4f best_rough_transform = Eigen::Matrix4f::Identity();
+  double best_rough_score = std::numeric_limits<double>::max();
   bool rough_converge = false;
+  
   auto tic = std::chrono::system_clock::now();
-  for (Eigen::Matrix4f &init_pose : candidates) {
-    icp_rough_.setInputSource(rough_source_norm);
-    icp_rough_.align(*align_point, init_pose);
+  
+  icp_rough_.setInputSource(rough_source_norm_);
+  
+  for (const Eigen::Matrix4f &init_pose : candidates) {
+    icp_rough_.align(*align_point_, init_pose);
+    
     if (!icp_rough_.hasConverged())
       continue;
+      
     double rough_score = icp_rough_.getFitnessScore();
+    
     if (rough_score > 2 * thresh_)
       continue;
+      
     if (rough_score < best_rough_score) {
       best_rough_score = rough_score;
       rough_converge = true;
@@ -451,22 +411,34 @@ Eigen::Matrix4d IcpNode::multiAlignSync(PointCloudXYZI::Ptr source,
     }
   }
 
-  if (!rough_converge)
+  if (!rough_converge) {
+    RCLCPP_WARN(this->get_logger(), 
+                "Rough ICP failed to converge for all %zu candidates", 
+                candidates.size());
     return Eigen::Matrix4d::Zero();
+  }
 
-  icp_refine_.setInputSource(refine_source_norm);
-  icp_refine_.align(*align_point, best_rough_transform);
+  // 精匹配：基于粗匹配最优结果细化
+  icp_refine_.setInputSource(refine_source_norm_);
+  icp_refine_.align(*align_point_, best_rough_transform);
+  
   score_ = icp_refine_.getFitnessScore();
 
-  if (!icp_refine_.hasConverged())
+  if (!icp_refine_.hasConverged() || score_ > thresh_) {
+    RCLCPP_WARN(this->get_logger(), 
+                "Refine ICP failed: converged=%d, score=%.4f (thresh=%.4f)",
+                icp_refine_.hasConverged(), score_, thresh_);
     return Eigen::Matrix4d::Zero();
-  if (score_ > thresh_)
-    return Eigen::Matrix4d::Zero();
+  }
+    
   success_ = true;
+  
   auto toc = std::chrono::system_clock::now();
   std::chrono::duration<double> duration = toc - tic;
-  RCLCPP_INFO(this->get_logger(), "align used: %f ms", duration.count() * 1000);
-  RCLCPP_INFO(this->get_logger(), "score: %f", score_);
+  
+  RCLCPP_INFO(this->get_logger(), 
+              "ICP alignment succeeded: %.2f ms, fitness score: %.4f",
+              duration.count() * 1000, score_);
 
   return icp_refine_.getFinalTransformation().cast<double>();
 }
@@ -483,9 +455,32 @@ IcpNode::addNorm(pcl::PointCloud<pcl::PointXYZI>::Ptr cloud) {
   normalEstimator.setSearchMethod(searchTree);
   normalEstimator.setKSearch(15);
   normalEstimator.compute(*normals);
+  
   PointCloudXYZIN::Ptr out(new PointCloudXYZIN);
   pcl::concatenateFields(*cloud, *normals, *out);
   return out;
+}
+
+void IcpNode::addNormInPlace(pcl::PointCloud<pcl::PointXYZI>::Ptr cloud,
+                             PointCloudXYZIN::Ptr output) {
+  // 清空法线缓冲区（保留内存容量）
+  normals_buffer_->clear();
+  
+  // 复用 KD-Tree（设置新输入云）
+  kdtree_buffer_->setInputCloud(cloud);
+  
+  // 法线估计
+  pcl::NormalEstimation<pcl::PointXYZI, pcl::Normal> ne;
+  ne.setInputCloud(cloud);
+  ne.setSearchMethod(kdtree_buffer_);
+  ne.setKSearch(15);
+  ne.compute(*normals_buffer_);
+  
+  // 清空输出缓冲区（保留内存容量）
+  output->clear();
+  
+  // 合并点云和法线到输出
+  pcl::concatenateFields(*cloud, *normals_buffer_, *output);
 }
 
 } // namespace icp

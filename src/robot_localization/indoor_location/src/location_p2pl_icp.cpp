@@ -39,6 +39,7 @@ void SigHandle(int sig)
 {
     g_b_exit.store(true);
     RCLCPP_WARN(rclcpp::get_logger("lidar_location_3d"), "捕获信号 %d, 准备退出...", sig);
+    rclcpp::shutdown();
 }
 
 bool check_imu_data(Eigen::VectorXd imu_data)
@@ -62,7 +63,7 @@ bool check_imu_data(Eigen::VectorXd imu_data)
 class location
 {
 public:
-    rclcpp::Node::SharedPtr nh_ = std::make_shared<rclcpp::Node>("lidar_location_3d"); // ROS2 节点对象
+    rclcpp::Node::SharedPtr nh_                                                        // ROS2 节点对象
     std::string map_file_path;                                                         // 地图路径
     pcl::PointCloud<PointType>::Ptr map_cloud;                                         // 地图点云
     pose_type act_pose;                                                                // 当前位姿
@@ -176,7 +177,7 @@ public:
     double pose_refine_k_yaw_static_ = 0.04;
     double pose_refine_static_v_th_ = 0.03;
     double pose_refine_static_w_th_ = 0.05;
-    double pose_refine_tf_lookup_timeout_sec_ = 0.08;
+    double pose_refine_tf_lookup_timeout_sec_ = 0.0;
 
     tf2::Transform pose_refine_map_to_base_prev_;
     tf2::Transform pose_refine_odom_to_base_prev_;
@@ -248,7 +249,8 @@ public:
         catch (YAML::BadFile &e)
         {
             RCLCPP_ERROR(nh_->get_logger(), "Loc :  read config file error!");
-            return;
+            rclcpp::shutdown(); 
+            throw std::runtime_error("Config file not found");
         }
 
         // 是否使用重定位
@@ -550,7 +552,6 @@ public:
             pubmap_msg.header.frame_id = map_frame_;
             pubmap_msg.header.stamp = nh_->get_clock()->now(); // 设置时间戳
             RCLCPP_INFO(nh_->get_logger(), "Publishing map with timestamp: %.9f", getSec(pubmap_msg.header));
-            rclcpp::sleep_for(std::chrono::seconds(2));
             pc_map_pub_->publish(pubmap_msg);
         }
         else
@@ -992,50 +993,23 @@ public:
         acc = imu2link_rot_.cast<double>() * acc;
         gyro = imu2link_rot_.cast<double>() * gyro;
 
-        // ================= 杆臂效应(向心加速度)补偿 =================
-        // 获取IMU相对于base_link的平移向量 p_imu
-        Eigen::Vector3d p_imu = imu2base_pose.pos.cast<double>();
-        // 计算向心加速度: w x (w x p_imu)
-        Eigen::Vector3d centripetal_acc = gyro.cross(gyro.cross(p_imu));
-        // 从读取的加速度中剔除向心加速度，使其真正代表 base_link 中心的加速度
-        acc = acc - centripetal_acc;
-        
-        // 第3步：检查加速度Z值，判断单位并进行转换（与lio_node完全一致）
-        // 如果线性加速度的z分量 > 5，认为单位是m/s²，需要转换为g（除以9.81）
-        if (acc.z() > 5.0)
-        {
-            acc = acc / imu_scale_;
-
-            // 调试：记录单位转换后的数据
-            // if (enable_sync_debug_ && raw_imu_counter % 200 == 0)
-            // {
-            //     RCLCPP_INFO(nh_->get_logger(),
-            //                 "[IMU变换] 单位转换(÷9.81)后: 加速度=[%.6f,%.6f,%.6f]g",
-            //                 acc.x(), acc.y(), acc.z());
-            // }
-        }
-        else if (acc.z() < 0)
-        {
-            // 特殊处理：速腾airy 96线雷达，数据转到雷达坐标系，imu坐标系朝下
+        // 第3步：先处理单位和特殊雷达方向（统一转换到 m/s^2）
+        if (acc.z() > 5.0) {
+            // 输入已经是 m/s^2，不需要操作
+        } else if (acc.z() < 0) {
+            // 特殊处理：速腾airy 96线雷达
             acc = Eigen::Vector3d(-acc.y(), -acc.x(), -acc.z());
             gyro = Eigen::Vector3d(-gyro.y(), -gyro.x(), -gyro.z());
-        }
-        else
-        {
-            // -5 < z < 5，认为已经是g单位，不需要转换
-            acc = acc;
+            if (std::abs(acc.z()) < 5.0) acc = acc * imu_scale_; // 如果是g，转m/s^2
+        } else {
+            // -5 < z < 5，说明输入单位是 g，需要转成 m/s^2
+            acc = acc * imu_scale_;
         }
 
-        // 第4步：最终缓存数据，乘以imu_scale_转换为m/s²（与lio_node完全一致）
-        Eigen::Vector3d final_acc = acc * imu_scale_;
-
-        // 调试：记录最终缓存的数据
-        // if (enable_sync_debug_ && raw_imu_counter % 200 == 0)
-        // {
-        //     RCLCPP_INFO(nh_->get_logger(),
-        //                 "[IMU变换] 最终缓存(×%.1f)后: 加速度=[%.6f,%.6f,%.6f]m/s²",
-        //                 imu_scale_, final_acc.x(), final_acc.y(), final_acc.z());
-        // }
+        // 第4步：现在 acc 的单位已经是 m/s^2，进行向心加速度补偿
+        Eigen::Vector3d p_imu = imu2base_pose.pos.cast<double>();
+        Eigen::Vector3d centripetal_acc = gyro.cross(gyro.cross(p_imu));
+        Eigen::Vector3d final_acc = acc - centripetal_acc; // 量纲统一，相减合法
 
         // 添加到缓冲区（与lio_node一致）
         m_state_data.imu_buffer.emplace_back(final_acc, gyro, timestamp);
@@ -1152,8 +1126,12 @@ public:
             m_package.cloud_start_time = m_state_data.lidar_buffer.front().first;
 
             // 设置当前点云的结束时间
-            m_package.cloud_end_time = m_package.cloud_start_time +
-                                       m_package.cloud->points.back().curvature / 1000.0;
+            if (m_package.cloud->points.empty()) {
+                m_state_data.lidar_buffer.pop_front();
+                m_state_data.lidar_pushed = false;
+                return false; 
+            }
+            m_package.cloud_end_time = m_package.cloud_start_time + m_package.cloud->points.back().curvature / 1000.0;
 
             // 标记lidar已经处理
             m_state_data.lidar_pushed = true;
@@ -1213,10 +1191,16 @@ public:
         }
         else if (msg->data == "test_reloc")
         {
-
             RCLCPP_INFO(nh_->get_logger(), "test reloc");
-            act_pose.pos(0) = act_pose.pos(0) + 5.0;
-            act_pose.pos(1) = 4.0;
+            
+            std::lock_guard<std::mutex> lock(global_pose_mutex_);
+            global_pose_buffer_.pos(0) = act_pose.pos(0) + 5.0;
+            global_pose_buffer_.pos(1) = 4.0;
+            global_pose_buffer_.pos(2) = 0.0;
+            global_pose_buffer_.orient = act_pose.orient;  // 保持朝向
+            global_pose_buffer_.vel << 0.0, 0.0, 0.0;
+            
+            has_new_global_pose_.store(true);  // 触发统一的重定位流程
         }
     }
 
@@ -1436,110 +1420,93 @@ public:
     }
 
     // ============ 独立处理线程函数 ============
+        // ============ 独立处理线程函数 ============
     void processThreadFunc()
     {
-        RCLCPP_INFO(nh_->get_logger(), "[处理线程] 启动,使用同步触发模式(参考Livox)");
+        RCLCPP_INFO(nh_->get_logger(), "[处理线程] 启动,使用同步触发模式");
         
-        int process_count = 0; // 处理帧计数
+        int process_count = 0;
         
         while (rclcpp::ok() && !g_b_exit.load())
         {
-            // === 关键改进: 等待同步成功而非简单的数据到达 ===
-            // 参考Livox的ProcessLoop: wait_for + SyncMeasure作为条件
+            // === 等待同步成功 ===
             {
                 std::unique_lock<std::mutex> lock(process_mutex_);
                 
-                // 等待条件: syncPackage()成功 或 收到退出信号
-                // 使用wait_for(10ms)避免在异常情况下永久阻塞
                 if (!process_cv_.wait_for(lock, std::chrono::milliseconds(10),
                     [this]() { 
-                        // 退出信号优先
                         if (g_b_exit.load()) return true;
-                        // 尝试同步IMU和LiDAR,成功则唤醒处理
                         return syncPackage();
                     }))
                 {
-                    // 超时(同步失败),继续等待
                     continue;
                 }
                 
-                // 检查是否是退出信号
                 if (g_b_exit.load()) {
                     RCLCPP_INFO(nh_->get_logger(), "[处理线程] 收到退出信号");
                     break;
                 }
-                
-                // 到这里说明syncPackage()成功,数据已在m_package中
             }
             
-            // === 步骤2: 执行完整的定位算法(数据已同步) ===
-            PerformanceStats perf_stat;
-            auto frame_start_time = std::chrono::high_resolution_clock::now();
+            // ========== 初始位姿注入（ICP 或 RViz）==========
             if (has_new_global_pose_.load()) {
                 std::lock_guard<std::mutex> lock(global_pose_mutex_);
                 
-                // 1. 将 ICP 计算好的精确位姿直接赋给当前 act_pose
                 act_pose = global_pose_buffer_;
                 
-                // 2. 彻底重置 ESKF 的状态，避免与历史误差污染
-                eskf->setMean(act_pose.pos.cast<double>(), act_pose.orient.cast<double>(), act_pose.vel.cast<double>());
+                eskf->setMean(act_pose.pos.cast<double>(), 
+                             act_pose.orient.cast<double>(), 
+                             act_pose.vel.cast<double>());
                 eskf->reset();
                 
-                // 3. 清除标志位
                 has_new_global_pose_.store(false);
-                
-                // 4. 重点：关闭本节点的重定位模式，直接进入正常点云匹配和追踪！
                 use_reloc_ = false; 
-                localizier3d->setNormalMode(); 
+                localizier3d->setNormalMode();
                 
-                RCLCPP_WARN(nh_->get_logger(), "[处理线程] 🚨 底盘 ESKF 已无缝切换至 ICP 提供的全局精确位姿！ 🚨");
+                RCLCPP_WARN(nh_->get_logger(), 
+                    "[重定位] 接收初始位姿: (%.2f, %.2f, %.2f°), 等待下一帧...", 
+                    act_pose.pos(0), act_pose.pos(1), 
+                    act_pose.orient(2) * 57.3);
+
+                // 清空数据，等待下一帧点云开始正常追踪
+                std::vector<IMUData>().swap(m_package.imus);
+                m_package.cloud.reset();
+                continue;  // ✅ 关键修复
             }
-            // 记录时间同步信息
-            perf_stat.sync_success = true;
-            perf_stat.lidar_start_time = m_package.cloud_start_time;
-            perf_stat.lidar_end_time = m_package.cloud_end_time;
-            perf_stat.imu_count = static_cast<int>(m_package.imus.size());
-            
-            if (!m_package.imus.empty()) {
-                perf_stat.imu_first_time = m_package.imus.front().time;
-                perf_stat.imu_last_time = m_package.imus.back().time;
-            }
-            
-            // 记录缓冲区状态
-            {
-                std::lock_guard<std::mutex> lock(m_state_data.imu_mutex);
-                perf_stat.imu_buffer_before_sync = m_state_data.imu_buffer.size();
-                if (!m_state_data.imu_buffer.empty()) {
-                    perf_stat.imu_buffer_first_time = m_state_data.imu_buffer.front().time;
-                    perf_stat.imu_buffer_last_time = m_state_data.imu_buffer.back().time;
-                }
-            }
+
+            // ========== 正常定位流程 ==========
+            PerformanceStats perf_stat;
+            auto frame_start = std::chrono::high_resolution_clock::now();
             
             pcl::PointCloud<PointType>::Ptr cloud_in = m_package.cloud;
             bool should_publish = false;
             
+            // 重定位模式
             if (use_reloc_) {
-                // 重定位模式
                 auto reg_start = std::chrono::high_resolution_clock::now();
                 act_pose = localizier3d->location(act_pose, cloud_in);
                 auto reg_end = std::chrono::high_resolution_clock::now();
                 perf_stat.cloud_registration_time_ms = 
                     std::chrono::duration<double, std::milli>(reg_end - reg_start).count();
                 
+                // 重定位成功判断（ fitness 高 = 匹配好）
                 if (localizier3d->fitness_ > (reloc_threshold_ * 1.2)) {
-                    RCLCPP_WARN(nh_->get_logger(), "[重定位] 成功: fitness=%.3f, pos=(%.2f, %.2f, %.2f)",
-                               localizier3d->fitness_, act_pose.pos(0), act_pose.pos(1), act_pose.pos(2));
+                    RCLCPP_WARN(nh_->get_logger(), 
+                        "[重定位] 成功: fitness=%.3f, pos=(%.2f, %.2f)", 
+                        localizier3d->fitness_, act_pose.pos(0), act_pose.pos(1));
                     
-                    localizier3d->setNormalMode();
                     use_reloc_ = false;
+                    localizier3d->setNormalMode();
                     should_publish = true;
+                    
                     if (pose_refine_force_accept_reloc_) {
                         pose_refine_force_accept_next_ = true;
                     }
                     
-                    // 重置ESKF
+                    // 重置 ESKF
                     auto eskf_start = std::chrono::high_resolution_clock::now();
-                    eskf->setMean(act_pose.pos.cast<double>(), act_pose.orient.cast<double>(), 
+                    eskf->setMean(act_pose.pos.cast<double>(), 
+                                 act_pose.orient.cast<double>(), 
                                  act_pose.vel.cast<double>());
                     eskf->reset();
                     auto eskf_end = std::chrono::high_resolution_clock::now();
@@ -1547,11 +1514,12 @@ public:
                         std::chrono::duration<double, std::milli>(eskf_end - eskf_start).count();
                 } else {
                     RCLCPP_WARN_THROTTLE(nh_->get_logger(), *nh_->get_clock(), 2000,
-                                        "[重定位] 进行中: fitness=%.3f (阈值=%.3f)",
-                                        localizier3d->fitness_, reloc_threshold_ * 1.2);
+                        "[重定位] 进行中: fitness=%.3f (阈值=%.3f)",
+                        localizier3d->fitness_, reloc_threshold_ * 1.2);
                 }
-            } else {
-                // 正常定位模式
+            } 
+            // 正常追踪模式
+            else {
                 // 去畸变
                 if (!m_package.imus.empty()) {
                     undistortPointCloud(cloud_in, m_package.cloud_start_time,
@@ -1570,9 +1538,10 @@ public:
                 perf_stat.cloud_registration_time_ms = 
                     std::chrono::duration<double, std::milli>(reg_end - reg_start).count();
 
-                act_pose.pos(2) = 0.0;     // 强制 Z = 0
-                act_pose.orient(0) = 0.0;  // 强制 Roll = 0
-                act_pose.orient(1) = 0.0;  // 强制 Pitch = 0
+                // 强制 2D 约束
+                act_pose.pos(2) = 0.0;
+                act_pose.orient(0) = 0.0;
+                act_pose.orient(1) = 0.0;
 
                 // ESKF校正
                 if (!m_package.imus.empty()) {
@@ -1583,9 +1552,11 @@ public:
                         std::chrono::duration<double, std::milli>(eskf_end - eskf_start).count();
                 }
                 
+                // 检查是否丢失
                 if (localizier3d->fitness_ < reloc_threshold_) {
-                    RCLCPP_WARN(nh_->get_logger(), "[定位] Fitness过低 (%.3f < %.3f)，切换重定位",
-                               localizier3d->fitness_, reloc_threshold_);
+                    RCLCPP_WARN(nh_->get_logger(), 
+                        "[定位] Fitness过低 (%.3f < %.3f)，切换重定位",
+                        localizier3d->fitness_, reloc_threshold_);
                     use_reloc_ = true;
                     localizier3d->setRelocMode();
                     should_publish = false;
@@ -1594,20 +1565,18 @@ public:
                 }
             }
             
-            auto frame_end_time = std::chrono::high_resolution_clock::now();
+            // 统计和发布
+            auto frame_end = std::chrono::high_resolution_clock::now();
             perf_stat.total_process_time_ms = 
-                std::chrono::duration<double, std::milli>(frame_end_time - frame_start_time).count();
+                std::chrono::duration<double, std::milli>(frame_end - frame_start).count();
             
-            // === 步骤4: 发布位姿 ===
             if (should_publish) {
-                if (std::isnan(act_pose.pos(0)) || std::isnan(act_pose.pos(1)) || 
-                    std::isnan(act_pose.pos(2))) {
-                    RCLCPP_ERROR(nh_->get_logger(), "[处理线程] 检测到NaN位姿,跳过发布");
+                if (std::isnan(act_pose.pos(0)) || std::isnan(act_pose.pos(1))) {
+                    RCLCPP_ERROR(nh_->get_logger(), "[处理线程] NaN位姿,跳过发布");
                 } else {
                     auto pub_start = std::chrono::high_resolution_clock::now();
-                    // 发布位姿、TF和点云
+                    
                     pose_publish_count_++;
-
                     pose_type act_pose_pub = act_pose;
                     refinePoseForPublish(act_pose, m_package.cloud_end_time, act_pose_pub);
 
@@ -1619,48 +1588,20 @@ public:
                     auto pub_end = std::chrono::high_resolution_clock::now();
                     perf_stat.pose_publish_time_ms = 
                         std::chrono::duration<double, std::milli>(pub_end - pub_start).count();
-                    
-                    // 定期打印发布信息（每20帧）
-                    if (pose_publish_count_ % 20 == 0) {
-                        RCLCPP_INFO(nh_->get_logger(),
-                                   "[位姿发布] 第%d帧 | 时间戳=%.6f | pos=(%.3f, %.3f, %.3f) | rpy=(%.3f°, %.3f°, %.3f°)",
-                                   pose_publish_count_,
-                                   m_package.cloud_end_time,
-                                   act_pose_pub.pos(0), act_pose_pub.pos(1), act_pose_pub.pos(2),
-                                   act_pose_pub.orient(0) * 57.3, act_pose_pub.orient(1) * 57.3, act_pose_pub.orient(2) * 57.3);
-                    }
                 }
             }
             
-            // 更新性能统计
+            // 更新统计
             perf_history_.push_back(perf_stat);
             if (perf_history_.size() > perf_history_size_) {
                 perf_history_.pop_front();
             }
             
-            // 清理数据
+            // 清理
             std::vector<IMUData>().swap(m_package.imus);
             m_package.cloud.reset();
             
-            // 打印处理信息
             ++process_count;
-            ++undistort_count_;
-            
-            double current_system_time = nh_->get_clock()->now().seconds();
-            double cloud_to_system_delay = current_system_time - m_package.cloud_end_time;
-            
-            RCLCPP_INFO(nh_->get_logger(),
-                       "[第%d帧] 同步云末=%.6f | 系统时间=%.6f | "
-                       "数据延迟=%.3fs(%.0fms) | 算法=%.1fms | IMU=%d个 | 配准=%.1fms | "
-                       "fitness=%.3f | pos=(%.2f,%.2f,%.2f) | yaw=%.1f°",
-                       process_count,
-                       m_package.cloud_end_time, current_system_time,
-                       cloud_to_system_delay, cloud_to_system_delay * 1000.0,
-                       perf_stat.total_process_time_ms, perf_stat.imu_count,
-                       perf_stat.cloud_registration_time_ms,
-                       localizier3d->fitness_,
-                       act_pose.pos(0), act_pose.pos(1), act_pose.pos(2),
-                       act_pose.orient(2) * 57.3);
         }
         
         RCLCPP_INFO(nh_->get_logger(), "[处理线程] 退出");
