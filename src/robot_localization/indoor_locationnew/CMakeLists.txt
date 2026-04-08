@@ -7,6 +7,14 @@ set(CMAKE_CXX_STANDARD 17)
 # 设置 CMP0074 策略以消除警告
 cmake_policy(SET CMP0074 NEW)
 
+# 强制开启 Release 模式
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build." FORCE)
+endif()
+
+# -O3: 最高级别优化
+set(CMAKE_CXX_FLAGS "-O3 -Wall ${CMAKE_CXX_FLAGS}")
+
 # 查找 ROS 2 的依赖
 find_package(ament_cmake REQUIRED)
 find_package(rosidl_default_generators REQUIRED)

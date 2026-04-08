@@ -28,16 +28,17 @@ IcpNode::IcpNode(const rclcpp::NodeOptions &options)
   voxel_refine_filter_.setLeafSize(refine_leaf_size, refine_leaf_size,
                                    refine_leaf_size);
 
-  pcd_path_ = this->declare_parameter("pcd_path", std::string(""));
-  if (!std::filesystem::exists(pcd_path_)) {
-    RCLCPP_ERROR(this->get_logger(), "Invalid pcd path: %s", pcd_path_.c_str());
-    throw std::runtime_error("Invalid pcd path");
+  map_filename_ = this->declare_parameter("map_filename", std::string(""));
+  if (!std::filesystem::exists(map_filename_)) {
+    RCLCPP_ERROR(this->get_logger(), "Invalid map_filename path: %s (Did you pass it via launch?)", map_filename_.c_str());
+    throw std::runtime_error("Invalid map_filename path");
   }
+
   // Read the pcd file
   pcl::PCDReader reader;
   pcl::PointCloud<pcl::PointXYZI>::Ptr cloud(
       new pcl::PointCloud<pcl::PointXYZI>);
-  reader.read(pcd_path_, *cloud);
+  reader.read(map_filename_, *cloud);
   voxel_refine_filter_.setInputCloud(cloud);
   voxel_refine_filter_.filter(*cloud);
 
@@ -62,17 +63,24 @@ IcpNode::IcpNode(const rclcpp::NodeOptions &options)
               refine_map_->size(), rough_map_->size());
 
   // Parameters
-  map_frame_id_ = this->declare_parameter("map_frame_id", std::string("map"));
+  map_frame_id_ =
+      this->declare_parameter("map_frame_id", std::string("map"));
   odom_frame_id_ =
       this->declare_parameter("odom_frame_id", std::string("odom"));
   laser_frame_id_ =
       this->declare_parameter("laser_frame_id", std::string("laser"));
   base_frame_id_ =
-      this->declare_parameter("base_frame_id", std::string("base_link"));
+      this->declare_parameter("base_frame_id", std::string("base_footprint"));
+  publish_tf_ =
+      this->declare_parameter("publish_tf", false);
+  auto_init_ =
+      this->declare_parameter("auto_init", false);
   pose_topic_ =
       this->declare_parameter("pose_topic", std::string("/icp_pose"));
   publish_pose_ =
       this->declare_parameter("publish_pose", true);
+  rviz_pose_topic_ =
+      this->declare_parameter("rviz_pose_topic", std::string("/initialpose"));
   thresh_ = this->declare_parameter("thresh", 0.15);
   xy_offset_ = this->declare_parameter("xy_offset", 0.2);
   yaw_offset_ = this->declare_parameter("yaw_offset", 30.0) * M_PI / 180.0;
@@ -95,7 +103,7 @@ IcpNode::IcpNode(const rclcpp::NodeOptions &options)
 
   // Set up the pointcloud subscriber
   std::string pointcloud_topic = this->declare_parameter(
-      "pointcloud_topic", std::string("/livox/lidar/pointcloud"));
+      "pointcloud_topic", std::string("/livox/lidar"));
   RCLCPP_INFO(this->get_logger(), "pointcloud_topic: %s",
               pointcloud_topic.c_str());
   auto qos = rclcpp::QoS(rclcpp::KeepLast(10));
@@ -105,7 +113,7 @@ IcpNode::IcpNode(const rclcpp::NodeOptions &options)
   // Set up the initial pose subscriber
   initial_pose_sub_ =
       create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
-          "/initialpose", qos,
+          rviz_pose_topic_, qos,
           [this](geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg) {
             initialPoseCallback(msg);
           });
@@ -119,12 +127,31 @@ IcpNode::IcpNode(const rclcpp::NodeOptions &options)
   tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
   // Set up the map publisher
-  map_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>("/map_pointcloud", rclcpp::QoS(1).transient_local());
+  map_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>("/icp_map_pointcloud", rclcpp::QoS(1).transient_local());
   if (publish_pose_) {
     pose_pub_ = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(pose_topic_, rclcpp::QoS(10));
     RCLCPP_INFO(this->get_logger(), "Publishing ICP pose: %s (frame=%s, base=%s)",
                 pose_topic_.c_str(), map_frame_id_.c_str(), base_frame_id_.c_str());
   }
+
+  if (publish_tf_) {
+      tf_publisher_thread_ = std::make_unique<std::thread>([this]() {
+        rclcpp::Rate rate(100);
+        while (rclcpp::ok()) {
+          {
+            std::lock_guard lock(mutex_);
+            if (is_ready_) {
+              map_to_odom_.header.stamp = now();
+              map_to_odom_.header.frame_id = map_frame_id_;
+              map_to_odom_.child_frame_id = odom_frame_id_;
+              tf_broadcaster_->sendTransform(map_to_odom_);
+            }
+          }
+          rate.sleep();
+        }
+      });
+  }
+
   // Publish the map once
   sensor_msgs::msg::PointCloud2 map_msg;
   pcl::toROSMsg(*cloud, map_msg);
@@ -143,22 +170,6 @@ IcpNode::IcpNode(const rclcpp::NodeOptions &options)
   //   }
   // });
 
-  tf_publisher_thread_ = std::make_unique<std::thread>([this]() {
-    rclcpp::Rate rate(100);
-    while (rclcpp::ok()) {
-      {
-        std::lock_guard lock(mutex_);
-        if (is_ready_) {
-          map_to_odom_.header.stamp = now();
-          map_to_odom_.header.frame_id = map_frame_id_;
-          map_to_odom_.child_frame_id = odom_frame_id_;
-          tf_broadcaster_->sendTransform(map_to_odom_);
-        }
-      }
-      rate.sleep();
-    }
-  });
-
   RCLCPP_INFO(this->get_logger(), "icp_registration initialized");
 }
 
@@ -168,113 +179,132 @@ IcpNode::~IcpNode() {
   }
 }
 
-void IcpNode::pointcloudCallback(
-    const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
-  pcl::fromROSMsg(*msg, *cloud_in_);
-  if (first_scan_) {
-    auto pose_msg =
-        std::make_shared<geometry_msgs::msg::PoseWithCovarianceStamped>();
-    pose_msg->header = msg->header;
-    pose_msg->pose.pose = initial_pose_;
-    initialPoseCallback(pose_msg);
-    if (is_ready_) {
-        first_scan_ = false;
-        RCLCPP_INFO(this->get_logger(), "ICP Initialized Successfully!");
-    } else {
-        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Waiting for TF to initialize ICP...");
-    }
-  }
-}
-
 void IcpNode::initialPoseCallback(
     const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg) {
+  
+  std::lock_guard<std::mutex> lock(mutex_);
+  latest_rviz_guess_ = msg;
+  wait_for_new_cloud_ = true; // 打开阀门
+  
+  RCLCPP_INFO(this->get_logger(), "Received Initial Pose request. Waiting for the NEXT Lidar frame...");
+}
 
-  // Set the initial pose
-  Eigen::Vector3d pos(msg->pose.pose.position.x, msg->pose.pose.position.y,
-                      msg->pose.pose.position.z);
-  Eigen::Quaterniond q(
-      msg->pose.pose.orientation.w, msg->pose.pose.orientation.x,
-      msg->pose.pose.orientation.y, msg->pose.pose.orientation.z);
-  Eigen::Matrix4d initial_guess;
+void IcpNode::pointcloudCallback(
+    const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
+  
+  // 1. 处理第一次扫描时的 auto_init 逻辑
+  if (first_scan_) {
+    first_scan_ = false;
+    if (auto_init_) {
+      RCLCPP_INFO(this->get_logger(), "Auto-init is ON! Triggering ICP with prior pose from YAML...");
+      std::lock_guard<std::mutex> lock(mutex_);
+      latest_rviz_guess_ = std::make_shared<geometry_msgs::msg::PoseWithCovarianceStamped>();
+      latest_rviz_guess_->header = msg->header;
+      latest_rviz_guess_->pose.pose = initial_pose_; // 使用 YAML 里的配置
+      wait_for_new_cloud_ = true; // 自动打开阀门
+    } else {
+      RCLCPP_INFO_ONCE(this->get_logger(), "Auto-init is OFF. IcpNode is SLEEPING until Human clicks RViz [%s]...", rviz_pose_topic_.c_str());
+    }
+  }
+
+  // 2. 如果阀门关着，直接 return！完全不消耗 CPU 处理点云
+  bool should_process = false;
+  {
+      std::lock_guard<std::mutex> lock(mutex_);
+      should_process = wait_for_new_cloud_;
+  }
+  
+  if (!should_process) {
+      return; 
+  }
+
+  RCLCPP_INFO(this->get_logger(), "Captured ONE fresh Lidar frame. Starting Heavy ICP Alignment...");
+  
+  // 抓取并转换点云
+  pcl::fromROSMsg(*msg, *cloud_in_);
+
+  // 立刻关闭阀门！保证下一帧雷达数据继续被拦截，避免重复运算
+  {
+      std::lock_guard<std::mutex> lock(mutex_);
+      wait_for_new_cloud_ = false;
+  }
+
+  // 3. 提取刚刚人类给的（或 YAML里的）粗略初始位姿
+  Eigen::Vector3d pos(latest_rviz_guess_->pose.pose.position.x, 
+                      latest_rviz_guess_->pose.pose.position.y, 
+                      latest_rviz_guess_->pose.pose.position.z);
+  Eigen::Quaterniond q(latest_rviz_guess_->pose.pose.orientation.w, 
+                       latest_rviz_guess_->pose.pose.orientation.x,
+                       latest_rviz_guess_->pose.pose.orientation.y, 
+                       latest_rviz_guess_->pose.pose.orientation.z);
+                       
+  Eigen::Matrix4d initial_guess = Eigen::Matrix4d::Identity();
   initial_guess.block<3, 3>(0, 0) = q.toRotationMatrix();
   initial_guess.block<3, 1>(0, 3) = pos;
-  initial_guess(3, 3) = 1;
 
-  // Align the pointcloud
-  RCLCPP_INFO(this->get_logger(), "Aligning the pointcloud");
+  // 4. 执行多重暴力 ICP 对齐 (极耗 CPU)
   Eigen::Matrix4d map_to_laser = multiAlignSync(cloud_in_, initial_guess);
-  // Eigen::Matrix4d result = align(cloud_in_, initial_guess);
+  
   if (!success_) {
     map_to_laser = initial_guess;
-    RCLCPP_ERROR(this->get_logger(), "ICP failed");
+    RCLCPP_ERROR(this->get_logger(), "ICP matching failed, falling back to rough initial guess.");
+  } else {
+    RCLCPP_INFO(this->get_logger(), "ICP matching SUCCESS!");
   }
 
-  // Eigen::Isometry3d laser_to_odom;
-  Eigen::Matrix4d laser_to_odom = Eigen::Matrix4d::Identity();
+  // 5. 解耦计算底盘坐标 (查询静态外参)
+  Eigen::Matrix4d laser_to_base = Eigen::Matrix4d::Identity();
   try {
-    // Get odom to laser transform
-    // Use tf2::TimePoint() to get the latest available transform
-    auto transform =
-        tf_buffer_->lookupTransform(laser_frame_id_, odom_frame_id_, tf2::TimePoint());
-    // RCLCPP_INFO(get_logger(), "%s", transform.header.frame_id.c_str());
-    Eigen::Vector3d t(transform.transform.translation.x,
-                      transform.transform.translation.y,
-                      transform.transform.translation.z);
-    Eigen::Quaterniond q(
-        transform.transform.rotation.w, transform.transform.rotation.x,
-        transform.transform.rotation.y, transform.transform.rotation.z);
-    // laser_to_odom.prerotate(q);
-    // laser_to_odom.translate(t);
-    laser_to_odom.block<3, 3>(0, 0) = q.toRotationMatrix();
-    laser_to_odom.block<3, 1>(0, 3) = t;
+    // 仅查询雷达到底盘的静态外参
+    auto transform_l2b = tf_buffer_->lookupTransform(laser_frame_id_, base_frame_id_, tf2::TimePointZero);
+    Eigen::Vector3d t_l2b(transform_l2b.transform.translation.x,
+                          transform_l2b.transform.translation.y,
+                          transform_l2b.transform.translation.z);
+    Eigen::Quaterniond q_l2b(transform_l2b.transform.rotation.w, transform_l2b.transform.rotation.x,
+                             transform_l2b.transform.rotation.y, transform_l2b.transform.rotation.z);
+    laser_to_base.block<3, 3>(0, 0) = q_l2b.toRotationMatrix();
+    laser_to_base.block<3, 1>(0, 3) = t_l2b;
   } catch (tf2::TransformException &ex) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    RCLCPP_ERROR(this->get_logger(), "TF lookup failed: %s", ex.what());
-    is_ready_ = false;
+    RCLCPP_ERROR(this->get_logger(), "Failed to get Static TF (laser->base): %s. (Is robot state publisher running?)", ex.what());
     return;
   }
-  Eigen::Matrix4d result = map_to_laser * laser_to_odom.matrix().cast<double>();
-  {
+
+  // 纯数学矩阵运算：得到底盘在世界地图中的绝对坐标
+  Eigen::Matrix4d map_to_base = map_to_laser * laser_to_base;
+
+  // 6. 发布逻辑
+  if (publish_tf_) {
     std::lock_guard lock(mutex_);
-    map_to_odom_.transform.translation.x = result(0, 3);
-    map_to_odom_.transform.translation.y = result(1, 3);
-    map_to_odom_.transform.translation.z = result(2, 3);
-
-    Eigen::Matrix3d rotation = result.block<3, 3>(0, 0);
-    q = Eigen::Quaterniond(rotation);
-
-    map_to_odom_.transform.rotation.w = q.w();
-    map_to_odom_.transform.rotation.x = q.x();
-    map_to_odom_.transform.rotation.y = q.y();
-    map_to_odom_.transform.rotation.z = q.z();
-    is_ready_ = true;
+    map_to_odom_.transform.translation.x = map_to_base(0, 3);
+    map_to_odom_.transform.translation.y = map_to_base(1, 3);
+    map_to_odom_.transform.translation.z = map_to_base(2, 3);
+    Eigen::Matrix3d rotation = map_to_base.block<3, 3>(0, 0);
+    Eigen::Quaterniond q_eigen(rotation);
+    map_to_odom_.transform.rotation.w = q_eigen.w();
+    map_to_odom_.transform.rotation.x = q_eigen.x();
+    map_to_odom_.transform.rotation.y = q_eigen.y();
+    map_to_odom_.transform.rotation.z = q_eigen.z();
+    is_ready_ = true; 
   }
+  
+  if (publish_pose_) {
+    geometry_msgs::msg::PoseWithCovarianceStamped pose_msg;
+    pose_msg.header.stamp = msg->header.stamp; // 使用当前雷达帧的时间戳
+    pose_msg.header.frame_id = map_frame_id_;
+    
+    pose_msg.pose.pose.position.x = map_to_base(0, 3);
+    pose_msg.pose.pose.position.y = map_to_base(1, 3);
+    pose_msg.pose.pose.position.z = map_to_base(2, 3);
+    
+    Eigen::Matrix3d rotation = map_to_base.block<3, 3>(0, 0);
+    Eigen::Quaterniond q_out(rotation);
+    pose_msg.pose.pose.orientation.w = q_out.w();
+    pose_msg.pose.pose.orientation.x = q_out.x();
+    pose_msg.pose.pose.orientation.y = q_out.y();
+    pose_msg.pose.pose.orientation.z = q_out.z();
 
-  if (pose_pub_) {
-    try {
-      // publish map->odom first (so TF tree is complete), then query map pose of base_frame_id_
-      map_to_odom_.header.stamp = now();
-      map_to_odom_.header.frame_id = map_frame_id_;
-      map_to_odom_.child_frame_id = odom_frame_id_;
-      tf_broadcaster_->sendTransform(map_to_odom_);
-
-      geometry_msgs::msg::PoseStamped base_origin;
-      base_origin.header.frame_id = base_frame_id_;
-      base_origin.header.stamp = now();
-      base_origin.pose.orientation.w = 1.0;
-
-      geometry_msgs::msg::PoseStamped base_in_map;
-      base_in_map = tf_buffer_->transform(base_origin, map_frame_id_);
-
-      geometry_msgs::msg::PoseWithCovarianceStamped pose_msg;
-      pose_msg.header = base_in_map.header;
-      pose_msg.pose.pose = base_in_map.pose;
-      pose_pub_->publish(pose_msg);
-    } catch (const tf2::TransformException &ex) {
-      RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
-                           "Cannot publish icp pose (need %s<->%s): %s",
-                           base_frame_id_.c_str(), odom_frame_id_.c_str(), ex.what());
-    }
+    pose_pub_->publish(pose_msg);
+    RCLCPP_INFO(this->get_logger(), "Successfully Published EXACT INITIAL POSE to Tracker! IcpNode is now going back to sleep.");
   }
 }
 
@@ -342,9 +372,10 @@ Eigen::Matrix4d IcpNode::multiAlignSync(PointCloudXYZI::Ptr source,
   RCLCPP_INFO(this->get_logger(), "initial guess: %f, %f, %f, %f, %f, %f",
               xyz(0), xyz(1), xyz(2), rpy(0), rpy(1), rpy(2));
 
+  int yaw_steps = static_cast<int>(yaw_offset_ / yaw_resolution_);
   for (int i = -1; i <= 1; i++) {
     for (int j = -1; j <= 1; j++) {
-      for (int k = -yaw_offset_; k <= yaw_offset_; k++) {
+      for (int k = -yaw_steps; k <= yaw_steps; k++) {
         Eigen::Vector3f pos(xyz(0) + i * xy_offset_, xyz(1) + j * xy_offset_,
                             xyz(2));
         Eigen::AngleAxisf yawAngle(rpy(2) + k * yaw_resolution_,

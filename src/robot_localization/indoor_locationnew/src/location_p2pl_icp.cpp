@@ -218,7 +218,6 @@ public:
     // 注意: 使用syncPackage()作为唤醒条件,不需要额外的标志位
 
     // ============ 去畸变相关变量 ============
-    Sophus::SE3d T_i_l_;            // IMU到LiDAR的外参变换
     bool enable_undistort_ = false; // 是否启用去畸变功能（暂时禁用）
     int undistort_count_ = 0;       // 去畸变帧计数
 
@@ -413,28 +412,46 @@ public:
 
         // 初始化订阅，发布器（直接订阅原始Livox话题）
         std::string lidar_topic = config["lidar_topic"].as<std::string>();
-
-        // 防止算法处理慢导致丢帧，同时不会引入过大延迟,LiDAR队列=3: 10Hz频率，算法处理50-80ms，队列3可缓存300ms
-        cloud_sub_ = nh_->create_subscription<sensor_msgs::msg::PointCloud2>(
-            lidar_topic, 10, std::bind(&location::robosense_cb, this, std::placeholders::_1));
+        // 强制队列长度为 1，只保留最新的一帧点云
+        cloud_sub_ = nh_->create_subscription<sensor_msgs::msg::PointCloud2>(lidar_topic, rclcpp::QoS(rclcpp::KeepLast(1)), std::bind(&location::robosense_cb, this, std::placeholders::_1));
         
         std::string cmd_topic = config["cmd_topic"].as<std::string>();
         cmd_sub_ = nh_->create_subscription<std_msgs::msg::String>(cmd_topic, 10, std::bind(&location::command_cb, this, std::placeholders::_1));
 
         // 单线程executor模式,IMU队列=200: 200Hz频率,队列200可缓存1秒数据,应对处理线程短时繁忙
         std::string imu_topic = config["imu_topic"].as<std::string>();
-        imu_sub_ = nh_->create_subscription<sensor_msgs::msg::Imu>(
-            imu_topic, 200, std::bind(&location::imu_cb, this, std::placeholders::_1));
+        
+        rclcpp::QoS imu_qos(200); // 自定义 QoS: 队列长度200，并显式指定 BEST_EFFORT 以匹配底层硬件驱动
+        imu_qos.best_effort();
+        
+        imu_sub_ = nh_->create_subscription<sensor_msgs::msg::Imu>(imu_topic, imu_qos, std::bind(&location::imu_cb, this, std::placeholders::_1));
 
-        init_pose_sub_ = nh_->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>("/initialpose", 1, std::bind(&location::initpose_cb, this, std::placeholders::_1)); // 手动重定位订阅
+        std::string init_pose_topic = config["init_pose_topic"].as<std::string>();
+        init_pose_sub_ = nh_->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(init_pose_topic, 1, std::bind(&location::initpose_cb, this, std::placeholders::_1)); // 手动重定位订阅
 
         std::string map_pub_topic_ = config["map_pub_topic"].as<std::string>();
-        pc_map_pub_ = nh_->create_publisher<sensor_msgs::msg::PointCloud2>(map_pub_topic_, rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable()); // 发布全局pcd点云地图话题数据
+        pc_map_pub_ = nh_->create_publisher<sensor_msgs::msg::PointCloud2>(map_pub_topic_, rclcpp::QoS(10).transient_local().reliable()); // 发布全局pcd点云地图话题数据
         RCLCPP_INFO(nh_->get_logger(), "map_pub_topic_: %s", map_pub_topic_.c_str());
 
-        map_file_path = config["map_filename"].as<std::string>(); // 地图路径
+        std::string ros_map_filename;
+        nh_->declare_parameter<std::string>("map_filename", ""); // 声明参数，默认值为空
+        nh_->get_parameter("map_filename", ros_map_filename);
+
+        // 如果 Launch 文件或终端传了 map_filename，则覆盖 YAML 配置
+        if (!ros_map_filename.empty()) {
+            map_file_path = ros_map_filename;
+            RCLCPP_INFO(nh_->get_logger(), "Loc: [Launch Overwrite] map_file_path: %s", map_file_path.c_str());
+        } 
+        else {
+            // 回退到读取 YAML 文件配置
+            if (config["map_filename"]) {
+                map_file_path = config["map_filename"].as<std::string>();
+                RCLCPP_INFO(nh_->get_logger(), "Loc: [YAML Config] map_file_path: %s", map_file_path.c_str());
+            } else {
+                RCLCPP_ERROR(nh_->get_logger(), "Loc: No map_filename provided in Launch args or YAML config!");
+            }
+        }
         map_cloud.reset(new pcl::PointCloud<PointType>);
-        RCLCPP_INFO(nh_->get_logger(), "Loc: map_file_path file: %s", map_file_path.c_str());
 
         // 直接加载为PointType类型，避免类型转换循环
         if (pcl::io::loadPCDFile(map_file_path.c_str(), *map_cloud) == -1)
@@ -501,72 +518,14 @@ public:
         last_pose_publish_time_ = nh_->get_clock()->now();
         stats_start_time_ = nh_->get_clock()->now();
 
-        // ========== 初始化去畸变外参 T_i_l_ (IMU到LiDAR的变换) ==========
+        // ========== 初始化去畸变配置 ==========
         // 从配置文件读取是否启用去畸变
-        bool enable_undistort_from_config = config["enable_undistort"].as<bool>(true); // 默认启用
-        RCLCPP_INFO(nh_->get_logger(), "[去畸变配置] 配置文件设置: %s",
-                    enable_undistort_from_config ? "启用" : "禁用");
-
-        if (!enable_undistort_from_config)
-        {
-            enable_undistort_ = false;
+        enable_undistort_ = config["enable_undistort"] ? config["enable_undistort"].as<bool>() : true;
+        
+        if (enable_undistort_) {
+            RCLCPP_INFO(nh_->get_logger(), "[去畸变] 功能已启用 (已优化为 base_link 系下直接运动补偿)");
+        } else {
             RCLCPP_WARN(nh_->get_logger(), "[去畸变] 配置文件已禁用去畸变功能");
-        }
-        else
-        {
-            try
-            {
-                // 重新读取lidar2base外参
-                Eigen::Vector3f lidar2base_rpy_init;
-                lidar2base_rpy_init(0) = config["lidar2base_roll"].as<float>();
-                lidar2base_rpy_init(1) = config["lidar2base_pitch"].as<float>();
-                lidar2base_rpy_init(2) = config["lidar2base_yaw"].as<float>();
-
-                Eigen::Vector3f lidar2base_trans_init;
-                lidar2base_trans_init(0) = config["lidar2base_x"].as<float>();
-                lidar2base_trans_init(1) = config["lidar2base_y"].as<float>();
-                lidar2base_trans_init(2) = config["lidar2base_z"].as<float>();
-
-                Eigen::Matrix3f lidar2base_rot_init = RPY2Mat(lidar2base_rpy_init);
-
-                RCLCPP_INFO(nh_->get_logger(), "[去畸变初始化] IMU2Base外参读取完成");
-                RCLCPP_INFO(nh_->get_logger(), "[去畸变初始化] Lidar2Base外参读取完成");
-
-                // 计算 T_i_l_ = T_i_b * T_b_l
-                // 其中 T_i_b 是 IMU到base的变换，T_b_l 是 base到lidar的变换
-                Eigen::Matrix3d imu2base_rot_d = imu2link_rot_.cast<double>();
-                Eigen::Vector3d imu2base_trans_d = imu2base_pose.pos.cast<double>();
-
-                // 确保旋转矩阵是正交的
-                Eigen::JacobiSVD<Eigen::Matrix3d> svd_imu(imu2base_rot_d, Eigen::ComputeFullU | Eigen::ComputeFullV);
-                imu2base_rot_d = svd_imu.matrixU() * svd_imu.matrixV().transpose();
-
-                Sophus::SE3d T_i_b(Sophus::SO3d(imu2base_rot_d), imu2base_trans_d);
-                RCLCPP_INFO(nh_->get_logger(), "[去畸变初始化] T_i_b 构造完成");
-
-                Eigen::Matrix3d lidar2base_rot_d = lidar2base_rot_init.cast<double>();
-                Eigen::Vector3d lidar2base_trans_d = lidar2base_trans_init.cast<double>();
-
-                // 确保旋转矩阵是正交的
-                Eigen::JacobiSVD<Eigen::Matrix3d> svd_lidar(lidar2base_rot_d, Eigen::ComputeFullU | Eigen::ComputeFullV);
-                lidar2base_rot_d = svd_lidar.matrixU() * svd_lidar.matrixV().transpose();
-
-                Sophus::SE3d T_b_l(Sophus::SO3d(lidar2base_rot_d), lidar2base_trans_d);
-                RCLCPP_INFO(nh_->get_logger(), "[去畸变初始化] T_b_l 构造完成");
-
-                T_i_l_ = T_i_b * T_b_l;
-                RCLCPP_INFO(nh_->get_logger(), "[去畸变初始化] 成功! T_i_l_: trans=(%.3f, %.3f, %.3f)",
-                            T_i_l_.translation().x(), T_i_l_.translation().y(), T_i_l_.translation().z());
-
-                // 初始化成功后启用去畸变
-                enable_undistort_ = true;
-                RCLCPP_INFO(nh_->get_logger(), "[去畸变] 功能已启用");
-            }
-            catch (const std::exception &e)
-            {
-                RCLCPP_ERROR(nh_->get_logger(), "[去畸变初始化] 失败: %s, 去畸变功能已禁用", e.what());
-                enable_undistort_ = false;
-            }
         }
 
         // 创建定时器，每5秒输出一次性能统计
@@ -969,6 +928,14 @@ public:
         acc = imu2link_rot_.cast<double>() * acc;
         gyro = imu2link_rot_.cast<double>() * gyro;
 
+        // ================= 杆臂效应(向心加速度)补偿 =================
+        // 获取IMU相对于base_link的平移向量 p_imu
+        Eigen::Vector3d p_imu = imu2base_pose.pos.cast<double>();
+        // 计算向心加速度: w x (w x p_imu)
+        Eigen::Vector3d centripetal_acc = gyro.cross(gyro.cross(p_imu));
+        // 从读取的加速度中剔除向心加速度，使其真正代表 base_link 中心的加速度
+        acc = acc - centripetal_acc;
+        
         // 第3步：检查加速度Z值，判断单位并进行转换（与lio_node完全一致）
         // 如果线性加速度的z分量 > 5，认为单位是m/s²，需要转换为g（除以9.81）
         if (acc.z() > 5.0)
@@ -1028,81 +995,77 @@ public:
     }
 
     // 激光点云回调 - 最优版:直接处理点云,然后唤醒定位线程
-    void robosense_cb(const sensor_msgs::msg::PointCloud2::SharedPtr cloud_msg)
+    void robosense_cb(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
     {
-        // 获取时间戳
-        double msg_timestamp = getSec(cloud_msg->header);
-        double sys_timestamp = nh_->get_clock()->now().seconds();
-        double time_diff = sys_timestamp - msg_timestamp;
-        
-        // 时间戳诊断打印（每一帧都打印，LiDAR频率低）
-        RCLCPP_INFO(nh_->get_logger(), 
-                   "[LiDAR回调] 消息时间=%.6f | 系统时间=%.6f | 差值=%.3fs(%.0fms)",
-                   msg_timestamp, sys_timestamp, time_diff, time_diff * 1000.0);
-        
-        // === 步骤1: 点云处理(在回调线程中,不阻塞IMU因为是单线程executor) ===
-        auto process_start = std::chrono::high_resolution_clock::now();
-        
-        pcl::PointCloud<PointType>::Ptr processed_cloud;
-        if (lidar_type_ == "livox") {
-            processed_cloud = livox_processor_->livox_cloud_handler(cloud_msg);
-        } else if (lidar_type_ == "rs16") {
-            processed_cloud = rs16_processor_->rs16_handler(cloud_msg);
-        } else {
-            RCLCPP_ERROR(nh_->get_logger(), "[LiDAR回调] 未知雷达类型: %s", lidar_type_.c_str());
+        lidar_cb_count_++;
+
+        // 1. 获取时间戳
+        double cloud_time = getSec(msg->header);
+
+        // 2. 转换点云
+        pcl::PointCloud<PointType>::Ptr cloud(new pcl::PointCloud<PointType>);
+        pcl::fromROSMsg(*msg, *cloud);
+
+        // 3. 空点云保护
+        if (cloud->empty())
+        {
+            RCLCPP_WARN(nh_->get_logger(), "[LiDAR] received empty cloud");
             return;
         }
-        
-        auto process_end = std::chrono::high_resolution_clock::now();
-        double process_time_ms = std::chrono::duration<double, std::milli>(
-            process_end - process_start).count();
-        
-        // === 步骤2: 加入同步队列(锁粒度小) ===
+
         {
             std::lock_guard<std::mutex> lock(m_state_data.lidar_mutex);
-            
-            // 检测时间戳乱序
-            if (msg_timestamp < m_state_data.last_lidar_time) {
-                RCLCPP_WARN(nh_->get_logger(), "[LiDAR回调] 消息乱序,清空缓冲");
-                std::deque<std::pair<double, pcl::PointCloud<PointType>::Ptr>>().swap(
-                    m_state_data.lidar_buffer);
+
+            // 4. 时间戳检查（防止时间倒退）
+            if (cloud_time <= m_state_data.last_lidar_time)
+            {
+                RCLCPP_WARN(nh_->get_logger(),
+                            "[LiDAR] timestamp disorder: %.6f <= %.6f",
+                            cloud_time, m_state_data.last_lidar_time);
+                return;
             }
-            
-            m_state_data.lidar_buffer.emplace_back(msg_timestamp, processed_cloud);
-            m_state_data.last_lidar_time = msg_timestamp;
-            
-            // 记录处理时间用于诊断
-            RCLCPP_DEBUG(nh_->get_logger(), "[LiDAR回调] 点云处理耗时=%.1fms", process_time_ms);
+
+            m_state_data.last_lidar_time = cloud_time;
+
+            // 5. 存入 buffer
+            m_state_data.lidar_buffer.emplace_back(cloud_time, cloud);
+
+            // 6. 防止 buffer 积压（只保留最近3帧）
+            while (m_state_data.lidar_buffer.size() > 3)
+            {
+                m_state_data.lidar_buffer.pop_front();
+            }
         }
-        
-        // === 步骤3: 唤醒处理线程尝试同步 ===
-        // 注意: 处理线程会在wait_for中调用syncPackage()判断是否真的能同步
+
+        // 7. 唤醒处理线程
         process_cv_.notify_one();
     }
 
     // 同步IMU和LiDAR数据包（完全对齐lio_node.cpp的逻辑）
     bool syncPackage()
     {
-        // 如果IMU缓冲区或LiDAR缓冲区为空，无法同步（与lio_node一致）
+        // 保护队列不被底层回调线程（如 clear操作）同时修改，彻底杜绝 -11 崩溃！
+        std::scoped_lock lock(m_state_data.imu_mutex, m_state_data.lidar_mutex);
+
+        // 如果IMU缓冲区或LiDAR缓冲区为空，无法同步
         if (m_state_data.imu_buffer.empty() || m_state_data.lidar_buffer.empty())
             return false;
 
         // 如果还未处理当前帧雷达数据
         if (!m_state_data.lidar_pushed)
         {
-            // 取出当前帧雷达点云
+            // 取出当前帧雷达点云（现在有锁保护，绝对安全！）
             m_package.cloud = m_state_data.lidar_buffer.front().second;
 
-            // 按照点的曲率（curvature）排序（与lio_node一致）
+            // 按照点的曲率（curvature）排序
             std::sort(m_package.cloud->points.begin(), m_package.cloud->points.end(),
                       [](PointType &p1, PointType &p2)
                       { return p1.curvature < p2.curvature; });
 
-            // 设置当前点云开始时间（由lidar_buffer的时间戳确定）
+            // 设置当前点云开始时间
             m_package.cloud_start_time = m_state_data.lidar_buffer.front().first;
 
-            // 设置当前点云的结束时间：开始时间 + 最后一个点的曲率（毫秒转秒）
-            // 通常曲率字段被复用为点的相对时间（毫秒），因此除以1000变成秒
+            // 设置当前点云的结束时间
             m_package.cloud_end_time = m_package.cloud_start_time +
                                        m_package.cloud->points.back().curvature / 1000.0;
 
@@ -1110,30 +1073,19 @@ public:
             m_state_data.lidar_pushed = true;
         }
 
-        // 丢弃这帧点云,等待下一帧(参考Livox的SyncMeasure)
-        // if (m_state_data.imu_buffer.front().time > m_package.cloud_start_time)
-        // {
-        //     RCLCPP_WARN(nh_->get_logger(), 
-        //                "[同步] IMU数据不足: IMU首帧(%.6f) > 点云开始(%.6f), 丢弃点云帧",
-        //                m_state_data.imu_buffer.front().time, m_package.cloud_start_time);
-        //     m_state_data.lidar_buffer.pop_front();
-        //     m_state_data.lidar_pushed = false;  // 【关键】必须重置标志,否则下次不会取新点云
-        //     return false;
-        // }
-
         // 如果最新的IMU时间还没有覆盖到当前点云的结束时间，则等待更多的IMU数据
         if (m_state_data.last_imu_time < m_package.cloud_end_time)
             return false;
 
-        // 清空上一帧打包的IMU数据（与lio_node一致使用Vec<IMUData>().swap()）
+        // 清空上一帧打包的IMU数据
         std::vector<IMUData>().swap(m_package.imus);
 
-        // 将所有时间 < 点云结束时间的IMU数据打包进m_package.imus（与lio_node完全一致）
+        // 将所有时间 < 点云结束时间的IMU数据打包进m_package.imus
         while (!m_state_data.imu_buffer.empty() &&
                m_state_data.imu_buffer.front().time < m_package.cloud_end_time)
         {
             m_package.imus.emplace_back(m_state_data.imu_buffer.front());
-            m_state_data.imu_buffer.pop_front(); // 从队列中弹出已使用的IMU数据
+            m_state_data.imu_buffer.pop_front(); 
         }
 
         // 移除已处理的雷达数据帧
@@ -1344,16 +1296,11 @@ public:
         auto undistort_start = std::chrono::high_resolution_clock::now();
 
         // 积分IMU数据，计算从扫描开始到结束的旋转
-        Sophus::SO3d rot_i_be = integrateRotation(start_time, end_time, imus);
+        Sophus::SO3d rot_base_be = integrateRotation(start_time, end_time, imus);
 
-        // 计算从扫描开始到结束的变换（只考虑旋转，平移为零）
-        Sophus::SE3d T_i_be(rot_i_be, Eigen::Vector3d::Zero());
-
-        // 转换到激光雷达坐标系: T_l_be = T_l_i * T_i_be * T_i_l
-        Sophus::SE3d T_l_be = T_i_l_.inverse() * T_i_be * T_i_l_;
-
-        const Eigen::Vector3d &tbe = T_l_be.translation();
-        Eigen::Vector3d rso3_be = T_l_be.so3().log();
+        // 因为点云也已经在 base_link 下了，根本不需要任何外参变换！直接使用！
+        Eigen::Vector3d rso3_be = rot_base_be.log();
+        Eigen::Vector3d tbe = Eigen::Vector3d::Zero(); // 平移忽略不计
         double dt_be = end_time - start_time;
 
         if (dt_be <= 0)
@@ -1400,9 +1347,9 @@ public:
         RCLCPP_INFO(nh_->get_logger(),
                     "[去畸变] 点云数=%zu | IMU数=%zu | 耗时=%.2fms | 旋转角度=(%.2f°, %.2f°, %.2f°) | 时间跨度=%.1fms",
                     cloud->size(), imus.size(), duration.count() / 1000.0,
-                    T_l_be.angleX() * 180.0 / M_PI,
-                    T_l_be.angleY() * 180.0 / M_PI,
-                    T_l_be.angleZ() * 180.0 / M_PI,
+                    rot_base_be.angleX() * 180.0 / M_PI,
+                    rot_base_be.angleY() * 180.0 / M_PI,
+                    rot_base_be.angleZ() * 180.0 / M_PI,
                     (end_time - start_time) * 1000.0);
     }
 

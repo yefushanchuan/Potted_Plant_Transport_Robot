@@ -1,68 +1,86 @@
 import os
+import time
+
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess, OpaqueFunction
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression
-from launch.conditions import IfCondition
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.substitutions import LaunchConfiguration
 from launch_ros.substitutions import FindPackageShare
 from launch_ros.actions import Node
 
+
+def _generate_config_with_map(src_path, map_path):
+    """根据传入的地图路径生成配置文件，如果map_path为空则使用原配置"""
+    if not map_path:
+        return src_path
+    ts = time.strftime("%Y%m%d_%H%M%S")
+    dst_path = os.path.join("/tmp", f"argbot_mid360_{ts}.yaml")
+    with open(src_path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+    replaced = False
+    for idx, line in enumerate(lines):
+        stripped = line.lstrip()
+        if stripped.startswith("map_filename:"):
+            prefix = line[: len(line) - len(stripped)]
+            lines[idx] = f'{prefix}map_filename: "{map_path}"\n'
+            replaced = True
+            break
+    if not replaced:
+        lines.append(f'\nmap_filename: "{map_path}"\n')
+    with open(dst_path, "w", encoding="utf-8") as f:
+        f.writelines(lines)
+    return dst_path
+
+
 def _resolve_map_path(raw_map_file, raw_map_dir, raw_map_name):
-    """仅仅负责拼接地图路径"""
+    """解析地图路径：兼容旧 map_file，同时支持 map_dir + map_name。"""
     map_file = (raw_map_file or "").strip()
     map_dir = (raw_map_dir or "").strip()
     map_name = (raw_map_name or "").strip()
 
+    # 兼容旧参数：直接传 map_file（可绝对/相对）
     if map_file:
         expanded_file = os.path.expandvars(os.path.expanduser(map_file))
-        if os.path.isabs(expanded_file): return expanded_file
+        if os.path.isabs(expanded_file):
+            return expanded_file
         if map_dir:
             expanded_dir = os.path.expandvars(os.path.expanduser(map_dir))
             return os.path.abspath(os.path.join(expanded_dir, expanded_file))
         return os.path.abspath(expanded_file)
 
+    # 新参数：map_dir + map_name
     if map_name:
-        if not map_dir: map_dir = os.environ.get("ROBOT_MAP_DIR", "")
-        if not map_dir: map_dir = os.path.join(get_package_share_directory("robot_bringup"), "pcd")
+        if not map_dir:
+            map_dir = os.environ.get("ROBOT_MAP_DIR", "")
+        if not map_dir:
+            map_dir = os.path.join(get_package_share_directory("robot_bringup"), "pcd")
         expanded_dir = os.path.expandvars(os.path.expanduser(map_dir))
         return os.path.abspath(os.path.join(expanded_dir, map_name))
+
+    # 都为空时，沿用配置文件中的 map_filename
     return ""
 
+
 def _launch_setup(context):
-    """在此动态推断参数并生成所有节点"""
+    """OpaqueFunction 回调：解析 LaunchConfiguration 后创建节点"""
     map_file = LaunchConfiguration("map_file").perform(context)
     map_dir = LaunchConfiguration("map_dir").perform(context)
     map_name = LaunchConfiguration("map_name").perform(context)
-    bag_path = LaunchConfiguration("bag_path").perform(context).strip()
     
-    # 获取 use_sim_time 参数
-    use_sim_time_arg = LaunchConfiguration("use_sim_time").perform(context).lower()
-    
-    # 智能推断
-    if use_sim_time_arg == 'auto':
-        # 如果是 auto：有 bag_path 就是 True，没有 bag_path 就是 False
-        use_sim_time = bool(bag_path) 
-    else:
-        # 否则尊重用户的强制设定 (true 或 false)
-        use_sim_time = (use_sim_time_arg == 'true')
-
-    pkg_share = get_package_share_directory("indoor_location")
-    location_config_path = os.path.join(pkg_share, "config", "argbot_mid360.yaml")
-    eskf_cfg_path = os.path.join(pkg_share, "config", "eskf_cfg.yaml")
+    base_config_path = os.path.join(
+        get_package_share_directory("indoor_location"), "config", "argbot_mid360.yaml"
+    )
+    eskf_cfg_path = os.path.join(
+        get_package_share_directory("indoor_location"), "config", "eskf_cfg.yaml"
+    )
     
     resolved_map_file = _resolve_map_path(map_file, map_dir, map_name)
 
-    return[
-        Node(
-            package='rviz2', 
-            executable='rviz2', 
-            name='rviz2',
-            arguments=['-d', LaunchConfiguration('rviz_config_path')],
-            output='screen',
-            parameters=[{'use_sim_time': use_sim_time}],
-        ),
-        
-        # 定位核心节点
+    # 显式加载：都为空则使用原配置，否则生成带地图路径的配置
+    location_config_path = _generate_config_with_map(base_config_path, resolved_map_file)
+
+    return [
+        # LIVOX_MID360 Location Node
         Node(
             package='indoor_location',
             executable='location_node',
@@ -72,32 +90,55 @@ def _launch_setup(context):
             parameters=[{
                 "config_file": location_config_path,
                 "eskf_cfg_file": eskf_cfg_path,
-                "use_sim_time": use_sim_time,
-                "map_filename": resolved_map_file
+                'use_sim_time': False
             }],
             arguments=['--ros-args', '--log-level', 'WARN'],
-        )
+        ),
     ]
+
 
 def generate_launch_description():
     return LaunchDescription([
-        DeclareLaunchArgument('use_sim_time', default_value='auto', 
-                              description="true/false/auto. If 'auto', becomes true when bag_path is set."),
-        DeclareLaunchArgument('bag_path', default_value=''), 
-        DeclareLaunchArgument('map_file', default_value=''),
-        DeclareLaunchArgument('map_dir', default_value=os.environ.get('ROBOT_MAP_DIR', '')),
-        DeclareLaunchArgument('map_name', default_value='map.pcd'),
-        DeclareLaunchArgument('rviz_config_path', default_value=PathJoinSubstitution([FindPackageShare('indoor_location'), 'config/rviz/livox_rviz_config.rviz'])),
+        # === 地图文件路径 (显式加载，默认为空) ===
+        DeclareLaunchArgument(
+            'map_file',
+            default_value='',
+            description='兼容参数：PCD地图路径（支持绝对/相对）；为空时可由 map_dir+map_name 组合'
+        ),
+        DeclareLaunchArgument(
+            'map_dir',
+            default_value=os.environ.get('ROBOT_MAP_DIR', ''),
+            description='地图目录（可选）；未设置且 map_name 非空时回退到 ROBOT_MAP_DIR 或包内 map 目录'
+        ),
+        DeclareLaunchArgument(
+            'map_name',
+            default_value='map.pcd',
+            description='地图文件名（可选）；与 map_dir 组合成最终路径'
+        ),
         
-        # 统一启动节点
+        DeclareLaunchArgument(
+            'package', 
+            default_value='indoor_location', 
+            description='Package name'
+        ),
+        DeclareLaunchArgument(
+            'rviz_config_path', 
+            default_value=[FindPackageShare('indoor_location'), '/config/rviz/livox_rviz_config.rviz'], 
+            description='RViz config path'
+        ),
+        
+        # RViz 已禁用 - 如需启用请取消注释
+        # Node(
+        #     package='rviz2',
+        #     executable='rviz2',
+        #     name='rviz2',
+        #     arguments=['-d', LaunchConfiguration('rviz_config_path')],
+        #     output='screen',
+        #     parameters=[{'use_sim_time': False}],
+        # ),
+        
+        # 使用 OpaqueFunction 延迟解析 map_file 参数
         OpaqueFunction(function=_launch_setup),
 
-        # 播放 Rosbag
-        ExecuteProcess(
-            condition=IfCondition(
-                PythonExpression(["'", LaunchConfiguration('bag_path'), "' != ''"])
-            ),
-            cmd=['ros2', 'bag', 'play', LaunchConfiguration('bag_path'), '--clock', '--rate', '1.0'],
-            output='screen'
-        )
+        # 实车模式：不播放rosbag
     ])

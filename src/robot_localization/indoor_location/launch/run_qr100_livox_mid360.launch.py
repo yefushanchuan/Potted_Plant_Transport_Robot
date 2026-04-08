@@ -9,13 +9,13 @@ from ament_index_python.packages import get_package_share_directory
 
 def generate_launch_description():
 
-    location_config_path = os.path.join(get_package_share_directory("indoor_location"), "config", "config_rs16.yaml")
+    location_config_path = os.path.join(get_package_share_directory("indoor_location"), "config", "qr100_config_livox_mid360.yaml")
     eskf_cfg_path = os.path.join(get_package_share_directory("indoor_location"), "config", "eskf_cfg.yaml")
 
     return LaunchDescription([
         # Declare launch arguments
         DeclareLaunchArgument('package', default_value='indoor_location', description='Package name'),
-        DeclareLaunchArgument('rviz_config_path', default_value=[FindPackageShare('indoor_location'), '/config/rviz/rs_rviz_config.rviz'], description='RViz config path'),
+        DeclareLaunchArgument('rviz_config_path', default_value=[FindPackageShare('indoor_location'), '/config/rviz/livox_rviz_config.rviz'], description='RViz config path'),
         # Run RViz
         Node(
             package='rviz2',
@@ -23,10 +23,10 @@ def generate_launch_description():
             name='rviz2',
             arguments=['-d', LaunchConfiguration('rviz_config_path')],
             output='screen',
-            parameters=[{'use_sim_time': True}],#需要输出调试日志就可以加
+            parameters=[{'use_sim_time': True}],  # 加上这里
         ),
         
-        # RS16 Location Node
+        # LIVOX_MID360 Location Node
         Node(
             package='indoor_location',
             executable='location_node',
@@ -38,16 +38,15 @@ def generate_launch_description():
                 "eskf_cfg_file": eskf_cfg_path,
                 'use_sim_time': True  # 这里加
             }],
-        arguments=['--ros-args', '--log-level', 'WARN'],#终端仅仅输出WARN调试日志    
+        arguments=['--ros-args', '--log-level', 'WARN'],#终端仅仅输出WARN调试日志
         ),
 
         # 播放 rosbag2 文件的节点
         ExecuteProcess(
             cmd=[
                 'ros2', 'bag', 'play',
-                 '/home/wz/ros2_test_ws/src/fastlio2_ros2/bag/RS16 bag_indoor/nap/nap_0.db3',# 对应rs16_indoor_map.pcd地图,地下车库数据包
-                #'/home/wz/ros2_test_ws/src/fastlio2_ros2/bag/RS16bag_outdoor/rosbag2_2025_09_16-17_09_40/rosbag2_2025_09_16-17_09_40_0.db3',
-                '--clock','--rate', '3.0' # 增加时钟
+                '/home/wz/ros2_test_ws/src/fastlio2_ros2/bag/LIVOX_Points/qr100/rosbag2_2025_09_28-15_25_59/rosbag2_2025_09_28-15_25_59_0.db3', #对应qr100_indooor_map.pcd地图,办公室快速旋转数据
+                '--clock','--rate', '1.0' # 增加时钟
             ],
             output='screen'
         )
