@@ -40,17 +40,23 @@ def _launch_setup(context):
     
     # 智能推断
     if use_sim_time_arg == 'auto':
-        # 如果是 auto：有 bag_path 就是 True，没有 bag_path 就是 False
         use_sim_time = bool(bag_path) 
     else:
-        # 否则尊重用户的强制设定 (true 或 false)
         use_sim_time = (use_sim_time_arg == 'true')
 
     pkg_share = get_package_share_directory("indoor_location")
     location_config_path = os.path.join(pkg_share, "config", "argbot_mid360.yaml")
     eskf_cfg_path = os.path.join(pkg_share, "config", "eskf_cfg.yaml")
     
+    # 两个节点共用同一个地图路径
     resolved_map_file = _resolve_map_path(map_file, map_dir, map_name)
+
+    # ICP 参数文件路径
+    icp_params_file = os.path.join(
+        get_package_share_directory('icp_registration'), 
+        'config', 
+        'icp.yaml'
+    )
 
     return[
         Node(
@@ -76,8 +82,23 @@ def _launch_setup(context):
                 "map_filename": resolved_map_file
             }],
             arguments=['--ros-args', '--log-level', 'WARN'],
-        )
+        ),
+
+        # ICP 重定位节点
+        Node(
+            package='icp_registration',
+            executable='icp_registration_node',
+            name='icp_registration_node',
+            output='screen',
+            parameters=[
+                icp_params_file,
+                {
+                    'pcd_path': resolved_map_file,
+                }
+            ],
+        ),
     ]
+
 
 def generate_launch_description():
     return LaunchDescription([

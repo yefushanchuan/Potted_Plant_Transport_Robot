@@ -430,7 +430,7 @@ public:
         imu_sub_ = nh_->create_subscription<sensor_msgs::msg::Imu>(
             imu_topic, imu_qos, std::bind(&location::imu_cb, this, std::placeholders::_1));
 
-        init_pose_sub_ = nh_->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>("/initialpose", 1, std::bind(&location::initpose_cb, this, std::placeholders::_1)); // 手动重定位订阅
+        init_pose_sub_ = nh_->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(config["init_pose_topic"].as<std::string>(), 1, std::bind(&location::initpose_cb, this, std::placeholders::_1)); // 手动重定位订阅
 
         std::string map_pub_topic_ = config["map_pub_topic"].as<std::string>();
         pc_map_pub_ = nh_->create_publisher<sensor_msgs::msg::PointCloud2>(map_pub_topic_, rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable()); // 发布全局pcd点云地图话题数据
