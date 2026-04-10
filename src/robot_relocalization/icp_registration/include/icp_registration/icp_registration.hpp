@@ -38,8 +38,6 @@ public:
 private:
   void pointcloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
   void initialPoseCallback(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
-  void initialPose_set(const nav_msgs::msg::Odometry::SharedPtr msg);
-  void test_move(const geometry_msgs::msg::Twist::SharedPtr msg);
 
   static PointCloudXYZIN::Ptr addNorm(PointCloudXYZI::Ptr cloud);
 
@@ -48,8 +46,6 @@ private:
   // ROS2 part
   rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr initial_pose_sub_;
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr              pointcloud_sub_;
-  rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr                    Odometry_sub_;
-  rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr                  cmd_vel_sub_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr                 map_pub_;
   rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr reloc_pose_pub_;
 
