@@ -1,6 +1,6 @@
 ###############cloud preprocess############
 lidar_type: "livox"        #雷达类型: "livox" 或 "rs16"
-filter_leaf_size: 0.6      #输入定位系统的点云体素滤波体素大小
+filter_leaf_size: 0.4      #输入定位系统的点云体素滤波体素大小
 min_range: 0.6             #建图盲区blind用的就是0.6，相当于球面过滤的半径0.6米
 max_range: 30.0
 N_SCANS: 4
@@ -10,7 +10,7 @@ limit_angle_max: 180.0
 
 #surf_threshold: 0.1
 
-lidar_topic: "/livox/lidar"        #激光雷达话题
+lidar_topic: "/livox/lidar/pointcloud"        #激光雷达话题
 
 pub_cloud_topic: "/deskew_cloud"              #去畸变点云话题
 
@@ -20,7 +20,7 @@ pub_cloud_topic: "/deskew_cloud"              #去畸变点云话题
 use_reloc: true                               #是否使用重定位
 imu_scale: 9.81                               #IMU加速度计比例因子
 reloc_threshold: 0.51                         #重定位阈值
-map_filtr_leaf_size: 0.5                      #定位线程使用的全局地图滤波体素大小，使用配p2picp算法不能太大，不然拟合平面内找不到邻域点（p2picp 0.3,ndt 0.5）
+map_filtr_leaf_size: 0.3                      #定位线程使用的全局地图滤波体素大小，使用配p2picp算法不能太大，不然拟合平面内找不到邻域点（p2picp 0.3,ndt 0.5）
 enable_undistort: true                        #是否启用点云去畸变功能（使用IMU进行运动补偿）
 
 map_frame    : "map"                          #发布定位系统tf发布所需的坐标系
@@ -45,19 +45,23 @@ pose_refine_static_v_th: 0.03
 pose_refine_static_w_th: 0.05
 pose_refine_tf_lookup_timeout_sec: 0.08
 
-lidar2base_x: 0.084                           #lidar2base transform，单位米
-lidar2base_y: -0.241
-lidar2base_z: 0.2475
+# lidar2base_x: 0.206                           #lidar2base transform，单位米
+lidar2base_x: 0.150                           #lidar2base transform，单位米
+lidar2base_y: 0.00
+lidar2base_z: 0.138
 lidar2base_roll: 0.0                          #单位弧度
-lidar2base_pitch: 0.785398                    #对应xacro中的 M_PI/4 (即45度)
+lidar2base_pitch: 0.0
 lidar2base_yaw: 0.0
 
-imu2base_x: -0.493                            #imu2base transform，单位米
+# imu2base_x: 0.056                             #imu2base transform，单位米
+imu2base_x: 0.0                             #imu2base transform，单位米
 imu2base_y: 0.00
-imu2base_z: 0.1575
+imu2base_z: 0.072
 imu2base_roll: 0.0                            #单位弧度
 imu2base_pitch: 0.0
 imu2base_yaw: 0.0
+
+
 
 init_x: 0.0                                   #定位系统输入的初始化位姿
 init_y: 0.0
@@ -66,10 +70,10 @@ init_roll: 0.0
 init_pitch: 0.0
 init_yaw: 0.0
 
-map_filename: ""                               #点云地图名称(使用绝对路径)
+map_filename: "/home/qiaowen/rpp_ws/src/robot_bringup/pcd/map.pcd"   #点云地图名称(使用绝对路径)
 map_pub_topic: "/pcd_map"                      #发布全局pcd点云地图话题数据
 
-# imu_topic: "/livox/imu"                      #IMU话题
+# imu_topic: "/livox/imu"                        #IMU话题
 imu_topic: "/imu"                              #IMU话题
 cmd_topic: "/loc_cmd"                          #定位指令话题
 #init_pose_topic: "/initialpose"
@@ -101,3 +105,15 @@ map_grid_resoltion: 30.0
 
 
 ###################location################
+
+
+
+
+
+
+
+
+
+
+
+

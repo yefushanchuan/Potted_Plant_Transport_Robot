@@ -218,6 +218,7 @@ public:
     // 注意: 使用syncPackage()作为唤醒条件,不需要额外的标志位
 
     // ============ 去畸变相关变量 ============
+    Sophus::SE3d T_i_l_;            // IMU到LiDAR的外参变换
     bool enable_undistort_ = false; // 是否启用去畸变功能（暂时禁用）
     int undistort_count_ = 0;       // 去畸变帧计数
 
@@ -413,22 +414,17 @@ public:
         // 初始化订阅，发布器（直接订阅原始Livox话题）
         std::string lidar_topic = config["lidar_topic"].as<std::string>();
 
-        // 强制队列长度为 1，只保留最新的一帧点云
+        // 防止算法处理慢导致丢帧，同时不会引入过大延迟,LiDAR队列=3: 10Hz频率，算法处理50-80ms，队列3可缓存300ms
         cloud_sub_ = nh_->create_subscription<sensor_msgs::msg::PointCloud2>(
-            lidar_topic, rclcpp::QoS(rclcpp::KeepLast(1)), std::bind(&location::robosense_cb, this, std::placeholders::_1));
+            lidar_topic, 10, std::bind(&location::robosense_cb, this, std::placeholders::_1));
         
         std::string cmd_topic = config["cmd_topic"].as<std::string>();
         cmd_sub_ = nh_->create_subscription<std_msgs::msg::String>(cmd_topic, 10, std::bind(&location::command_cb, this, std::placeholders::_1));
 
         // 单线程executor模式,IMU队列=200: 200Hz频率,队列200可缓存1秒数据,应对处理线程短时繁忙
         std::string imu_topic = config["imu_topic"].as<std::string>();
-        
-        // 自定义 QoS: 队列长度200，并显式指定 BEST_EFFORT 以匹配底层硬件驱动
-        rclcpp::QoS imu_qos(200);
-        imu_qos.best_effort();
-        
         imu_sub_ = nh_->create_subscription<sensor_msgs::msg::Imu>(
-            imu_topic, imu_qos, std::bind(&location::imu_cb, this, std::placeholders::_1));
+            imu_topic, 200, std::bind(&location::imu_cb, this, std::placeholders::_1));
 
         init_pose_sub_ = nh_->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>("/initialpose", 1, std::bind(&location::initpose_cb, this, std::placeholders::_1)); // 手动重定位订阅
 
@@ -436,25 +432,9 @@ public:
         pc_map_pub_ = nh_->create_publisher<sensor_msgs::msg::PointCloud2>(map_pub_topic_, rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable()); // 发布全局pcd点云地图话题数据
         RCLCPP_INFO(nh_->get_logger(), "map_pub_topic_: %s", map_pub_topic_.c_str());
 
-        std::string ros_map_filename;
-        nh_->declare_parameter<std::string>("map_filename", ""); // 声明参数，默认值为空
-        nh_->get_parameter("map_filename", ros_map_filename);
-
-        // 如果 Launch 文件或终端传了 map_filename，则覆盖 YAML 配置
-        if (!ros_map_filename.empty()) {
-            map_file_path = ros_map_filename;
-            RCLCPP_INFO(nh_->get_logger(), "Loc: [Launch Overwrite] map_file_path: %s", map_file_path.c_str());
-        } 
-        else {
-            // 回退到读取 YAML 文件配置
-            if (config["map_filename"]) {
-                map_file_path = config["map_filename"].as<std::string>();
-                RCLCPP_INFO(nh_->get_logger(), "Loc: [YAML Config] map_file_path: %s", map_file_path.c_str());
-            } else {
-                RCLCPP_ERROR(nh_->get_logger(), "Loc: No map_filename provided in Launch args or YAML config!");
-            }
-        }
+        map_file_path = config["map_filename"].as<std::string>(); // 地图路径
         map_cloud.reset(new pcl::PointCloud<PointType>);
+        RCLCPP_INFO(nh_->get_logger(), "Loc: map_file_path file: %s", map_file_path.c_str());
 
         // 直接加载为PointType类型，避免类型转换循环
         if (pcl::io::loadPCDFile(map_file_path.c_str(), *map_cloud) == -1)
@@ -521,14 +501,72 @@ public:
         last_pose_publish_time_ = nh_->get_clock()->now();
         stats_start_time_ = nh_->get_clock()->now();
 
-        // ========== 初始化去畸变配置 ==========
+        // ========== 初始化去畸变外参 T_i_l_ (IMU到LiDAR的变换) ==========
         // 从配置文件读取是否启用去畸变
-        enable_undistort_ = config["enable_undistort"] ? config["enable_undistort"].as<bool>() : true;
-        
-        if (enable_undistort_) {
-            RCLCPP_INFO(nh_->get_logger(), "[去畸变] 功能已启用 (已优化为 base_link 系下直接运动补偿)");
-        } else {
+        bool enable_undistort_from_config = config["enable_undistort"].as<bool>(true); // 默认启用
+        RCLCPP_INFO(nh_->get_logger(), "[去畸变配置] 配置文件设置: %s",
+                    enable_undistort_from_config ? "启用" : "禁用");
+
+        if (!enable_undistort_from_config)
+        {
+            enable_undistort_ = false;
             RCLCPP_WARN(nh_->get_logger(), "[去畸变] 配置文件已禁用去畸变功能");
+        }
+        else
+        {
+            try
+            {
+                // 重新读取lidar2base外参
+                Eigen::Vector3f lidar2base_rpy_init;
+                lidar2base_rpy_init(0) = config["lidar2base_roll"].as<float>();
+                lidar2base_rpy_init(1) = config["lidar2base_pitch"].as<float>();
+                lidar2base_rpy_init(2) = config["lidar2base_yaw"].as<float>();
+
+                Eigen::Vector3f lidar2base_trans_init;
+                lidar2base_trans_init(0) = config["lidar2base_x"].as<float>();
+                lidar2base_trans_init(1) = config["lidar2base_y"].as<float>();
+                lidar2base_trans_init(2) = config["lidar2base_z"].as<float>();
+
+                Eigen::Matrix3f lidar2base_rot_init = RPY2Mat(lidar2base_rpy_init);
+
+                RCLCPP_INFO(nh_->get_logger(), "[去畸变初始化] IMU2Base外参读取完成");
+                RCLCPP_INFO(nh_->get_logger(), "[去畸变初始化] Lidar2Base外参读取完成");
+
+                // 计算 T_i_l_ = T_i_b * T_b_l
+                // 其中 T_i_b 是 IMU到base的变换，T_b_l 是 base到lidar的变换
+                Eigen::Matrix3d imu2base_rot_d = imu2link_rot_.cast<double>();
+                Eigen::Vector3d imu2base_trans_d = imu2base_pose.pos.cast<double>();
+
+                // 确保旋转矩阵是正交的
+                Eigen::JacobiSVD<Eigen::Matrix3d> svd_imu(imu2base_rot_d, Eigen::ComputeFullU | Eigen::ComputeFullV);
+                imu2base_rot_d = svd_imu.matrixU() * svd_imu.matrixV().transpose();
+
+                Sophus::SE3d T_i_b(Sophus::SO3d(imu2base_rot_d), imu2base_trans_d);
+                RCLCPP_INFO(nh_->get_logger(), "[去畸变初始化] T_i_b 构造完成");
+
+                Eigen::Matrix3d lidar2base_rot_d = lidar2base_rot_init.cast<double>();
+                Eigen::Vector3d lidar2base_trans_d = lidar2base_trans_init.cast<double>();
+
+                // 确保旋转矩阵是正交的
+                Eigen::JacobiSVD<Eigen::Matrix3d> svd_lidar(lidar2base_rot_d, Eigen::ComputeFullU | Eigen::ComputeFullV);
+                lidar2base_rot_d = svd_lidar.matrixU() * svd_lidar.matrixV().transpose();
+
+                Sophus::SE3d T_b_l(Sophus::SO3d(lidar2base_rot_d), lidar2base_trans_d);
+                RCLCPP_INFO(nh_->get_logger(), "[去畸变初始化] T_b_l 构造完成");
+
+                T_i_l_ = T_i_b * T_b_l;
+                RCLCPP_INFO(nh_->get_logger(), "[去畸变初始化] 成功! T_i_l_: trans=(%.3f, %.3f, %.3f)",
+                            T_i_l_.translation().x(), T_i_l_.translation().y(), T_i_l_.translation().z());
+
+                // 初始化成功后启用去畸变
+                enable_undistort_ = true;
+                RCLCPP_INFO(nh_->get_logger(), "[去畸变] 功能已启用");
+            }
+            catch (const std::exception &e)
+            {
+                RCLCPP_ERROR(nh_->get_logger(), "[去畸变初始化] 失败: %s, 去畸变功能已禁用", e.what());
+                enable_undistort_ = false;
+            }
         }
 
         // 创建定时器，每5秒输出一次性能统计
@@ -931,14 +969,6 @@ public:
         acc = imu2link_rot_.cast<double>() * acc;
         gyro = imu2link_rot_.cast<double>() * gyro;
 
-        // ================= 杆臂效应(向心加速度)补偿 =================
-        // 获取IMU相对于base_link的平移向量 p_imu
-        Eigen::Vector3d p_imu = imu2base_pose.pos.cast<double>();
-        // 计算向心加速度: w x (w x p_imu)
-        Eigen::Vector3d centripetal_acc = gyro.cross(gyro.cross(p_imu));
-        // 从读取的加速度中剔除向心加速度，使其真正代表 base_link 中心的加速度
-        acc = acc - centripetal_acc;
-        
         // 第3步：检查加速度Z值，判断单位并进行转换（与lio_node完全一致）
         // 如果线性加速度的z分量 > 5，认为单位是m/s²，需要转换为g（除以9.81）
         if (acc.z() > 5.0)
@@ -1314,11 +1344,16 @@ public:
         auto undistort_start = std::chrono::high_resolution_clock::now();
 
         // 积分IMU数据，计算从扫描开始到结束的旋转
-        Sophus::SO3d rot_base_be = integrateRotation(start_time, end_time, imus);
+        Sophus::SO3d rot_i_be = integrateRotation(start_time, end_time, imus);
 
-        // 因为点云也已经在 base_link 下了，根本不需要任何外参变换！直接使用！
-        Eigen::Vector3d rso3_be = rot_base_be.log();
-        Eigen::Vector3d tbe = Eigen::Vector3d::Zero(); // 平移忽略不计
+        // 计算从扫描开始到结束的变换（只考虑旋转，平移为零）
+        Sophus::SE3d T_i_be(rot_i_be, Eigen::Vector3d::Zero());
+
+        // 转换到激光雷达坐标系: T_l_be = T_l_i * T_i_be * T_i_l
+        Sophus::SE3d T_l_be = T_i_l_.inverse() * T_i_be * T_i_l_;
+
+        const Eigen::Vector3d &tbe = T_l_be.translation();
+        Eigen::Vector3d rso3_be = T_l_be.so3().log();
         double dt_be = end_time - start_time;
 
         if (dt_be <= 0)
@@ -1365,9 +1400,9 @@ public:
         RCLCPP_INFO(nh_->get_logger(),
                     "[去畸变] 点云数=%zu | IMU数=%zu | 耗时=%.2fms | 旋转角度=(%.2f°, %.2f°, %.2f°) | 时间跨度=%.1fms",
                     cloud->size(), imus.size(), duration.count() / 1000.0,
-                    rot_base_be.angleX() * 180.0 / M_PI,
-                    rot_base_be.angleY() * 180.0 / M_PI,
-                    rot_base_be.angleZ() * 180.0 / M_PI,
+                    T_l_be.angleX() * 180.0 / M_PI,
+                    T_l_be.angleY() * 180.0 / M_PI,
+                    T_l_be.angleZ() * 180.0 / M_PI,
                     (end_time - start_time) * 1000.0);
     }
 
