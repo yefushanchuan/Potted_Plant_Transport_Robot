@@ -102,7 +102,6 @@ void scan2map3d::surfOptimization(pose_type init_pose, pcl::PointCloud<PointType
         std::vector<float> pointSearchSqDis;
 
         // 如果 nanoflann 的 KdTreeFLANN::nearestKSearch 不是线程安全的，保留 critical
-        #pragma omp critical(kdtree_search)
         map_kdtree_->nearestKSearch(pointSel, 5, pointSearchInd, pointSearchSqDis);
 
         if(pointSearchInd.size() < 5) { continue; }
