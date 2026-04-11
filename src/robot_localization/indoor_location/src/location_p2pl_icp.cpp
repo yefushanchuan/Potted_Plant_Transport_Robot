@@ -69,6 +69,11 @@ public:
     pose_type init_pose_;                                                              // 初始位姿
     pose_type imu2base_pose;                                                           // imu到baselink相对位姿
 
+    // ========== 新增：用于线程安全地接收外部(Node A)高精度位姿 ==========
+    std::mutex reloc_pose_mutex_;        // 保护外部位姿的互斥锁
+    bool has_new_global_pose_ = false;   // 是否收到新位姿的标志位
+    pose_type target_global_pose_;       // 缓存的新位姿
+
     // ROS2 中定义消息
     sensor_msgs::msg::PointCloud2 pubmap_msg; // 作为消息播放的地图
 
@@ -430,7 +435,10 @@ public:
         imu_sub_ = nh_->create_subscription<sensor_msgs::msg::Imu>(
             imu_topic, imu_qos, std::bind(&location::imu_cb, this, std::placeholders::_1));
 
-        init_pose_sub_ = nh_->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(config["init_pose_topic"].as<std::string>(), 1, std::bind(&location::initpose_cb, this, std::placeholders::_1)); // 手动重定位订阅
+        std::string init_pose_topic = config["init_pose_topic"] ? config["init_pose_topic"].as<std::string>() : "/icp_pose";
+        init_pose_sub_ = nh_->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
+            init_pose_topic, 1, std::bind(&location::initpose_cb, this, std::placeholders::_1));
+        RCLCPP_INFO(nh_->get_logger(), "监听外部高精度位姿话题: %s", init_pose_topic.c_str());
 
         std::string map_pub_topic_ = config["map_pub_topic"].as<std::string>();
         pc_map_pub_ = nh_->create_publisher<sensor_msgs::msg::PointCloud2>(map_pub_topic_, rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable()); // 发布全局pcd点云地图话题数据
@@ -834,8 +842,9 @@ public:
             // 公式: map→odom = (map→base_footprint) * (odom→base_footprint)^(-1)
             try {
                 // 监听 odom → base_footprint 变换
+                // 【修复】必须使用点云的时间戳 stamp，绝对不能用 TimePointZero，否则小车旋转时 Nav2 会严重抖动画龙
                 geometry_msgs::msg::TransformStamped odom_to_base_msg = 
-                    tf_buffer_->lookupTransform(odom_frame_, base_frame_, tf2::TimePointZero);
+                    tf_buffer_->lookupTransform(odom_frame_, base_frame_, stamp, rclcpp::Duration::from_seconds(0.1));
                 
                 tf2::Transform odom_to_base_tf;
                 tf2::fromMsg(odom_to_base_msg.transform, odom_to_base_tf);
@@ -1114,29 +1123,32 @@ public:
         return true;
     }
 
-    // 初始位 姿反馈
+    // 接收 Node A 发来的高精度绝对位姿
     void initpose_cb(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr pose_msg)
     {
+        RCLCPP_INFO(nh_->get_logger(), "📥 收到 Node A 传来的高精度绝对位姿，准备接管系统！");
+        
+        std::lock_guard<std::mutex> lock(reloc_pose_mutex_);
+        
+        // 1. 提取 XY 坐标 (2D AGV 约束：Z 强行清零)
+        target_global_pose_.pos(0) = pose_msg->pose.pose.position.x;
+        target_global_pose_.pos(1) = pose_msg->pose.pose.position.y;
+        target_global_pose_.pos(2) = 0.0;
 
-        RCLCPP_INFO(nh_->get_logger(), "get hand init pose!");
-        act_pose.pos(0) = pose_msg->pose.pose.position.x;
-        act_pose.pos(1) = pose_msg->pose.pose.position.y;
-        act_pose.pos(2) = 0.0;
+        // 2. 从四元数提取 Yaw 角 (2D AGV 约束：Roll 和 Pitch 强行清零)
+        double siny_cosp = 2.0 * (pose_msg->pose.pose.orientation.w * pose_msg->pose.pose.orientation.z + 
+                                  pose_msg->pose.pose.orientation.x * pose_msg->pose.pose.orientation.y);
+        double cosy_cosp = 1.0 - 2.0 * (pose_msg->pose.pose.orientation.y * pose_msg->pose.pose.orientation.y + 
+                                        pose_msg->pose.pose.orientation.z * pose_msg->pose.pose.orientation.z);
+        
+        target_global_pose_.orient(0) = 0.0;
+        target_global_pose_.orient(1) = 0.0;
+        target_global_pose_.orient(2) = atan2(siny_cosp, cosy_cosp);
 
-        // yaw (z-axis rotation)
-        double siny_cosp = 2.0 * pose_msg->pose.pose.orientation.w * pose_msg->pose.pose.orientation.z;
-        double cosy_cosp = 1.0 - 2.0 * pose_msg->pose.pose.orientation.z * pose_msg->pose.pose.orientation.z;
-
-        act_pose.orient(0) = 0.0;
-        act_pose.orient(1) = 0.0;
-        act_pose.orient(2) = atan2(siny_cosp, cosy_cosp);
-
-        act_pose.vel << 0.0, 0.0, 0.0;
-        use_reloc_ = true;
-
-        // 重置ESKF状态
-        eskf->setMean(act_pose.pos.cast<double>(), act_pose.orient.cast<double>(), act_pose.vel.cast<double>());
-        eskf->reset();
+        target_global_pose_.vel << 0.0, 0.0, 0.0;
+        
+        // 3. 置起标志位，通知处理线程进行重置
+        has_new_global_pose_ = true;
     }
 
     // 状态命 令反馈
@@ -1409,6 +1421,36 @@ public:
             }
             
             // === 步骤2: 执行完整的定位算法(数据已同步) ===
+
+            // ================== 新增：安全重置外部传来的全局位姿 ==================
+            {
+                std::lock_guard<std::mutex> lock(reloc_pose_mutex_);
+                if (has_new_global_pose_) {
+                    RCLCPP_WARN(nh_->get_logger(), "🔄 正在执行全局位姿强行覆盖...");
+                    
+                    // 1. 强行覆写当前位姿
+                    act_pose = target_global_pose_;
+                    
+                    // 2. 绝对信任外部 Node A 的结果，取消主节点自身的重定位挣扎
+                    use_reloc_ = false;  
+                    localizier3d->setNormalMode();
+
+                    // 3. 重置 ESKF 状态
+                    eskf->setMean(act_pose.pos.cast<double>(), act_pose.orient.cast<double>(), act_pose.vel.cast<double>());
+                    eskf->reset();
+
+                    // 4. (极度重要) 清空迷失期间积压的历史 IMU 数据，防止 ESKF 被拉扯崩溃
+                    {
+                        std::lock_guard<std::mutex> imu_lock(m_state_data.imu_mutex);
+                        m_state_data.imu_buffer.clear();
+                    }
+                    
+                    has_new_global_pose_ = false;
+                    RCLCPP_INFO(nh_->get_logger(), "✅ 全局位姿覆盖完成，已恢复平滑跟踪状态！");
+                }
+            }
+            // ======================================================================
+
             PerformanceStats perf_stat;
             auto frame_start_time = std::chrono::high_resolution_clock::now();
             
@@ -1580,6 +1622,7 @@ public:
         RCLCPP_INFO(nh_->get_logger(), "[处理线程] 退出");
     }
 };
+
 int main(int argc, char **argv)
 {
     // 初始化ROS2客户端库
@@ -1604,7 +1647,6 @@ int main(int argc, char **argv)
     );
     executor.add_node(nh);
     executor.spin();
-
 
     // 使用单线程executor(回调顺序执行,无锁竞争)
     // rclcpp::spin(nh);
