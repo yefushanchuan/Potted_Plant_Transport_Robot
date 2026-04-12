@@ -90,6 +90,7 @@ def _launch_setup(context):
             executable='icp_registration_node',
             name='icp_registration_node',
             output='screen',
+            condition=IfCondition(LaunchConfiguration('enable_icp_registration')),
             parameters=[
                 icp_params_file,
                 {
@@ -109,7 +110,8 @@ def generate_launch_description():
         DeclareLaunchArgument('map_dir', default_value=os.environ.get('ROBOT_MAP_DIR', '')),
         DeclareLaunchArgument('map_name', default_value='map.pcd'),
         DeclareLaunchArgument('rviz_config_path', default_value=PathJoinSubstitution([FindPackageShare('indoor_location'), 'config/rviz/livox_rviz_config.rviz'])),
-        
+        DeclareLaunchArgument('enable_icp_registration', default_value='true', description='Whether to launch icp_registration node'),
+
         # 统一启动节点
         OpaqueFunction(function=_launch_setup),
 
