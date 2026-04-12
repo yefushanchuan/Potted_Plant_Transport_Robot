@@ -60,7 +60,10 @@ void ErrorStateKalmanFilter::reset(void){
 void ErrorStateKalmanFilter::setMean(Eigen::Vector3d pos, Eigen::Vector3d rpy, Eigen::Vector3d vel){
   p_ = pos;
   v_ = vel;
-  R_ = ExpF64(rpy);
+  Eigen::AngleAxisd rollAngle(rpy(0), Eigen::Vector3d::UnitX());
+  Eigen::AngleAxisd pitchAngle(rpy(1), Eigen::Vector3d::UnitY());
+  Eigen::AngleAxisd yawAngle(rpy(2), Eigen::Vector3d::UnitZ());
+  R_ = (yawAngle * pitchAngle * rollAngle).toRotationMatrix();
 }
 
 void ErrorStateKalmanFilter::setCov(Eigen::Matrix<double, 18, 18> s){
@@ -254,24 +257,25 @@ void ErrorStateKalmanFilter::correct(pose_type &pose){
   Eigen::Vector3d obv_pos = pose.pos.cast<double>();
   Eigen::Vector3d obv_rpy = pose.orient.cast<double>();
 
-  //std::cout << "eskf corr: here 1.0" << std::endl;
+  Eigen::AngleAxisd obv_roll(obv_rpy(0), Eigen::Vector3d::UnitX());
+  Eigen::AngleAxisd obv_pitch(obv_rpy(1), Eigen::Vector3d::UnitY());
+  Eigen::AngleAxisd obv_yaw(obv_rpy(2), Eigen::Vector3d::UnitZ());
+  Eigen::Matrix3d R_obv = (obv_yaw * obv_pitch * obv_roll).toRotationMatrix();
+
   if (first_obv_){
-    R_ = ExpF64(obv_rpy);
+    R_ = R_obv;
     p_ = obv_pos;
     first_obv_ = false;
     Eigen::Vector3d gyro_last_ = Eigen::Vector3d::Zero();
     Eigen::Vector3d acc_last_ = -options_.g_;
-
     return;
   }
 
   // 既有旋转，也有平移
-  // 观测状态变量中的p, R，H为6x18，其余为零
   Eigen::Matrix<double, 6, 18> H = Eigen::Matrix<double, 6, 18>::Zero();
-  H.block<3, 3>(0, 0) = Eigen::Matrix3d::Identity();  // P部分
-  H.block<3, 3>(3, 6) = Eigen::Matrix3d::Identity();  // R部分（3.66）
+  H.block<3, 3>(0, 0) = Eigen::Matrix3d::Identity(); 
+  H.block<3, 3>(3, 6) = Eigen::Matrix3d::Identity(); 
 
-  // 卡尔曼增益和更新过程
   Eigen::Matrix<double,6,1> noise_vec;
   noise_vec << options_.obv_pos_noise_, options_.obv_pos_noise_, options_.obv_pos_noise_, options_.obv_ang_noise_, options_.obv_ang_noise_, options_.obv_ang_noise_;
 
@@ -280,8 +284,8 @@ void ErrorStateKalmanFilter::correct(pose_type &pose){
 
   // 更新x和cov
   Eigen::Matrix<double,6,1> innov = Eigen::Matrix<double,6,1>::Zero();
-  innov.head<3>() = (obv_pos - p_);                          // 平移部分
-  innov.tail<3>() = SO3_LOGF64(R_.inverse() * ExpF64(obv_rpy));  // 旋转部分(3.67)
+  innov.head<3>() = (obv_pos - p_); 
+  innov.tail<3>() = SO3_LOGF64(R_.inverse() * R_obv);
 
   dx_ = K * innov;
   cov_ = (Eigen::Matrix<double, 18, 18>::Identity() - K * H) * cov_;
@@ -310,7 +314,8 @@ void ErrorStateKalmanFilter::correct(pose_type &pose){
   dx_.setZero();
 
   pose.pos = p_.cast<float>();
-  pose.orient = SO3_LOGF64(R_).cast<float>();
+
+  pose.orient = RotMtoEuler(R_.cast<float>());
 
   return;
 

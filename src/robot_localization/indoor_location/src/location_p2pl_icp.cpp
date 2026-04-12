@@ -1276,6 +1276,9 @@ public:
                         m_state_data.imu_buffer.clear();
                     }
                     
+                    pose_refine_force_accept_next_ = true; 
+                    pose_refine_inited_ = false;
+
                     has_new_global_pose_ = false;
                     RCLCPP_INFO(nh_->get_logger(), "✅ 全局位姿覆盖完成，已恢复平滑跟踪状态！");
                 }

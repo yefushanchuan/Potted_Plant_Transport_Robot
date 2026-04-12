@@ -185,18 +185,40 @@ void IcpNode::initialPoseCallback(
                          msg->pose.pose.orientation.x,
                          msg->pose.pose.orientation.y, 
                          msg->pose.pose.orientation.z);
-    Eigen::Matrix4d initial_guess = Eigen::Matrix4d::Identity();
-    initial_guess.block<3, 3>(0, 0) = q.toRotationMatrix();
-    initial_guess.block<3, 1>(0, 3) = pos;
+    Eigen::Matrix4d guess_map_to_base = Eigen::Matrix4d::Identity();
+    guess_map_to_base.block<3, 3>(0, 0) = q.toRotationMatrix();
+    guess_map_to_base.block<3, 1>(0, 3) = pos;
 
-    // 2. 进行多假设暴力匹配
-    Eigen::Matrix4d map_to_laser = multiAlignSync(cloud_in_, initial_guess);
+    Eigen::Matrix4d base_to_laser = Eigen::Matrix4d::Identity();
+    try {
+        // 查询 base_footprint 到 front_laser_link 的变换 (T_base_laser)
+        auto transform = tf_buffer_->lookupTransform(
+            base_frame_id_, laser_frame_id_, tf2::TimePointZero);
+        Eigen::Vector3d t_bl(transform.transform.translation.x, 
+                             transform.transform.translation.y, 
+                             transform.transform.translation.z);
+        Eigen::Quaterniond q_bl(transform.transform.rotation.w, 
+                                transform.transform.rotation.x,
+                                transform.transform.rotation.y, 
+                                transform.transform.rotation.z);
+        base_to_laser.block<3, 3>(0, 0) = q_bl.toRotationMatrix();
+        base_to_laser.block<3, 1>(0, 3) = t_bl;
+    } catch (tf2::TransformException &ex) {
+        RCLCPP_ERROR(this->get_logger(), "获取初始猜测时 TF (base->laser) 查询失败: %s", ex.what());
+        return;
+    }
+
+    // 计算真正的 map -> laser 初始猜测： T_map_laser = T_map_base * T_base_laser
+    Eigen::Matrix4d initial_guess_laser = guess_map_to_base * base_to_laser;
+
+    // 2. 进行多假设暴力匹配 (传入的是雷达在地图中的猜测位姿)
+    Eigen::Matrix4d map_to_laser = multiAlignSync(cloud_in_, initial_guess_laser);
     if (!success_) {
         RCLCPP_ERROR(this->get_logger(), "Node A 暴力重定位失败，周围环境可能不匹配！");
         return;
     }
 
-    // 3. 将 map -> laser 转换回 map -> base_footprint
+    // 3. 将 map -> laser 转换回 map -> base_footprint (这部分你原本的代码是对的)
     Eigen::Matrix4d laser_to_base = Eigen::Matrix4d::Identity();
     try {
         auto transform = tf_buffer_->lookupTransform(
@@ -215,6 +237,7 @@ void IcpNode::initialPoseCallback(
         return;
     }
 
+    // T_map_base = T_map_laser * T_laser_base
     Eigen::Matrix4d map_to_base = map_to_laser * laser_to_base;
 
     // 4. 将最终结果打包，发布给 Node B
@@ -308,8 +331,7 @@ Eigen::Matrix4d IcpNode::multiAlignSync(PointCloudXYZI::Ptr source,
                 Eigen::AngleAxisf yawAngle(rpy(2) + k * yaw_resolution_,
                                            Eigen::Vector3f::UnitZ());
                 temp_pose.setIdentity();
-                temp_pose.block<3, 3>(0, 0) =
-                    (rollAngle * pitchAngle * yawAngle).toRotationMatrix();
+                temp_pose.block<3, 3>(0, 0) = (yawAngle * pitchAngle * rollAngle).toRotationMatrix();
                 temp_pose.block<3, 1>(0, 3) = pos;
                 candidates.push_back(temp_pose);
             }

@@ -1,7 +1,7 @@
-/icp_registration:
+/**:
   ros__parameters:
     # Voxel Filter
-    rough_leaf_size:  0.4
+    rough_leaf_size:  0.6
     refine_leaf_size: 0.1
 
     # TF Frames
@@ -26,4 +26,4 @@
 
     # Output Options
     publish_pose: true
-    publish_tf:   false
+    publish_tf:   true

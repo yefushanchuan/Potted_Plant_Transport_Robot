@@ -21,7 +21,7 @@
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/impl/point_types.hpp>
 #include <pcl/point_cloud.h>
-#include <pcl/registration/icp.h>
+#include <pcl/registration/icp_nl.h>
 
 namespace icp {
 
