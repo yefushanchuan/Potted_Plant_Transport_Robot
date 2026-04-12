@@ -9,6 +9,7 @@
 #include <pcl/features/normal_3d.h>
 #include <pcl/io/pcd_io.h>
 #include <pcl_conversions/pcl_conversions.h>
+#include <pcl/common/transforms.h> // 【新增】用于点云坐标系转换
 #include <rclcpp/qos.hpp>
 #include <stdexcept>
 #include <tf2/LinearMath/Quaternion.h>
@@ -65,8 +66,7 @@ IcpNode::IcpNode(const rclcpp::NodeOptions &options)
     // Parameters
     map_frame_id_  = this->declare_parameter("map_frame_id", std::string("map"));
     odom_frame_id_ = this->declare_parameter("odom_frame_id", std::string("odom"));
-    laser_frame_id_ = this->declare_parameter("laser_frame_id", std::string("laser"));
-    base_frame_id_  = this->declare_parameter("base_frame_id", std::string("base_link"));
+    base_frame_id_ = this->declare_parameter("base_frame_id", std::string("base_footprint"));
     pose_topic_    = this->declare_parameter("pose_topic", std::string("/icp_pose"));
     publish_pose_  = this->declare_parameter("publish_pose", true);
     thresh_        = this->declare_parameter("thresh", 0.15);
@@ -76,21 +76,6 @@ IcpNode::IcpNode(const rclcpp::NodeOptions &options)
     double yaw_resolution_deg = this->declare_parameter("yaw_resolution", 10.0);
     yaw_steps_    = std::round(yaw_offset_deg / yaw_resolution_deg);
     yaw_resolution_ = yaw_resolution_deg * M_PI / 180.0;
-
-    std::vector<double> initial_pose_vec = this->declare_parameter(
-        "initial_pose", std::vector<double>{0, 0, 0, 0, 0, 0});
-    try {
-        initial_pose_.position.x = initial_pose_vec.at(0);
-        initial_pose_.position.y = initial_pose_vec.at(1);
-        initial_pose_.position.z = initial_pose_vec.at(2);
-        tf2::Quaternion q;
-        q.setRPY(initial_pose_vec.at(3), initial_pose_vec.at(4),
-                 initial_pose_vec.at(5));
-    } catch (const std::out_of_range &ex) {
-        RCLCPP_ERROR(this->get_logger(),
-                     "initial_pose is not a vector with 6 elements, what():%s",
-                     ex.what());
-    }
 
     publish_tf_ = this->declare_parameter("publish_tf", false);
 
@@ -104,16 +89,20 @@ IcpNode::IcpNode(const rclcpp::NodeOptions &options)
                     tf_broadcaster_->sendTransform(map_to_odom_tf_);
                 }
             });
-        RCLCPP_INFO(this->get_logger(), "Node A: TF 发布已启用 (独立运行模式)");
-    } else {
-        RCLCPP_INFO(this->get_logger(), "Node A: TF 发布已禁用 (作为重定位服务模块)");
+        RCLCPP_INFO(this->get_logger(), "Node A: TF 发布已启用");
     }
+
+    // 设置 TF buffer 和 listener（一定要在回调函数触发前就绪）
+    tf_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
+    auto timer_interface = std::make_shared<tf2_ros::CreateTimerROS>(
+        this->get_node_base_interface(), this->get_node_timers_interface());
+    tf_buffer_->setCreateTimerInterface(timer_interface);
+    tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
     // Set up the pointcloud subscriber
     std::string pointcloud_topic = this->declare_parameter(
         "pointcloud_topic", std::string("/livox/lidar"));
-    RCLCPP_INFO(this->get_logger(), "pointcloud_topic: %s",
-                pointcloud_topic.c_str());
+    RCLCPP_INFO(this->get_logger(), "pointcloud_topic: %s", pointcloud_topic.c_str());
     
     auto qos = rclcpp::QoS(rclcpp::KeepLast(10));
     pointcloud_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
@@ -129,13 +118,6 @@ IcpNode::IcpNode(const rclcpp::NodeOptions &options)
             initialPoseCallback(msg);
         });
 
-    // Set up the transform broadcaster
-    tf_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
-    auto timer_interface = std::make_shared<tf2_ros::CreateTimerROS>(
-        this->get_node_base_interface(), this->get_node_timers_interface());
-    tf_buffer_->setCreateTimerInterface(timer_interface);
-    tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
-
     // Set up the map publisher
     map_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>(
         "/map_pointcloud", rclcpp::QoS(1).transient_local());
@@ -143,9 +125,6 @@ IcpNode::IcpNode(const rclcpp::NodeOptions &options)
     if (publish_pose_) {
         reloc_pose_pub_ = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
             pose_topic_, rclcpp::QoS(10));
-        RCLCPP_INFO(this->get_logger(), 
-                    "Publishing ICP pose: %s (frame=%s, base=%s)",
-                    pose_topic_.c_str(), map_frame_id_.c_str(), base_frame_id_.c_str());
     }
 
     // Publish the map once
@@ -154,30 +133,57 @@ IcpNode::IcpNode(const rclcpp::NodeOptions &options)
     map_msg.header.frame_id = map_frame_id_;
     map_msg.header.stamp    = now();
     map_pub_->publish(map_msg);
-    RCLCPP_INFO(this->get_logger(), "Published global map with %ld points", cloud->size());
 
     RCLCPP_INFO(this->get_logger(), "icp_registration initialized");
 }
 
 IcpNode::~IcpNode() {}
 
-void IcpNode::pointcloudCallback(
-    const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
-    pcl::fromROSMsg(*msg, *cloud_in_);
-    has_cloud_ = true;
+void IcpNode::pointcloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
+    pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_raw(new pcl::PointCloud<pcl::PointXYZI>);
+    pcl::fromROSMsg(*msg, *cloud_raw);
+
+    try {
+        // 从 TF 树中查询 base_footprint <- 雷达当前 frame 
+        geometry_msgs::msg::TransformStamped transform = tf_buffer_->lookupTransform(
+            base_frame_id_,        // 目标系：底盘水平坐标系
+            msg->header.frame_id,  // 源坐标系：雷达坐标系 (如 livox_frame 或 front_laser_link)
+            tf2::TimePointZero);
+        
+        Eigen::Quaternionf q(transform.transform.rotation.w,
+                             transform.transform.rotation.x,
+                             transform.transform.rotation.y,
+                             transform.transform.rotation.z);
+        Eigen::Vector3f t(transform.transform.translation.x,
+                          transform.transform.translation.y,
+                          transform.transform.translation.z);
+        
+        Eigen::Matrix4f T = Eigen::Matrix4f::Identity();
+        T.block<3,3>(0,0) = q.toRotationMatrix();
+        T.block<3,1>(0,3) = t;
+        
+        // 执行变换，将倾斜的点云在 3D 空间内“抬平”，存入 cloud_in_
+        pcl::transformPointCloud(*cloud_raw, *cloud_in_, T);
+        
+        has_cloud_ = true;
+        RCLCPP_INFO_ONCE(this->get_logger(), "🟢 成功接收点云，并转换至水平系 %s 成功！", base_frame_id_.c_str());
+    } catch (tf2::TransformException &ex) {
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000, 
+                             "等待点云 TF 转换准备就绪: %s", ex.what());
+    }
 }
 
 void IcpNode::initialPoseCallback(
     const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg) {
     
     if (!has_cloud_) {
-        RCLCPP_WARN(this->get_logger(), "还没收到雷达点云，无法执行暴力重定位！");
+        RCLCPP_WARN(this->get_logger(), "还没收到并转换雷达点云，无法执行暴力重定位！");
         return;
     }
 
     RCLCPP_INFO(this->get_logger(), "收到初始猜测，开始唤醒暴力 ICP 搜索...");
 
-    // 1. 读取 RViz 给出的猜测位姿
+    // 1. 读取 RViz 给出的猜测位姿 (这本身就是 map -> base_footprint 的纯平位姿)
     Eigen::Vector3d pos(msg->pose.pose.position.x, 
                         msg->pose.pose.position.y, 
                         msg->pose.pose.position.z);
@@ -189,58 +195,14 @@ void IcpNode::initialPoseCallback(
     guess_map_to_base.block<3, 3>(0, 0) = q.toRotationMatrix();
     guess_map_to_base.block<3, 1>(0, 3) = pos;
 
-    Eigen::Matrix4d base_to_laser = Eigen::Matrix4d::Identity();
-    try {
-        // 查询 base_footprint 到 front_laser_link 的变换 (T_base_laser)
-        auto transform = tf_buffer_->lookupTransform(
-            base_frame_id_, laser_frame_id_, tf2::TimePointZero);
-        Eigen::Vector3d t_bl(transform.transform.translation.x, 
-                             transform.transform.translation.y, 
-                             transform.transform.translation.z);
-        Eigen::Quaterniond q_bl(transform.transform.rotation.w, 
-                                transform.transform.rotation.x,
-                                transform.transform.rotation.y, 
-                                transform.transform.rotation.z);
-        base_to_laser.block<3, 3>(0, 0) = q_bl.toRotationMatrix();
-        base_to_laser.block<3, 1>(0, 3) = t_bl;
-    } catch (tf2::TransformException &ex) {
-        RCLCPP_ERROR(this->get_logger(), "获取初始猜测时 TF (base->laser) 查询失败: %s", ex.what());
-        return;
-    }
-
-    // 计算真正的 map -> laser 初始猜测： T_map_laser = T_map_base * T_base_laser
-    Eigen::Matrix4d initial_guess_laser = guess_map_to_base * base_to_laser;
-
-    // 2. 进行多假设暴力匹配 (传入的是雷达在地图中的猜测位姿)
-    Eigen::Matrix4d map_to_laser = multiAlignSync(cloud_in_, initial_guess_laser);
+    Eigen::Matrix4d map_to_base = multiAlignSync(cloud_in_, guess_map_to_base);
+    
     if (!success_) {
         RCLCPP_ERROR(this->get_logger(), "Node A 暴力重定位失败，周围环境可能不匹配！");
         return;
     }
 
-    // 3. 将 map -> laser 转换回 map -> base_footprint (这部分你原本的代码是对的)
-    Eigen::Matrix4d laser_to_base = Eigen::Matrix4d::Identity();
-    try {
-        auto transform = tf_buffer_->lookupTransform(
-            laser_frame_id_, base_frame_id_, tf2::TimePointZero);
-        Eigen::Vector3d t(transform.transform.translation.x, 
-                          transform.transform.translation.y, 
-                          transform.transform.translation.z);
-        Eigen::Quaterniond q_tf(transform.transform.rotation.w, 
-                                  transform.transform.rotation.x,
-                                  transform.transform.rotation.y, 
-                                  transform.transform.rotation.z);
-        laser_to_base.block<3, 3>(0, 0) = q_tf.toRotationMatrix();
-        laser_to_base.block<3, 1>(0, 3) = t;
-    } catch (tf2::TransformException &ex) {
-        RCLCPP_ERROR(this->get_logger(), "TF 外参查询失败: %s", ex.what());
-        return;
-    }
-
-    // T_map_base = T_map_laser * T_laser_base
-    Eigen::Matrix4d map_to_base = map_to_laser * laser_to_base;
-
-    // 4. 将最终结果打包，发布给 Node B
+    // 2. 将最终结果打包，发布给 Node B
     geometry_msgs::msg::PoseWithCovarianceStamped exact_pose_msg;
     exact_pose_msg.header.stamp    = now();
     exact_pose_msg.header.frame_id = map_frame_id_;
@@ -276,7 +238,6 @@ void IcpNode::initialPoseCallback(
             odom_to_base.block<3, 3>(0, 0) = q_ob.toRotationMatrix();
             odom_to_base.block<3, 1>(0, 3) = t_ob;
 
-            // map -> odom = map -> base * (odom -> base)^-1
             Eigen::Matrix4d map_to_odom = map_to_base * odom_to_base.inverse();
 
             map_to_odom_tf_.header.frame_id    = map_frame_id_;
@@ -300,7 +261,6 @@ void IcpNode::initialPoseCallback(
 
 Eigen::Matrix4d IcpNode::multiAlignSync(PointCloudXYZI::Ptr source,
                                         const Eigen::Matrix4d &init_guess) {
-    
     static auto rotate2rpy = [](Eigen::Matrix3d &rot) -> Eigen::Vector3d {
         double roll  = std::atan2(rot(2, 1), rot(2, 2));
         double pitch = asin(-rot(2, 0));
@@ -319,8 +279,8 @@ Eigen::Matrix4d IcpNode::multiAlignSync(PointCloudXYZI::Ptr source,
     std::vector<Eigen::Matrix4f> candidates;
     Eigen::Matrix4f temp_pose;
 
-    RCLCPP_INFO(this->get_logger(), "initial guess: %f, %f, %f, %f, %f, %f",
-                xyz(0), xyz(1), xyz(2), rpy(0), rpy(1), rpy(2));
+    RCLCPP_INFO(this->get_logger(), "开始匹配 | Guess: X=%.2f Y=%.2f Yaw=%.2f",
+                xyz(0), xyz(1), rpy(2) * 180.0 / M_PI);
 
     for (int i = -1; i <= 1; i++) {
         for (int j = -1; j <= 1; j++) {
@@ -388,14 +348,13 @@ Eigen::Matrix4d IcpNode::multiAlignSync(PointCloudXYZI::Ptr source,
     auto toc      = std::chrono::system_clock::now();
     std::chrono::duration<double> duration = toc - tic;
     
-    RCLCPP_INFO(this->get_logger(), "align used: %f ms", duration.count() * 1000);
-    RCLCPP_INFO(this->get_logger(), "score: %f", score_);
+    RCLCPP_INFO(this->get_logger(), "✅ 匹配成功! 耗时: %.2f ms | Score: %.3f", 
+                duration.count() * 1000, score_);
 
     return icp_refine_.getFinalTransformation().cast<double>();
 }
 
 PointCloudXYZIN::Ptr IcpNode::addNorm(pcl::PointCloud<pcl::PointXYZI>::Ptr cloud) {
-    
     pcl::PointCloud<pcl::Normal>::Ptr normals(new pcl::PointCloud<pcl::Normal>);
     pcl::search::KdTree<pcl::PointXYZI>::Ptr searchTree(
         new pcl::search::KdTree<pcl::PointXYZI>);

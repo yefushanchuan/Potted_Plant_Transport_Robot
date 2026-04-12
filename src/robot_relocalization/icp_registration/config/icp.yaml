@@ -4,10 +4,9 @@
     rough_leaf_size:  0.6
     refine_leaf_size: 0.1
 
-    # TF Frames
+    # TF Frames(雷达的坐标系通过msg的frameid字段获取)
     map_frame_id:  "map"
     odom_frame_id: "odom"
-    laser_frame_id: "front_laser_link"
     base_frame_id:  "base_footprint"
 
     # Topics
