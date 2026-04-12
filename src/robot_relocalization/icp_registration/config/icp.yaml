@@ -1,7 +1,7 @@
 /**:
   ros__parameters:
     # Voxel Filter
-    rough_leaf_size:  0.6
+    rough_leaf_size:  0.4
     refine_leaf_size: 0.1
 
     # TF Frames(雷达的坐标系通过msg的frameid字段获取)
