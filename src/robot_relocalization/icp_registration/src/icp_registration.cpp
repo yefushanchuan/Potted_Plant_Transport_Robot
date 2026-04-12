@@ -1,10 +1,8 @@
 #include "icp_registration/icp_registration.hpp"
 
-#include <Eigen/src/Geometry/Quaternion.h>
-#include <Eigen/src/Geometry/Transform.h>
+#include <Eigen/Geometry>
 
 #include <chrono>
-#include <geometry_msgs/msg/detail/pose_with_covariance_stamped__struct.hpp>
 #include <iostream>
 #include <pcl/features/normal_3d.h>
 #include <pcl/io/pcd_io.h>
@@ -12,7 +10,6 @@
 #include <pcl/common/transforms.h> // 【新增】用于点云坐标系转换
 #include <rclcpp/qos.hpp>
 #include <stdexcept>
-#include <tf2/LinearMath/Quaternion.h>
 #include <tf2_ros/create_timer_ros.h>
 
 namespace icp {

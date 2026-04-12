@@ -137,13 +137,6 @@ public:
     StateData   m_state_data;
     SyncPackage m_package;
 
-    // 调试计数器
-    int imu_cb_count_   = 0;
-    int lidar_cb_count_ = 0;
-
-    // 时间同步诊断开关
-    bool enable_sync_debug_ = true;
-
     // ========== 点云预处理对象 ==========
     std::unique_ptr<cloud_process_livox> livox_processor_;
     std::unique_ptr<cloud_process>       rs16_processor_;
@@ -155,12 +148,10 @@ public:
     std::atomic<bool>          has_extrinsics_{false};
     rclcpp::TimerBase::SharedPtr extrinsics_timer_;
 
-    int    count_maplost_      = 0;
     bool   use_reloc_          = false;
     float  reloc_threshold_    = 0.0;
     double voxel_leaf_size_    = 0.0;
     double imu_scale_          = 0.0;
-    double last_cloud_time_    = 0.0;
 
     Eigen::Matrix3f imu2link_rot_;
 
@@ -1036,7 +1027,7 @@ public:
         
         target_global_pose_.pos(0) = pose_msg->pose.pose.position.x;
         target_global_pose_.pos(1) = pose_msg->pose.pose.position.y;
-        target_global_pose_.pos(2) = 0.0;
+        target_global_pose_.pos(2) = pose_msg->pose.pose.position.z;
 
         double siny_cosp = 2.0 * (pose_msg->pose.pose.orientation.w * pose_msg->pose.pose.orientation.z + 
                                   pose_msg->pose.pose.orientation.x * pose_msg->pose.pose.orientation.y);
