@@ -63,7 +63,7 @@ def _launch_setup(context):
             package='rviz2', 
             executable='rviz2', 
             name='rviz2',
-            arguments=['-d', LaunchConfiguration('rviz_config_path')],
+            arguments=['-d', LaunchConfiguration('rviz_config_path'),'--ros-args', '--log-level', 'WARN'],
             output='screen',
             parameters=[{'use_sim_time': use_sim_time}],
         ),
