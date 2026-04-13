@@ -745,7 +745,7 @@ public:
                         err_xy, err_yaw);
         } else if (err_xy > pose_refine_gate_xy_m_ || 
                    std::fabs(err_yaw) > pose_refine_gate_yaw_rad_) {
-            RCLCPP_WARN_THROTTLE(nh_->get_logger(), *nh_->get_clock(), 1000,
+            RCLCPP_WARN_THROTTLE(nh_->get_logger(), *nh_->get_clock(), 10000,
                 "[PoseRefine] 位姿门控生效: err_xy=%.3f m, err_yaw=%.3f rad (gate=%.3f, %.3f)",
                 err_xy, err_yaw, pose_refine_gate_xy_m_, pose_refine_gate_yaw_rad_);
         } else {
