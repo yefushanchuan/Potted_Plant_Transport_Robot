@@ -7,7 +7,7 @@
 #include <pcl/features/normal_3d.h>
 #include <pcl/io/pcd_io.h>
 #include <pcl_conversions/pcl_conversions.h>
-#include <pcl/common/transforms.h> // 【新增】用于点云坐标系转换
+#include <pcl/common/transforms.h>
 #include <rclcpp/qos.hpp>
 #include <stdexcept>
 #include <tf2_ros/create_timer_ros.h>
@@ -16,13 +16,12 @@ namespace icp {
 
 IcpNode::IcpNode(const rclcpp::NodeOptions &options)
     : Node("icp_registration", options), rough_iter_(10), refine_iter_(5) {
-    
     cloud_in_ = pcl::PointCloud<pcl::PointXYZI>::Ptr(
         new pcl::PointCloud<pcl::PointXYZI>);
-    
-    double rough_leaf_size  = this->declare_parameter("rough_leaf_size", 0.4);
+
+    double rough_leaf_size = this->declare_parameter("rough_leaf_size", 0.4);
     double refine_leaf_size = this->declare_parameter("refine_leaf_size", 0.1);
-    
+
     voxel_rough_filter_.setLeafSize(rough_leaf_size, rough_leaf_size,
                                     rough_leaf_size);
     voxel_refine_filter_.setLeafSize(refine_leaf_size, refine_leaf_size,
@@ -43,7 +42,7 @@ IcpNode::IcpNode(const rclcpp::NodeOptions &options)
 
     // Add normal to the pointcloud
     refine_map_ = addNorm(cloud);
-    
+
     pcl::PointCloud<pcl::PointXYZI>::Ptr point_rough(new pcl::PointCloud<pcl::PointXYZI>);
     pcl::PointCloud<pcl::PointXYZI>::Ptr filterd_point_rough(new pcl::PointCloud<pcl::PointXYZI>);
     pcl::copyPointCloud(*refine_map_, *point_rough);
@@ -61,18 +60,42 @@ IcpNode::IcpNode(const rclcpp::NodeOptions &options)
                 refine_map_->size(), rough_map_->size());
 
     // Parameters
-    map_frame_id_  = this->declare_parameter("map_frame_id", std::string("map"));
+    map_frame_id_ = this->declare_parameter("map_frame_id", std::string("map"));
     odom_frame_id_ = this->declare_parameter("odom_frame_id", std::string("odom"));
     base_frame_id_ = this->declare_parameter("base_frame_id", std::string("base_footprint"));
-    pose_topic_    = this->declare_parameter("pose_topic", std::string("/icp_pose"));
-    publish_pose_  = this->declare_parameter("publish_pose", true);
-    thresh_        = this->declare_parameter("thresh", 0.15);
-    xy_offset_     = this->declare_parameter("xy_offset", 0.2);
-    
-    double yaw_offset_deg     = this->declare_parameter("yaw_offset", 30.0);
+    laser_frame_id_ = this->declare_parameter("laser_frame_id", std::string("front_laser_link"));
+    pose_topic_ = this->declare_parameter("pose_topic", std::string("/icp_pose"));
+    publish_pose_ = this->declare_parameter("publish_pose", true);
+    thresh_ = this->declare_parameter("thresh", 0.15);
+    xy_offset_ = this->declare_parameter("xy_offset", 0.2);
+
+    double yaw_offset_deg = this->declare_parameter("yaw_offset", 30.0);
     double yaw_resolution_deg = this->declare_parameter("yaw_resolution", 10.0);
-    yaw_steps_    = std::round(yaw_offset_deg / yaw_resolution_deg);
+    yaw_steps_ = std::round(yaw_offset_deg / yaw_resolution_deg);
     yaw_resolution_ = yaw_resolution_deg * M_PI / 180.0;
+
+    std::vector<double> initial_pose_vec = this->declare_parameter(
+        "initial_pose", std::vector<double>{0.0, 0.0, 0.0, 0.0, 0.0, 0.0});
+    use_yaml_initial_pose_ = this->declare_parameter("use_yaml_initial_pose", true);
+
+    try {
+        initial_pose_msg_.position.x = initial_pose_vec.at(0);
+        initial_pose_msg_.position.y = initial_pose_vec.at(1);
+        initial_pose_msg_.position.z = initial_pose_vec.at(2);
+
+        tf2::Quaternion q;
+        q.setRPY(initial_pose_vec.at(3), initial_pose_vec.at(4), initial_pose_vec.at(5));
+
+        initial_pose_msg_.orientation.x = q.x();
+        initial_pose_msg_.orientation.y = q.y();
+        initial_pose_msg_.orientation.z = q.z();
+        initial_pose_msg_.orientation.w = q.w();
+
+        RCLCPP_INFO(this->get_logger(), "已加载 YAML 初始发车点位姿: X=%.2f Y=%.2f Yaw=%.2f",
+                    initial_pose_msg_.position.x, initial_pose_msg_.position.y, initial_pose_vec.at(5));
+    } catch (const std::out_of_range &ex) {
+        RCLCPP_ERROR(this->get_logger(), "initial_pose 参数不合法: %s", ex.what());
+    }
 
     publish_tf_ = this->declare_parameter("publish_tf", false);
 
@@ -89,28 +112,31 @@ IcpNode::IcpNode(const rclcpp::NodeOptions &options)
         RCLCPP_INFO(this->get_logger(), "Node A: TF 发布已启用");
     }
 
-    // 设置 TF buffer 和 listener（一定要在回调函数触发前就绪）
+    // 设置 TF buffer 和 listener
     tf_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
     auto timer_interface = std::make_shared<tf2_ros::CreateTimerROS>(
         this->get_node_base_interface(), this->get_node_timers_interface());
     tf_buffer_->setCreateTimerInterface(timer_interface);
     tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
+    init_tf_timer_ = this->create_wall_timer(
+        std::chrono::milliseconds(100),
+        std::bind(&IcpNode::getStaticTf, this));
+
     // Set up the pointcloud subscriber
     std::string pointcloud_topic = this->declare_parameter(
         "pointcloud_topic", std::string("/livox/lidar"));
     RCLCPP_INFO(this->get_logger(), "pointcloud_topic: %s", pointcloud_topic.c_str());
-    
-    auto qos = rclcpp::QoS(rclcpp::KeepLast(10));
+
     pointcloud_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
-        pointcloud_topic, qos,
+        pointcloud_topic, rclcpp::QoS(1),
         std::bind(&IcpNode::pointcloudCallback, this, std::placeholders::_1));
 
     // Set up the initial pose subscriber
     std::string rviz_initial_pose_topic = this->declare_parameter(
         "rviz_initial_pose_topic", std::string("/initialpose"));
     initial_pose_sub_ = create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
-        rviz_initial_pose_topic, qos,
+        rviz_initial_pose_topic, rclcpp::QoS(1),
         [this](geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg) {
             initialPoseCallback(msg);
         });
@@ -118,7 +144,7 @@ IcpNode::IcpNode(const rclcpp::NodeOptions &options)
     // Set up the map publisher
     map_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>(
         "/map_pointcloud", rclcpp::QoS(1).transient_local());
-    
+
     if (publish_pose_) {
         reloc_pose_pub_ = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
             pose_topic_, rclcpp::QoS(10));
@@ -128,7 +154,7 @@ IcpNode::IcpNode(const rclcpp::NodeOptions &options)
     sensor_msgs::msg::PointCloud2 map_msg;
     pcl::toROSMsg(*cloud, map_msg);
     map_msg.header.frame_id = map_frame_id_;
-    map_msg.header.stamp    = now();
+    map_msg.header.stamp = now();
     map_pub_->publish(map_msg);
 
     RCLCPP_INFO(this->get_logger(), "icp_registration initialized");
@@ -137,42 +163,94 @@ IcpNode::IcpNode(const rclcpp::NodeOptions &options)
 IcpNode::~IcpNode() {}
 
 void IcpNode::pointcloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
+    if (!has_sensor_tf_) {
+        return;
+    }
     pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_raw(new pcl::PointCloud<pcl::PointXYZI>);
     pcl::fromROSMsg(*msg, *cloud_raw);
 
-    try {
-        // 从 TF 树中查询 base_footprint <- 雷达当前 frame 
-        geometry_msgs::msg::TransformStamped transform = tf_buffer_->lookupTransform(
-            base_frame_id_,        // 目标系：底盘水平坐标系
-            msg->header.frame_id,  // 源坐标系：雷达坐标系 (如 livox_frame 或 front_laser_link)
-            tf2::TimePointZero);
-        
-        Eigen::Quaternionf q(transform.transform.rotation.w,
-                             transform.transform.rotation.x,
-                             transform.transform.rotation.y,
-                             transform.transform.rotation.z);
-        Eigen::Vector3f t(transform.transform.translation.x,
-                          transform.transform.translation.y,
-                          transform.transform.translation.z);
-        
-        Eigen::Matrix4f T = Eigen::Matrix4f::Identity();
-        T.block<3,3>(0,0) = q.toRotationMatrix();
-        T.block<3,1>(0,3) = t;
-        
-        // 执行变换，将倾斜的点云在 3D 空间内“抬平”，存入 cloud_in_
-        pcl::transformPointCloud(*cloud_raw, *cloud_in_, T);
-        
-        has_cloud_ = true;
-        RCLCPP_INFO_ONCE(this->get_logger(), "🟢 成功接收点云，并转换至水平系 %s 成功！", base_frame_id_.c_str());
-    } catch (tf2::TransformException &ex) {
-        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000, 
-                             "等待点云 TF 转换准备就绪: %s", ex.what());
+    pcl::PointCloud<pcl::PointXYZI>::Ptr current_cloud(new pcl::PointCloud<pcl::PointXYZI>);
+    pcl::transformPointCloud(*cloud_raw, *current_cloud, base_to_sensor_T_);
+
+    cloud_in_ = current_cloud;  // 更新全局指针
+    has_cloud_ = true;
+
+    if (use_yaml_initial_pose_) {
+        RCLCPP_INFO_ONCE(this->get_logger(), "🚀 检测到点云，启动 YAML 参数自动重定位...");
+
+        Eigen::Vector3d pos(initial_pose_msg_.position.x,
+                            initial_pose_msg_.position.y,
+                            initial_pose_msg_.position.z);
+        Eigen::Quaterniond q_init(initial_pose_msg_.orientation.w,
+                                  initial_pose_msg_.orientation.x,
+                                  initial_pose_msg_.orientation.y,
+                                  initial_pose_msg_.orientation.z);
+        Eigen::Matrix4d guess_map_to_base = Eigen::Matrix4d::Identity();
+        guess_map_to_base.block<3, 3>(0, 0) = q_init.toRotationMatrix();
+        guess_map_to_base.block<3, 1>(0, 3) = pos;
+
+        // 传入深拷贝/安全的点云
+        Eigen::Matrix4d map_to_base = multiAlignSync(cloud_in_, guess_map_to_base);
+
+        if (success_) {
+            geometry_msgs::msg::PoseWithCovarianceStamped exact_pose_msg;
+            exact_pose_msg.header.stamp = now();
+            exact_pose_msg.header.frame_id = map_frame_id_;
+            exact_pose_msg.pose.pose.position.x = map_to_base(0, 3);
+            exact_pose_msg.pose.pose.position.y = map_to_base(1, 3);
+            exact_pose_msg.pose.pose.position.z = map_to_base(2, 3);
+            Eigen::Quaterniond q_res(map_to_base.block<3, 3>(0, 0));
+            exact_pose_msg.pose.pose.orientation.w = q_res.w();
+            exact_pose_msg.pose.pose.orientation.x = q_res.x();
+            exact_pose_msg.pose.pose.orientation.y = q_res.y();
+            exact_pose_msg.pose.pose.orientation.z = q_res.z();
+
+            if (publish_pose_) reloc_pose_pub_->publish(exact_pose_msg);
+            RCLCPP_INFO(this->get_logger(), "✅ 自动重定位成功！已发送至主节点");
+
+            if (publish_tf_) {
+                try {
+                    auto odom_to_base_msg = tf_buffer_->lookupTransform(
+                        odom_frame_id_, base_frame_id_, tf2::TimePointZero);
+
+                    Eigen::Vector3d t_ob(odom_to_base_msg.transform.translation.x,
+                                         odom_to_base_msg.transform.translation.y,
+                                         odom_to_base_msg.transform.translation.z);
+                    Eigen::Quaterniond q_ob(odom_to_base_msg.transform.rotation.w,
+                                            odom_to_base_msg.transform.rotation.x,
+                                            odom_to_base_msg.transform.rotation.y,
+                                            odom_to_base_msg.transform.rotation.z);
+                    Eigen::Matrix4d odom_to_base = Eigen::Matrix4d::Identity();
+                    odom_to_base.block<3, 3>(0, 0) = q_ob.toRotationMatrix();
+                    odom_to_base.block<3, 1>(0, 3) = t_ob;
+
+                    Eigen::Matrix4d map_to_odom = map_to_base * odom_to_base.inverse();
+
+                    map_to_odom_tf_.header.frame_id = map_frame_id_;
+                    map_to_odom_tf_.child_frame_id = odom_frame_id_;
+                    map_to_odom_tf_.transform.translation.x = map_to_odom(0, 3);
+                    map_to_odom_tf_.transform.translation.y = map_to_odom(1, 3);
+                    map_to_odom_tf_.transform.translation.z = map_to_odom(2, 3);
+                    Eigen::Quaterniond q_mo(map_to_odom.block<3, 3>(0, 0));
+                    map_to_odom_tf_.transform.rotation.w = q_mo.w();
+                    map_to_odom_tf_.transform.rotation.x = q_mo.x();
+                    map_to_odom_tf_.transform.rotation.y = q_mo.y();
+                    map_to_odom_tf_.transform.rotation.z = q_mo.z();
+
+                    has_calculated_pose_ = true;
+                } catch (tf2::TransformException &ex) {
+                    RCLCPP_ERROR(this->get_logger(), "自动发车计算 map->odom TF 失败: %s", ex.what());
+                }
+            }
+        } else {
+            RCLCPP_WARN(this->get_logger(), "⚠️ 自动重定位发散！当前环境可能与 YAML 设定出生点不符。请在 RViz 使用 2D Pose Estimate 工具手动标定。");
+        }
+        use_yaml_initial_pose_ = false;
     }
 }
 
 void IcpNode::initialPoseCallback(
     const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg) {
-    
     if (!has_cloud_) {
         RCLCPP_WARN(this->get_logger(), "还没收到并转换雷达点云，无法执行暴力重定位！");
         return;
@@ -181,19 +259,19 @@ void IcpNode::initialPoseCallback(
     RCLCPP_INFO(this->get_logger(), "收到初始猜测，开始唤醒暴力 ICP 搜索...");
 
     // 1. 读取 RViz 给出的猜测位姿 (这本身就是 map -> base_footprint 的纯平位姿)
-    Eigen::Vector3d pos(msg->pose.pose.position.x, 
-                        msg->pose.pose.position.y, 
+    Eigen::Vector3d pos(msg->pose.pose.position.x,
+                        msg->pose.pose.position.y,
                         msg->pose.pose.position.z);
-    Eigen::Quaterniond q(msg->pose.pose.orientation.w, 
+    Eigen::Quaterniond q(msg->pose.pose.orientation.w,
                          msg->pose.pose.orientation.x,
-                         msg->pose.pose.orientation.y, 
+                         msg->pose.pose.orientation.y,
                          msg->pose.pose.orientation.z);
     Eigen::Matrix4d guess_map_to_base = Eigen::Matrix4d::Identity();
     guess_map_to_base.block<3, 3>(0, 0) = q.toRotationMatrix();
     guess_map_to_base.block<3, 1>(0, 3) = pos;
 
     Eigen::Matrix4d map_to_base = multiAlignSync(cloud_in_, guess_map_to_base);
-    
+
     if (!success_) {
         RCLCPP_ERROR(this->get_logger(), "Node A 暴力重定位失败，周围环境可能不匹配！");
         return;
@@ -201,7 +279,7 @@ void IcpNode::initialPoseCallback(
 
     // 2. 将最终结果打包，发布给 Node B
     geometry_msgs::msg::PoseWithCovarianceStamped exact_pose_msg;
-    exact_pose_msg.header.stamp    = now();
+    exact_pose_msg.header.stamp = now();
     exact_pose_msg.header.frame_id = map_frame_id_;
 
     exact_pose_msg.pose.pose.position.x = map_to_base(0, 3);
@@ -215,7 +293,7 @@ void IcpNode::initialPoseCallback(
     exact_pose_msg.pose.pose.orientation.z = q_res.z();
 
     reloc_pose_pub_->publish(exact_pose_msg);
-    RCLCPP_INFO(this->get_logger(), 
+    RCLCPP_INFO(this->get_logger(),
                 "🎯 暴力计算完成！已发布精确位姿给主节点 Node B: [%.2f, %.2f, %.2f]",
                 map_to_base(0, 3), map_to_base(1, 3), map_to_base(2, 3));
 
@@ -223,26 +301,26 @@ void IcpNode::initialPoseCallback(
         try {
             auto odom_to_base_msg = tf_buffer_->lookupTransform(
                 odom_frame_id_, base_frame_id_, tf2::TimePointZero);
-            
-            Eigen::Vector3d t_ob(odom_to_base_msg.transform.translation.x, 
-                                   odom_to_base_msg.transform.translation.y, 
-                                   odom_to_base_msg.transform.translation.z);
-            Eigen::Quaterniond q_ob(odom_to_base_msg.transform.rotation.w, 
-                                     odom_to_base_msg.transform.rotation.x, 
-                                     odom_to_base_msg.transform.rotation.y, 
-                                     odom_to_base_msg.transform.rotation.z);
+
+            Eigen::Vector3d t_ob(odom_to_base_msg.transform.translation.x,
+                                 odom_to_base_msg.transform.translation.y,
+                                 odom_to_base_msg.transform.translation.z);
+            Eigen::Quaterniond q_ob(odom_to_base_msg.transform.rotation.w,
+                                    odom_to_base_msg.transform.rotation.x,
+                                    odom_to_base_msg.transform.rotation.y,
+                                    odom_to_base_msg.transform.rotation.z);
             Eigen::Matrix4d odom_to_base = Eigen::Matrix4d::Identity();
             odom_to_base.block<3, 3>(0, 0) = q_ob.toRotationMatrix();
             odom_to_base.block<3, 1>(0, 3) = t_ob;
 
             Eigen::Matrix4d map_to_odom = map_to_base * odom_to_base.inverse();
 
-            map_to_odom_tf_.header.frame_id    = map_frame_id_;
-            map_to_odom_tf_.child_frame_id     = odom_frame_id_;
+            map_to_odom_tf_.header.frame_id = map_frame_id_;
+            map_to_odom_tf_.child_frame_id = odom_frame_id_;
             map_to_odom_tf_.transform.translation.x = map_to_odom(0, 3);
             map_to_odom_tf_.transform.translation.y = map_to_odom(1, 3);
             map_to_odom_tf_.transform.translation.z = map_to_odom(2, 3);
-            
+
             Eigen::Quaterniond q_mo(map_to_odom.block<3, 3>(0, 0));
             map_to_odom_tf_.transform.rotation.w = q_mo.w();
             map_to_odom_tf_.transform.rotation.x = q_mo.x();
@@ -259,20 +337,20 @@ void IcpNode::initialPoseCallback(
 Eigen::Matrix4d IcpNode::multiAlignSync(PointCloudXYZI::Ptr source,
                                         const Eigen::Matrix4d &init_guess) {
     static auto rotate2rpy = [](Eigen::Matrix3d &rot) -> Eigen::Vector3d {
-        double roll  = std::atan2(rot(2, 1), rot(2, 2));
+        double roll = std::atan2(rot(2, 1), rot(2, 2));
         double pitch = asin(-rot(2, 0));
-        double yaw   = std::atan2(rot(1, 0), rot(0, 0));
+        double yaw = std::atan2(rot(1, 0), rot(0, 0));
         return Eigen::Vector3d(roll, pitch, yaw);
     };
 
     success_ = false;
-    Eigen::Vector3d xyz      = init_guess.block<3, 1>(0, 3);
+    Eigen::Vector3d xyz = init_guess.block<3, 1>(0, 3);
     Eigen::Matrix3d rotation = init_guess.block<3, 3>(0, 0);
-    Eigen::Vector3d rpy      = rotate2rpy(rotation);
-    
+    Eigen::Vector3d rpy = rotate2rpy(rotation);
+
     Eigen::AngleAxisf rollAngle(rpy(0), Eigen::Vector3f::UnitX());
     Eigen::AngleAxisf pitchAngle(rpy(1), Eigen::Vector3f::UnitY());
-    
+
     std::vector<Eigen::Matrix4f> candidates;
     Eigen::Matrix4f temp_pose;
 
@@ -282,7 +360,7 @@ Eigen::Matrix4d IcpNode::multiAlignSync(PointCloudXYZI::Ptr source,
     for (int i = -1; i <= 1; i++) {
         for (int j = -1; j <= 1; j++) {
             for (int k = -yaw_steps_; k <= yaw_steps_; k++) {
-                Eigen::Vector3f pos(xyz(0) + i * xy_offset_, 
+                Eigen::Vector3f pos(xyz(0) + i * xy_offset_,
                                     xyz(1) + j * xy_offset_,
                                     xyz(2));
                 Eigen::AngleAxisf yawAngle(rpy(2) + k * yaw_resolution_,
@@ -303,16 +381,16 @@ Eigen::Matrix4d IcpNode::multiAlignSync(PointCloudXYZI::Ptr source,
     voxel_refine_filter_.setInputCloud(source);
     voxel_refine_filter_.filter(*refine_source);
 
-    PointCloudXYZIN::Ptr rough_source_norm  = addNorm(rough_source);
+    PointCloudXYZIN::Ptr rough_source_norm = addNorm(rough_source);
     PointCloudXYZIN::Ptr refine_source_norm = addNorm(refine_source);
     PointCloudXYZIN::Ptr align_point(new PointCloudXYZIN);
 
     Eigen::Matrix4f best_rough_transform;
     double best_rough_score = 10.0;
-    bool rough_converge     = false;
-    
+    bool rough_converge = false;
+
     auto tic = std::chrono::system_clock::now();
-    
+
     for (Eigen::Matrix4f &init_pose : candidates) {
         icp_rough_.setInputSource(rough_source_norm);
         icp_rough_.align(*align_point, init_pose);
@@ -322,8 +400,8 @@ Eigen::Matrix4d IcpNode::multiAlignSync(PointCloudXYZI::Ptr source,
         if (rough_score > 2 * thresh_)
             continue;
         if (rough_score < best_rough_score) {
-            best_rough_score    = rough_score;
-            rough_converge      = true;
+            best_rough_score = rough_score;
+            rough_converge = true;
             best_rough_transform = icp_rough_.getFinalTransformation();
         }
     }
@@ -339,16 +417,47 @@ Eigen::Matrix4d IcpNode::multiAlignSync(PointCloudXYZI::Ptr source,
         return Eigen::Matrix4d::Zero();
     if (score_ > thresh_)
         return Eigen::Matrix4d::Zero();
-    
+
     success_ = true;
-    
-    auto toc      = std::chrono::system_clock::now();
+
+    auto toc = std::chrono::system_clock::now();
     std::chrono::duration<double> duration = toc - tic;
-    
-    RCLCPP_INFO(this->get_logger(), "✅ 匹配成功! 耗时: %.2f ms | Score: %.3f", 
+
+    RCLCPP_INFO(this->get_logger(), "✅ 匹配成功! 耗时: %.2f ms | Score: %.3f",
                 duration.count() * 1000, score_);
 
     return icp_refine_.getFinalTransformation().cast<double>();
+}
+
+void IcpNode::getStaticTf() {
+    try {
+        // 直接使用 YAML 里的 laser_frame_id_ 查询
+        auto transform = tf_buffer_->lookupTransform(
+            base_frame_id_, laser_frame_id_, tf2::TimePointZero);
+
+        Eigen::Quaternionf q(transform.transform.rotation.w,
+                             transform.transform.rotation.x,
+                             transform.transform.rotation.y,
+                             transform.transform.rotation.z);
+        Eigen::Vector3f t(transform.transform.translation.x,
+                          transform.transform.translation.y,
+                          transform.transform.translation.z);
+
+        base_to_sensor_T_ = Eigen::Matrix4f::Identity();
+        base_to_sensor_T_.block<3, 3>(0, 0) = q.toRotationMatrix();
+        base_to_sensor_T_.block<3, 1>(0, 3) = t;
+
+        has_sensor_tf_ = true;  // 标志位置为 true
+
+        RCLCPP_INFO(this->get_logger(), "✅ 成功抓取并缓存静态外参 TF: %s -> %s",
+                    base_frame_id_.c_str(), laser_frame_id_.c_str());
+
+        init_tf_timer_->cancel();
+
+    } catch (tf2::TransformException &ex) {
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 100,
+                             "等待静态外参 TF 树建立...");
+    }
 }
 
 PointCloudXYZIN::Ptr IcpNode::addNorm(pcl::PointCloud<pcl::PointXYZI>::Ptr cloud) {
@@ -362,10 +471,10 @@ PointCloudXYZIN::Ptr IcpNode::addNorm(pcl::PointCloud<pcl::PointXYZI>::Ptr cloud
     normalEstimator.setSearchMethod(searchTree);
     normalEstimator.setKSearch(15);
     normalEstimator.compute(*normals);
-    
+
     PointCloudXYZIN::Ptr out(new PointCloudXYZIN);
     pcl::concatenateFields(*cloud, *normals, *out);
-    
+
     return out;
 }
 
