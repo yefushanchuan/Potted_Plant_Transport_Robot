@@ -27,4 +27,4 @@
     
     # Output Options
     publish_pose: true
-    publish_tf:   true
+    publish_tf:   false
