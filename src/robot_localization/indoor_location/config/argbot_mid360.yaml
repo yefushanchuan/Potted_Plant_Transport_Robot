@@ -62,7 +62,7 @@ cmd_topic: "/loc_cmd"                          #定位指令话题
 init_pose_topic: "/icp_pose"
 call_pub_topic: "/initialpose"                 #求救发布话题
 pose_pub_topic: "/agv_pose"                    #发布定位位姿话题数据,这里的位姿是基于base_link的位姿（注意不是基于laser_link的位姿）
-
+loc_status_topic: "/localization_status"       #发布定位状态话题数据，0：正常定位，1：表示迷失 / 正在重定位
 
 #p2pl_icp location
 plane_threshold: 0.3     #0.4 构建的平面点与当前位姿邻域点的阈值，说白了就是判断当前点是否在平面内
