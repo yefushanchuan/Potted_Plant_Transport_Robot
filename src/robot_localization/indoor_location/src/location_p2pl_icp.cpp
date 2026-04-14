@@ -79,6 +79,7 @@ public:
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr      pc_map_pub_;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr      processed_cloud_pub_;
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr    pose_pub_;
+    rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr call_node_a_pub_;
 
     // 订阅者
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr                    cloud_sub_;
@@ -457,6 +458,11 @@ public:
         
         imu_sub_ = nh_->create_subscription<sensor_msgs::msg::Imu>(
             imu_topic, imu_qos, std::bind(&location::imu_cb, this, std::placeholders::_1));
+
+        std::string call_node_a_topic = config["call_pub_topic"] ? 
+                                            config["call_pub_topic"].as<std::string>() : "/initialpose";
+        call_node_a_pub_ = nh_->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(call_node_a_topic, 1);
+        RCLCPP_INFO(nh_->get_logger(), "初始化求救发布器"：%s", call_pub_topic.c_str());
 
         std::string init_pose_topic = config["init_pose_topic"] ? 
                                       config["init_pose_topic"].as<std::string>() : "/icp_pose";
@@ -1360,11 +1366,31 @@ public:
                 
                 if (localizier3d->fitness_ < reloc_threshold_) {
                     RCLCPP_WARN(nh_->get_logger(), 
-                                "[定位] Fitness过低 (%.3f < %.3f)，切换重定位",
+                                "[定位] Fitness过低 (%.3f < %.3f)，切换内部重定位，并呼叫 Node A 协助！",
                                 localizier3d->fitness_, reloc_threshold_);
                     use_reloc_ = true;
                     localizier3d->setRelocMode();
                     should_publish = false;
+                    if (call_node_a_pub_->get_subscription_count() > 0) {
+                        geometry_msgs::msg::PoseWithCovarianceStamped help_msg;
+                        help_msg.header.stamp = nh_->get_clock()->now();
+                        help_msg.header.frame_id = map_frame_;
+                        
+                        // 使用迷失前最后一刻的位姿
+                        help_msg.pose.pose.position.x = act_pose.pos(0);
+                        help_msg.pose.pose.position.y = act_pose.pos(1);
+                        help_msg.pose.pose.position.z = act_pose.pos(2);
+                        
+                        // 欧拉角转四元数
+                        tf2::Quaternion q;
+                        q.setRPY(act_pose.orient(0), act_pose.orient(1), act_pose.orient(2));
+                        help_msg.pose.pose.orientation.x = q.x();
+                        help_msg.pose.pose.orientation.y = q.y();
+                        help_msg.pose.pose.orientation.z = q.z();
+                        help_msg.pose.pose.orientation.w = q.w();
+                        
+                        call_node_a_pub_->publish(help_msg);
+                    }
                 } else {
                     should_publish = true;
                 }
