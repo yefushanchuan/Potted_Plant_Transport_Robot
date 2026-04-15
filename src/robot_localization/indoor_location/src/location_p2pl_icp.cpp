@@ -14,6 +14,7 @@
 
 // 几何消息与 TF2 的转换工具（注意 .h → .hpp）
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+#include <std_msgs/msg/int8.hpp>
 
 // 用于性能统计
 #include <chrono>
@@ -67,7 +68,6 @@ public:
     pose_type init_pose_;
     pose_type imu2base_pose;
 
-    // ========== 新增：用于线程安全地接收外部(Node A)高精度位姿 ==========
     std::mutex reloc_pose_mutex_;       // 保护外部位姿的互斥锁
     bool       has_new_global_pose_ = false;  // 是否收到新位姿的标志位
     pose_type  target_global_pose_;     // 缓存的新位姿
@@ -80,6 +80,7 @@ public:
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr      processed_cloud_pub_;
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr    pose_pub_;
     rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr call_node_a_pub_;
+    rclcpp::Publisher<std_msgs::msg::Int8>::SharedPtr loc_status_pub_;
 
     // 订阅者
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr                    cloud_sub_;
@@ -458,6 +459,10 @@ public:
         
         imu_sub_ = nh_->create_subscription<sensor_msgs::msg::Imu>(
             imu_topic, imu_qos, std::bind(&location::imu_cb, this, std::placeholders::_1));
+
+        std::string loc_status_topic = config["loc_status_topic"] ? 
+                                            config["loc_status_topic"].as<std::string>() : "/localization_status";
+        loc_status_pub_ = nh_->create_publisher<std_msgs::msg::Int8>(loc_status_topic, rclcpp::QoS(rclcpp::KeepLast(1));
 
         std::string call_node_a_topic = config["call_pub_topic"] ? 
                                             config["call_pub_topic"].as<std::string>() : "/initialpose";
@@ -1027,8 +1032,34 @@ public:
 
     // 接收 Node A 发来的高精度绝对位姿
     void initpose_cb(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr pose_msg) {
-        RCLCPP_INFO(nh_->get_logger(), "📥 收到 Node A 传来的高精度绝对位姿，准备接管系统！");
+        // 1. 提取 Node A 算出来的坐标
+        double node_a_x = pose_msg->pose.pose.position.x;
+        double node_a_y = pose_msg->pose.pose.position.y;
         
+        // 2. 计算 Node A 坐标与当前主节点坐标的直线偏差距离
+        double dx = act_pose.pos(0) - node_a_x;
+        double dy = act_pose.pos(1) - node_a_y;
+        double diff_dist = std::sqrt(dx * dx + dy * dy);
+
+        // 3. 智能拦截逻辑
+        // 如果主节点现在没有在迷失（use_reloc_ == false），而且匹配得分大于阈值
+        if (!use_reloc_ && localizier3d->fitness_ > reloc_threshold_) {
+            if (diff_dist < 1.0) { // 阈值可以根据实际车速调，1.0米是个不错的经验值
+                RCLCPP_INFO(nh_->get_logger(), 
+                    "💡 Node A 算完了，但主节点已自行恢复且偏差很小(%.2fm)。为防止延时拉扯，忽略此次空投。", 
+                    diff_dist);
+                return; // 直接拦截，不执行覆盖！
+            } else {
+                RCLCPP_WARN(nh_->get_logger(), 
+                    "⚠️ 危险！主节点自认为正常，但与 Node A 的绝对坐标相差达 %.2fm！疑似陷入局部误匹配，准备强行接管！", 
+                    diff_dist);
+            }
+        } else {
+            RCLCPP_INFO(nh_->get_logger(), 
+                "🆘 主节点仍在迷失中，像抓住了救命稻草，正在接受 Node A 绝对位姿接管！");
+        }
+
+        // 4. 执行接管覆盖逻辑
         std::lock_guard<std::mutex> lock(reloc_pose_mutex_);
         
         target_global_pose_.pos(0) = pose_msg->pose.pose.position.x;
@@ -1448,6 +1479,14 @@ public:
             
             double current_system_time = nh_->get_clock()->now().seconds();
             double cloud_to_system_delay = current_system_time - m_package.cloud_end_time;
+            
+            std_msgs::msg::Int8 status_msg;
+            if (use_reloc_) {
+                status_msg.data = 1; // 1 表示迷失 / 正在重定位
+            } else {
+                status_msg.data = 0; // 0 表示健康 / 正常跟踪
+            }
+            loc_status_pub_->publish(status_msg);
             
             RCLCPP_INFO(nh_->get_logger(),
                        "[第%d帧] 同步云末=%.6f | 系统时间=%.6f | "
