@@ -4,7 +4,7 @@
 clear_costmap_caller:
   ros__parameters:
     # 清除间隔（秒）- 每隔多少秒清除一次代价地图
-    clear_interval_sec: 3.0
+    clear_interval_sec: 15.0
     
     # 是否清除全局代价地图
     clear_global_costmap: true
