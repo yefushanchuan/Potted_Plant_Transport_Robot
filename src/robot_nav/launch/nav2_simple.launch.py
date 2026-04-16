@@ -121,9 +121,10 @@ def generate_launch_description():
     autostart = LaunchConfiguration('autostart', default='true')
 
     nav_to_pose_bt_xml_default = PathJoinSubstitution([
-        FindPackageShare('nav2_bt_navigator'),
-        'behavior_trees',
-        'navigate_to_pose_w_replanning_and_recovery.xml',
+        FindPackageShare('robot_nav'),
+        'config',
+        'navigation',
+        'navigate_to_pose.xml',
     ])
     nav_to_pose_bt_xml = LaunchConfiguration(
         'nav_to_pose_bt_xml',
