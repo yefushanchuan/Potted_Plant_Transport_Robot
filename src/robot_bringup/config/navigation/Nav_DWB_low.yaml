@@ -12,7 +12,8 @@ bt_navigator:
     bt_loop_duration: 20                          # 行为树主循环的执行周期（单位：毫秒）。20ms = 50Hz 的控制频率
     default_server_timeout: 20                    # 调用其他Action服务器（如规划器、控制器）时的默认超时时间（单位：毫秒）
 
-    default_nav_to_pose_bt_xml: "robot_bringup/config/navigation/navigate_to_pose.xml" # 默认单点导航行为树的物理文件路径
+    default_nav_to_pose_bt_xml: "robot_nav/config/navigation/navigate_to_pose.xml" # 默认单点导航行为树的物理文件路径
+    # default_nav_through_poses_bt_xml: "/opt/ros/humble/share/nav2_bt_navigator/behavior_trees/navigate_through_poses_w_replanning_and_recovery.xml" # 途经点导航的备用行为树路径（当前被注释禁用）
 
     # 插件加载列表：把 C++ 写的行为树节点加载到内存中，这样在 XML 文件里才能通过名字调用它们
     plugin_lib_names:
@@ -88,7 +89,7 @@ controller_server:
     # --- 终点到达检查器 (Goal Checker) ---
     goal_checker:
       plugin: "nav2_controller::SimpleGoalChecker"     # 使用简单的距离/角度阈值判断
-      xy_goal_tolerance: 0.14                     # 终点 XY 坐标误差允许值：14 厘米以内就算到达
+      xy_goal_tolerance: 0.15                     # 终点 XY 坐标误差允许值：15 厘米以内就算到达
       yaw_goal_tolerance: 0.04                    # 终点车头朝向误差允许值：0.04 弧度（约2.3度）以内就算到达
       stateful: true                              # 是否保存内部状态（保持 true 即可）
 
@@ -102,7 +103,7 @@ controller_server:
       angular_disengage_threshold: 0.3925         # 结束旋转的阈值：当角度偏差缩小到 0.3925弧度(22.5度)内时，退出纯旋转，开始边转边走
       forward_sampling_distance: 0.35             # 往前看多远：取前方 0.35 米处的路径点来计算角度偏差
       rotate_to_heading_angular_vel: 0.5          # 原地旋转阶段的角速度：0.5 rad/s
-      max_angular_accel: 3.2                      # 原地旋转阶段的最大角加速度：3.2 rad/s^2
+      max_angular_accel: 1.5                      # 原地旋转阶段的最大角加速度：1.5 rad/s^2
       simulate_ahead_time: 1.0                    # 碰撞检测：模拟预测未来 1.0 秒内的旋转会不会碰到障碍物
       rotate_to_goal_heading: false               # 到达 XY 终点后，是否要用此插件单独原地旋转对准终点朝向（设为 false 则由 DWB 完成）
       # -----------------------------------------------------------
@@ -127,18 +128,18 @@ controller_server:
       min_vel_y: 0.0                              # 最小Y向速度：差速车不能横移，必须为 0
       max_vel_x: 0.20                             # 最大前进速度：极度保守的安全速度 0.2 米/秒
       max_vel_y: 0.0                              # 最大Y向速度：0
-      max_vel_theta: 3.0                          # 最大旋转角速度：3.0 rad/s (允许车身快速转弯)
-      min_vel_theta: -3.0                         # 最大反向旋转角速度：-3.0 rad/s
+      max_vel_theta: 1.5                          # 最大旋转角速度：1.5 rad/s (允许车身快速转弯)
+      min_vel_theta: -1.5                         # 最大反向旋转角速度：-1.5 rad/s
       min_speed_xy: 0.0                           # 机器人最小的绝对线速度限制
       max_speed_xy: 0.4                           # 机器人最大的绝对线速度合量（这里0.4大于max_vel_x，作为硬上限）
 
       # --- 加速度与减速度限制 ---
       acc_lim_x: 0.2                              # X轴最大加速度：0.2 m/s^2 (起步缓慢平稳)
       acc_lim_y: 0.0                              # Y轴加速度：0
-      acc_lim_theta: 2.2                          # 旋转角加速度：2.2 rad/s^2
+      acc_lim_theta: 1.0                          # 旋转角加速度：1.0 rad/s^2
       decel_lim_x: -0.3                           # X轴最大减速度(刹车)：-0.3 m/s^2 (比加速猛一点，确保遇到障碍能刹住)
       decel_lim_y: 0.0                            # Y轴减速度：0
-      decel_lim_theta: -2.2                       # 旋转角减速度：-2.2 rad/s^2
+      decel_lim_theta: -1.5                       # 旋转角减速度：-1.5 rad/s^2
 
       # --- 轨迹采样配置 (决定 DWB 每次模拟多少条轨迹) ---
       vx_samples: 20                              # 在 X 轴速度范围内切分出 20 个速度值来测试
@@ -154,7 +155,7 @@ controller_server:
       stateful: true                              # 保持 DWB 内部状态
 
       # --- 评委权重配置 (scale 值越大，机器人越看重这个指标) ---
-      BaseObstacle.scale: 20.0                    # 避障权重：20.0。保证不会撞墙。
+      BaseObstacle.scale: 30.0                    # 避障权重：30.0。保证不会撞墙。
       PathAlign.scale: 60.0                       # 贴合路径朝向的权重：高达 60.0。强制机器人车头必须顺着路径方向。
       PathAlign.forward_point_distance: 0.5       # 计算 PathAlign 时，参考前方 0.5 米处的路径点
       PathDist.scale: 10.0                        # 距离路径远近的权重：10.0。约束车不能偏离规划的线太远。
@@ -194,11 +195,11 @@ local_costmap:
       tf_buffer_duration: 10.0                    # TF 缓冲时间池的长度：10.0 秒
       use_sim_time: false                         # 不使用仿真时间
       rolling_window: true                        # 开启滑动窗口：地图永远跟着机器人走，机器人在地图正中央
-      width: 3                                    # 局部地图宽：3 米
-      height: 3                                   # 局部地图高：3 米
+      width: 4                                    # 局部地图宽：4 米
+      height: 4                                   # 局部地图高：4 米
       resolution: 0.03                            # 地图精度：每像素代表现实中 0.03 米 (3 厘米)
-      # footprint: 机器人的实际外框尺寸。这里定义了一个长方形 (X方向 -0.34~0.34=68cm, Y方向 -0.26~0.26=52cm)
-      footprint: "[[0.34,0.26],[0.34,-0.26],[-0.34,-0.26],[-0.34,0.26]]"
+      # footprint: 机器人的实际外框尺寸。这里定义了一个长方形
+      footprint: "[ [0.10, 0.32], [0.10, -0.32], [-0.58, -0.32], [-0.58, 0.32] ]"
       plugins: ["static_layer","obstacle_layer","inflation_layer"] # 启用的代价地图图层
 
       # 图层1：静态地图层 (引入全局的已知墙壁环境)
@@ -228,8 +229,8 @@ local_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         enabled: true
-        cost_scaling_factor: 1.5                  # 成本衰减系数。1.5 表示离开障碍物后，代价值下降得相对缓慢
-        inflation_radius: 0.27                    # 膨胀半径：0.27 米。任何距离障碍物小于 0.27 米的区域都会有高代价。
+        cost_scaling_factor: 2.5                  # 成本衰减系数。2.5 表示离开障碍物后，代价值下降得相对缓慢
+        inflation_radius: 0.30                    # 膨胀半径：0.30 米。任何距离障碍物小于 0.30 米的区域都会有高代价。
 
       always_send_full_costmap: true              # 每次向外发布完整的地图，而不是增量更新（略微增加网络带宽，但更稳定）
 
@@ -247,7 +248,7 @@ global_costmap:
       transform_timeout: 1.0                      # TF 超时容忍
       tf_buffer_duration: 10.0
       use_sim_time: false
-      footprint: "[[0.34,0.26],[0.34,-0.26],[-0.34,-0.26],[-0.34,0.26]]" # 机器人轮廓，同局部地图
+      footprint: "[ [0.10, 0.32], [0.10, -0.32], [-0.58, -0.32], [-0.58, 0.32] ]" # 机器人轮廓，同局部地图
       resolution: 0.03                            # 精度同样是 3 厘米/像素
       track_unknown_space: false                  # 未知区域处理：false 代表建图时没扫到的黑色未知区域是不允许通过的
       plugins: ["static_layer","obstacle_layer","inflation_layer"] # 全局地图同样使用这三个图层
@@ -275,7 +276,7 @@ global_costmap:
         plugin: "nav2_costmap_2d::InflationLayer"
         enabled: true
         cost_scaling_factor: 3.0                  # 全局衰减系数 3.0 (比局部大，说明代价下降很快)
-        inflation_radius: 0.37                    # 全局膨胀半径 0.37 米 (大于局部的0.27)。这是一种巧妙的设计：全局规划时尽量让路径远离墙壁走在中间；但局部避障时允许靠墙近一点(0.27m)以穿过狭窄门框。
+        inflation_radius: 0.35                    # 全局膨胀半径 0.35 米 (大于局部的0.30)。这是一种巧妙的设计：全局规划时尽量让路径远离墙壁走在中间；但局部避障时允许靠墙近一点(0.30m)以穿过狭窄门框。
         
       always_send_full_costmap: true
 
