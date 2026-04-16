@@ -9,7 +9,15 @@ Nav2 Launch File导航启动文件
    ros2 launch indoor_location run_argbot_mid360.launch.py
 
 3. 最后启动此文件进行导航：
-   ros2 launch robot_navigation nav2_only.launch.py map:=/path/to/map.yaml
+
+   # 方式1: 使用相对路径（基于工作空间 ~/Potted_Plant_Transport_Robot/）
+   ros2 launch robot_navigation nav2_only.launch.py map:=map/pgm/office/map.yaml
+   
+   # 方式2: 使用绝对路径
+   ros2 launch robot_navigation nav2_only.launch.py map:=/home/user/maps/office.yaml
+   
+   # 方式3: 不传参，自动查找最新地图
+   ros2 launch robot_navigation nav2_only.launch.py
 
 注意：此 launch 文件假设 TF 树已经由上述两个 launch 文件正确建立：
   map -> odom -> base_footprint -> base_link -> sensors
@@ -21,39 +29,90 @@ import glob
 from ament_index_python.packages import get_package_share_directory
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, TimerAction
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, TimerAction, OpaqueFunction
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
-# ========== 地图目录配置 ==========
+# ========== 地图路径处理 ==========
 HOME = os.path.expanduser('~')
 WORKSPACE_NAME = "Potted_Plant_Transport_Robot"
-DEFAULT_MAP_DIR = os.path.join(HOME, WORKSPACE_NAME, "map", "pgm")
-FALLBACK_MAP_PATH = os.path.join(DEFAULT_MAP_DIR, "default/map.yaml")
+WORKSPACE_DIR = os.path.join(HOME, WORKSPACE_NAME)
+DEFAULT_MAP_DIR = os.path.join(WORKSPACE_DIR, "map", "pgm")
 
 def _find_latest_map(map_dir):
+    """查找地图目录中最新的 map.yaml"""
     if not os.path.isdir(map_dir):
+        print(f"[nav2_only] 警告: 地图目录不存在: {map_dir}")
         return None
+    
     candidates = glob.glob(os.path.join(map_dir, "**", "map.yaml"), recursive=True)
     if not candidates:
+        print(f"[nav2_only] 警告: 在 {map_dir} 中未找到 map.yaml")
         return None
+    
     candidates.sort(key=os.path.getmtime)
-    return candidates[-1]
+    latest = candidates[-1]
+    print(f"[nav2_only] 自动选择最新地图: {latest}")
+    return latest
+
+def _resolve_map_path(map_path):
+    """
+    解析地图路径：
+    - 绝对路径：直接使用（检查存在性且必须是.yaml文件）
+    - 相对路径：基于工作空间目录拼接（检查存在性且必须是.yaml文件）
+    - 空/None：自动查找最新地图
+    """
+    if not map_path:
+        return _find_latest_map(DEFAULT_MAP_DIR)
+    
+    # 已经是绝对路径
+    if os.path.isabs(map_path):
+        # 将 exists 改为 isfile，并限制后缀为 .yaml
+        if os.path.isfile(map_path) and map_path.endswith('.yaml'):
+            return map_path
+        else:
+            print(f"[nav2_only] 警告: 指定的绝对路径不存在、是一个目录或不是 .yaml 文件: {map_path}")
+            return None
+    
+    # 相对路径 -> 基于工作空间拼接
+    resolved = os.path.normpath(os.path.join(WORKSPACE_DIR, map_path))
+    
+    # 同样将 exists 改为 isfile，并限制后缀为 .yaml
+    if os.path.isfile(resolved) and resolved.endswith('.yaml'):
+        return resolved
+    else:
+        print(f"[nav2_only] 警告: 相对路径解析后不存在、是一个目录或不是 .yaml 文件: {resolved} (原始输入: {map_path})")
+        return None
+
+def _get_map_yaml_path(context):
+    """OpaqueFunction: 运行时解析地图路径"""
+    # 获取 launch 参数的实际值
+    map_val = context.launch_configurations.get('map', '')
+    
+    resolved = _resolve_map_path(map_val)
+    
+    if resolved is None:
+        # 所有策略都失败，使用硬编码默认
+        fallback = os.path.join(DEFAULT_MAP_DIR, "default", "map.yaml")
+        print(f"[nav2_only] 回退到默认地图: {fallback}")
+        resolved = fallback
+    
+    # 将解析后的路径设置到配置中，供后续使用
+    context.launch_configurations['map_yaml_resolved'] = resolved
+    return []
 
 def generate_launch_description():
     robot_navigation_dir = get_package_share_directory('robot_navigation')
 
-    default_map_path = FALLBACK_MAP_PATH
-    print(f"[nav2_only] 使用地图: {default_map_path}")
-
-    # Arguments
+    # ========== Launch Arguments ==========
     use_sim_time = LaunchConfiguration('use_sim_time', default='false')
     use_rviz = LaunchConfiguration('use_rviz', default='true')
-
-    map_yaml_path = LaunchConfiguration('map', default=default_map_path)
+    
+    # map 参数：空字符串表示自动查找
+    map_arg = LaunchConfiguration('map', default='')
 
     nav2_params_file = LaunchConfiguration(
         'nav2_params_file',
@@ -71,21 +130,11 @@ def generate_launch_description():
         default=nav_to_pose_bt_xml_default,
     )
 
-    lifecycle_nodes_navigation = [
-        'controller_server',
-        'planner_server',
-        'behavior_server',
-        'bt_navigator',
-        'waypoint_follower',
-        'velocity_smoother',
-        'smoother_server'
-    ]
-
-    lifecycle_nodes_localization = ['map_server']
+    # ========== 地图路径解析 Action ==========
+    # 使用 OpaqueFunction 在运行时解析路径
+    resolve_map_action = OpaqueFunction(function=_get_map_yaml_path)
 
     # ========== 辅助工具节点 ==========
-
-    # Clear Costmap Caller - 定时清除过期的代价地图数据 (依赖 Nav2 的 service，放在这里非常合适)
     clear_costmap_caller_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
@@ -97,6 +146,9 @@ def generate_launch_description():
     )
 
     # ========== Nav2 核心栈 ==========
+    
+    # 使用 LaunchConfiguration 引用解析后的路径
+    map_yaml_path = LaunchConfiguration('map_yaml_resolved')
 
     map_server_node = Node(
         package='nav2_map_server',
@@ -158,7 +210,6 @@ def generate_launch_description():
         name='velocity_smoother',
         output='screen',
         parameters=[nav2_params_file, {'use_sim_time': use_sim_time}],
-        # 将平滑后的速度直接输出给 L1 层的 diff_drive_controller
         remappings=[
             ('cmd_vel', 'cmd_vel_nav'),
             ('cmd_vel_smoothed', '/diff_drive_controller/cmd_vel_unstamped')
@@ -174,6 +225,16 @@ def generate_launch_description():
     )
 
     # ========== 生命周期管理器 ==========
+    lifecycle_nodes_navigation = [
+        'controller_server',
+        'planner_server',
+        'behavior_server',
+        'bt_navigator',
+        'waypoint_follower',
+        'velocity_smoother',
+        'smoother_server'
+    ]
+    lifecycle_nodes_localization = ['map_server']
 
     lifecycle_manager_localization_node = Node(
         package='nav2_lifecycle_manager',
@@ -225,11 +286,14 @@ def generate_launch_description():
 
     return LaunchDescription([
         DeclareLaunchArgument('use_sim_time', default_value='false'),
-        DeclareLaunchArgument('map', default_value=default_map_path),
+        DeclareLaunchArgument('map', default_value='', description='地图路径（绝对路径或相对于 ~/Potted_Plant_Transport_Robot/ 的路径，留空则自动查找最新）'),
         DeclareLaunchArgument('nav2_params_file', default_value=os.path.join(robot_navigation_dir, 'params', 'nav2_params.yaml')),
         DeclareLaunchArgument('use_rviz', default_value='true'),
         DeclareLaunchArgument('autostart', default_value='true'),
         DeclareLaunchArgument('nav_to_pose_bt_xml', default_value=nav_to_pose_bt_xml_default),
+
+        # 先执行路径解析
+        resolve_map_action,
 
         # 辅助节点
         clear_costmap_caller_launch,
