@@ -116,7 +116,7 @@ def generate_launch_description():
 
     nav2_params_file = LaunchConfiguration(
         'nav2_params_file',
-        default=os.path.join(robot_navigation_dir, 'params', 'nav2_params.yaml'),
+        default=os.path.join(robot_navigation_dir, 'config', 'navigation', 'Nav_DWB_low.yaml'),
     )
     autostart = LaunchConfiguration('autostart', default='true')
 
