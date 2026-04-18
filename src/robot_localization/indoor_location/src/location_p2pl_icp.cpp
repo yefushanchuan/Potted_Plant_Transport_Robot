@@ -462,12 +462,12 @@ public:
 
         std::string loc_status_topic = config["loc_status_topic"] ? 
                                             config["loc_status_topic"].as<std::string>() : "/localization_status";
-        loc_status_pub_ = nh_->create_publisher<std_msgs::msg::Int8>(loc_status_topic, rclcpp::QoS(rclcpp::KeepLast(1));
+        loc_status_pub_ = nh_->create_publisher<std_msgs::msg::Int8>(loc_status_topic, rclcpp::QoS(rclcpp::KeepLast(1)));
 
         std::string call_node_a_topic = config["call_pub_topic"] ? 
                                             config["call_pub_topic"].as<std::string>() : "/initialpose";
         call_node_a_pub_ = nh_->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(call_node_a_topic, 1);
-        RCLCPP_INFO(nh_->get_logger(), "初始化求救发布器"：%s", call_pub_topic.c_str());
+        RCLCPP_INFO(nh_->get_logger(), "初始化求救发布器: %s", call_node_a_topic.c_str());
 
         std::string init_pose_topic = config["init_pose_topic"] ? 
                                       config["init_pose_topic"].as<std::string>() : "/icp_pose";
