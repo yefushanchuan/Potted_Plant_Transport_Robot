@@ -17,8 +17,8 @@
 
     # ICP Search Parameters
     thresh:          1.0
-    xy_offset:       0.3
-    yaw_offset:      60.0
+    xy_offset:       0.2
+    yaw_offset:      30.0
     yaw_resolution:  10.0
 
     # Initial Guess [x, y, z, roll, pitch, yaw]
