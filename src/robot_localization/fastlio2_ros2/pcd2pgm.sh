@@ -133,11 +133,34 @@ trap cleanup_runtime EXIT
 # ==========================================
 # 7. 捕获地图数据并保存为 2D 栅格
 # ==========================================
-echo "⏳ 等待点云被压平转换成 /map 话题 (这可能需要几秒钟)..."
-# 轮询等待 /map 话题发布
-timeout 10s bash -lc "until ros2 topic info /map >/dev/null 2>&1; do sleep 0.2; done" || true
+echo "⏳ 等待点云被压平转换成 /map 话题并发布数据 (点云较大，请耐心等待)..."
+
+success=0
+# 最多循环检测 30 次
+for i in {1..30}; do
+  # 1. 如果话题尚未注册，echo 会瞬间失败，走下方的 sleep 1
+  # 2. 如果话题已注册但还没发数据，echo 会一直阻塞等待，直到收到第一帧数据后成功退出 (exit 0)
+  if timeout 30s ros2 topic echo /map --once >/dev/null 2>&1; then
+    success=1
+    break
+  fi
+  sleep 1
+done
+
+if [ "$success" -eq 0 ]; then
+  echo "❌ 错误: 等待超时，仍未收到 /map 话题的数据。转换节点可能崩溃或点云太大处理超时。"
+  exit 1
+fi
+
+# 给一点缓冲时间，确保后续的 map_saver 也能顺利连接到话题
+sleep 2 
 
 echo "💾 正在生成 2D 栅格地图 (PGM/YAML)..."
-ros2 run nav2_map_server map_saver_cli -t /map -f "${out_dir}/map" || true
-
-echo "🎉 完美！2D 导航图已保存至: ${out_dir}"
+if ros2 run nav2_map_server map_saver_cli -t /map -f "${out_dir}/map"; then
+  echo "🎉 完美！2D 导航图已成功保存至:"
+  echo "   - ${out_dir}/map.pgm"
+  echo "   - ${out_dir}/map.yaml"
+else
+  echo "❌ 错误: map_saver_cli 保存地图失败！"
+  exit 1
+fi
