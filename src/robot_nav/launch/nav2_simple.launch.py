@@ -11,13 +11,13 @@ Nav2 Launch File导航启动文件
 3. 最后启动此文件进行导航：
 
    # 方式1: 使用相对路径（基于工作空间 ~/Potted_Plant_Transport_Robot/）
-   ros2 launch robot_navigation nav2_only.launch.py map:=map/pgm/office/map.yaml
+   ros2 launch robot_nav nav2_simple.launch.py map:=map/pgm/office/map.yaml
    
    # 方式2: 使用绝对路径
-   ros2 launch robot_navigation nav2_only.launch.py map:=/home/user/maps/office.yaml
+   ros2 launch robot_nav nav2_simple.launch.py map:=/home/user/maps/office.yaml
    
    # 方式3: 不传参，自动查找最新地图
-   ros2 launch robot_navigation nav2_only.launch.py
+   ros2 launch robot_nav nav2_simple.launch.py
 
 注意：此 launch 文件假设 TF 树已经由上述两个 launch 文件正确建立：
   map -> odom -> base_footprint -> base_link -> sensors
@@ -105,7 +105,7 @@ def _get_map_yaml_path(context):
     return []
 
 def generate_launch_description():
-    robot_navigation_dir = get_package_share_directory('robot_navigation')
+    robot_navigation_dir = get_package_share_directory('robot_nav')
 
     # ========== Launch Arguments ==========
     use_sim_time = LaunchConfiguration('use_sim_time', default='false')
@@ -264,7 +264,7 @@ def generate_launch_description():
     )
 
     # ========== RViz ==========
-    rviz_config = PathJoinSubstitution([FindPackageShare('robot_navigation'), 'rviz', 'nav2_default_view.rviz'])
+    rviz_config = PathJoinSubstitution([FindPackageShare('robot_nav'), 'rviz', 'nav2_default_view.rviz'])
 
     rviz_node = Node(
         condition=IfCondition(use_rviz),
@@ -289,7 +289,7 @@ def generate_launch_description():
         DeclareLaunchArgument('use_sim_time', default_value='false'),
         DeclareLaunchArgument('map', default_value='', description='地图路径（绝对路径或相对于 ~/Potted_Plant_Transport_Robot/ 的路径，留空则自动查找最新）'),
         DeclareLaunchArgument('nav2_params_file', default_value=os.path.join(robot_navigation_dir, 'params', 'nav2_params.yaml')),
-        DeclareLaunchArgument('use_rviz', default_value='true'),
+        DeclareLaunchArgument('use_rviz', default_value='false'),
         DeclareLaunchArgument('autostart', default_value='true'),
         DeclareLaunchArgument('nav_to_pose_bt_xml', default_value=nav_to_pose_bt_xml_default),
 
