@@ -15,7 +15,7 @@
 namespace icp {
 
 IcpNode::IcpNode(const rclcpp::NodeOptions &options)
-    : Node("icp_registration", options), rough_iter_(10), refine_iter_(5) {
+    : Node("icp_registration", options), rough_iter_(20), refine_iter_(5) {
     cloud_in_ = pcl::PointCloud<pcl::PointXYZI>::Ptr(
         new pcl::PointCloud<pcl::PointXYZI>);
 
@@ -52,9 +52,11 @@ IcpNode::IcpNode(const rclcpp::NodeOptions &options)
 
     icp_rough_.setMaximumIterations(rough_iter_);
     icp_rough_.setInputTarget(rough_map_);
+    icp_rough_.setMaxCorrespondenceDistance(5.0); 
 
     icp_refine_.setMaximumIterations(refine_iter_);
     icp_refine_.setInputTarget(refine_map_);
+    icp_refine_.setMaxCorrespondenceDistance(3.0);
 
     RCLCPP_INFO(this->get_logger(), "pcd point size: %ld, %ld",
                 refine_map_->size(), rough_map_->size());
@@ -357,8 +359,8 @@ Eigen::Matrix4d IcpNode::multiAlignSync(PointCloudXYZI::Ptr source,
     RCLCPP_INFO(this->get_logger(), "开始匹配 | Guess: X=%.2f Y=%.2f Yaw=%.2f",
                 xyz(0), xyz(1), rpy(2) * 180.0 / M_PI);
 
-    for (int i = -1; i <= 1; i++) {
-        for (int j = -1; j <= 1; j++) {
+    for (int i = -2; i <= 2; i++) {
+        for (int j = -2; j <= 2; j++) {
             for (int k = -yaw_steps_; k <= yaw_steps_; k++) {
                 Eigen::Vector3f pos(xyz(0) + i * xy_offset_,
                                     xyz(1) + j * xy_offset_,
