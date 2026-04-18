@@ -836,13 +836,12 @@ public:
         map_to_base_tf.setRotation(q);
 
         rclcpp::Time stamp = getTime(time);
-        rclcpp::Time tf_publish_stamp = nh_->get_clock()->now() + rclcpp::Duration::from_seconds(0.1);
 
         if (!enable_map_odom_tf_) {
-            geometry_msgs::msg::TransformStamped transformStamped;
+            geometry_msgs::msg::TransformStamped stamp;
             transformStamped.header.frame_id    = frame_id;
             transformStamped.child_frame_id     = child_frame;
-            transformStamped.header.stamp       = tf_publish_stamp;
+            transformStamped.header.stamp       = stamp;
             transformStamped.transform.translation.x = pose.pos(0);
             transformStamped.transform.translation.y = pose.pos(1);
             transformStamped.transform.translation.z = pose.pos(2);
@@ -866,7 +865,7 @@ public:
                 has_last_map_to_odom_tf_ = true;
                 
                 geometry_msgs::msg::TransformStamped map_to_odom_stamped;
-                map_to_odom_stamped.header.stamp       = tf_publish_stamp;
+                map_to_odom_stamped.header.stamp       = stamp;
                 map_to_odom_stamped.header.frame_id    = map_frame_;
                 map_to_odom_stamped.child_frame_id     = odom_frame_;
                 map_to_odom_stamped.transform          = tf2::toMsg(map_to_odom_tf);
@@ -883,7 +882,7 @@ public:
 
                 if (has_last_map_to_odom_tf_) {
                     geometry_msgs::msg::TransformStamped map_to_odom_stamped;
-                    map_to_odom_stamped.header.stamp       = tf_publish_stamp;
+                    map_to_odom_stamped.header.stamp       = stamp;
                     map_to_odom_stamped.header.frame_id    = map_frame_;
                     map_to_odom_stamped.child_frame_id     = odom_frame_;
                     map_to_odom_stamped.transform          = tf2::toMsg(last_map_to_odom_tf_);
