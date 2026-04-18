@@ -359,8 +359,8 @@ Eigen::Matrix4d IcpNode::multiAlignSync(PointCloudXYZI::Ptr source,
     RCLCPP_INFO(this->get_logger(), "开始匹配 | Guess: X=%.2f Y=%.2f Yaw=%.2f",
                 xyz(0), xyz(1), rpy(2) * 180.0 / M_PI);
 
-    for (int i = -2; i <= 2; i++) {
-        for (int j = -2; j <= 2; j++) {
+    for (int i = -3; i <= 3; i++) {
+        for (int j = -3; j <= 3; j++) {
             for (int k = -yaw_steps_; k <= yaw_steps_; k++) {
                 Eigen::Vector3f pos(xyz(0) + i * xy_offset_,
                                     xyz(1) + j * xy_offset_,
