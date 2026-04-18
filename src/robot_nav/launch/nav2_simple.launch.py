@@ -288,7 +288,7 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('use_sim_time', default_value='false'),
         DeclareLaunchArgument('map', default_value='', description='地图路径（绝对路径或相对于 ~/Potted_Plant_Transport_Robot/ 的路径，留空则自动查找最新）'),
-        DeclareLaunchArgument('nav2_params_file', default_value=os.path.join(robot_navigation_dir, 'params', 'nav2_params.yaml')),
+        DeclareLaunchArgument('nav2_params_file', default_value=os.path.join(robot_navigation_dir, 'config', 'navigation', 'Nav_DWB_low.yaml')),
         DeclareLaunchArgument('use_rviz', default_value='false'),
         DeclareLaunchArgument('autostart', default_value='true'),
         DeclareLaunchArgument('nav_to_pose_bt_xml', default_value=nav_to_pose_bt_xml_default),
