@@ -147,7 +147,7 @@ controller_server:
       sim_time: 1.0                               # 模拟预测未来 1.0 秒的运动轨迹
       linear_granularity: 0.05                    # 轨迹上两个相邻点之间的距离间隔 (5厘米)
       angular_granularity: 0.025                  # 轨迹上相邻点的角度间隔 (约1.4度)
-      transform_tolerance: 0.1                    # TF坐标变换的超时容忍度 0.1 秒
+      transform_tolerance: 0.5                    # TF坐标变换的超时容忍度 0.5 秒
       xy_goal_tolerance: 0.14                     # DWB 内部判断到达终点的阈值 (与 goal_checker 保持一致)
       trans_stopped_velocity: 0.04                # 如果线速度低于 0.04 m/s，DWB 就认为底盘已经停稳了
       short_circuit_trajectory_evaluation: true   # 优化项：如果发现某条轨迹必然碰撞(得分为0)，直接丢弃，不再计算其他评委的分数
@@ -353,7 +353,7 @@ behavior_server:
     local_frame: odom                             # 自救依赖的局部参考系
     global_frame: map                             # 自救依赖的全局参考系
     robot_base_frame: base_footprint              # 机器人底盘系
-    transform_tolerance: 0.4                      # TF转换超时容忍度 0.4 秒
+    transform_tolerance: 1.0                      # TF转换超时容忍度 1.0 秒
     simulate_ahead_time: 2.0                      # 自救前，预测未来 2.0 秒的自救轨迹是否会撞击障碍物
     
     # --- 自救模式下的安全性限速 ---
