@@ -14,7 +14,6 @@
 
 #include "hardware_interface/types/hardware_interface_type_values.hpp"
 #include "rclcpp/rclcpp.hpp"
-#include "sensor_msgs/msg/magnetic_field.hpp"
 #include "sensor_msgs/msg/battery_state.hpp"
 #include "robot_base/uart_protocol.hpp"
 
@@ -137,10 +136,6 @@ hardware_interface::CallbackReturn AgrobotHardwareInterface::on_init(
   // 创建车轮信息发布者
   agrobot_info_pub_ = non_realtime_node_->create_publisher<robot_base::msg::AgrobotInfo>(
     "/agrobot_base_info", rclcpp::SystemDefaultsQoS());
-//   // 创建磁力计数据发布者
-//   mag_pub_ = non_realtime_node_->create_publisher<sensor_msgs::msg::MagneticField>(
-//     "/wit/mag",
-//     rclcpp::SystemDefaultsQoS());
 
   battery_pub_ = non_realtime_node_->create_publisher<sensor_msgs::msg::BatteryState>(
     "/battery_state", rclcpp::SystemDefaultsQoS());
@@ -291,7 +286,7 @@ hardware_interface::CallbackReturn AgrobotHardwareInterface::on_init(
   return hardware_interface::CallbackReturn::SUCCESS;
 }
 
-// 暴露左右轮位置、速度状态接口给控制器
+// 暴露左右轮位置、速度状态等接口给控制器
 std::vector<hardware_interface::StateInterface> AgrobotHardwareInterface::export_state_interfaces()
 {
   std::vector<hardware_interface::StateInterface> state_interfaces;
@@ -299,27 +294,31 @@ std::vector<hardware_interface::StateInterface> AgrobotHardwareInterface::export
   // 导出左轮的状态接口
   state_interfaces.emplace_back(
     hardware_interface::StateInterface(
-      info_.joints[0].name, "position",
-      &hw_position_left_));
+      info_.joints[0].name, "position", &hw_position_left_));
   state_interfaces.emplace_back(
     hardware_interface::StateInterface(
-      info_.joints[0].name, "velocity",
-      &hw_velocity_left_));
+      info_.joints[0].name, "velocity", &hw_velocity_left_));
 
   // 导出右轮的状态接口
   state_interfaces.emplace_back(
     hardware_interface::StateInterface(
-      info_.joints[1].name, "position",
-      &hw_position_right_));
+      info_.joints[1].name, "position", &hw_position_right_));
   state_interfaces.emplace_back(
     hardware_interface::StateInterface(
-      info_.joints[1].name, "velocity",
-      &hw_velocity_right_));
+      info_.joints[1].name, "velocity", &hw_velocity_right_));
+
+  // 导出 pot_transfer_joint 的状态接口
+  state_interfaces.emplace_back(
+    hardware_interface::StateInterface(
+      info_.joints[2].name, "action_running", &hw_state_action_running_));
+  state_interfaces.emplace_back(
+    hardware_interface::StateInterface(
+      info_.joints[2].name, "rc_force_ctl", &hw_state_rc_force_ctl_));
 
   return state_interfaces;
 }
 
-// 暴露左右轮速度指令接口给控制器
+// 暴露左右轮速度等指令接口给控制器
 std::vector<hardware_interface::CommandInterface> AgrobotHardwareInterface::
 export_command_interfaces()
 {
@@ -328,13 +327,24 @@ export_command_interfaces()
   // 导出左轮的命令接口
   command_interfaces.emplace_back(
     hardware_interface::CommandInterface(
-      info_.joints[0].name,
-      "velocity", &hw_command_velocity_left_));
+      info_.joints[0].name, "velocity", &hw_command_velocity_left_));
+
   // 导出右轮的命令接口
   command_interfaces.emplace_back(
     hardware_interface::CommandInterface(
-      info_.joints[1].name,
-      "velocity", &hw_command_velocity_right_));
+      info_.joints[1].name, "velocity", &hw_command_velocity_right_));
+
+  // 导出 pot_transfer_joint 的命令接口
+  command_interfaces.emplace_back(
+    hardware_interface::CommandInterface(
+      info_.joints[2].name, "rack_index", &hw_cmd_rack_index_));
+  command_interfaces.emplace_back(
+    hardware_interface::CommandInterface(
+      info_.joints[2].name, "action_type", &hw_cmd_action_type_));
+  command_interfaces.emplace_back(
+    hardware_interface::CommandInterface(
+      info_.joints[2].name, "action_enable_cmd", &hw_cmd_action_enable_cmd_));
+
   return command_interfaces;
 }
 

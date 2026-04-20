@@ -19,7 +19,6 @@
 #include "robot_base/visibility_control.h"
 #include "robot_base/msg/agrobot_info.hpp"
 #include "robot_base/srv/set_control_mode.hpp"
-#include "sensor_msgs/msg/magnetic_field.hpp"
 #include "sensor_msgs/msg/battery_state.hpp"
 
 namespace robot_base
@@ -75,9 +74,6 @@ private:
   rclcpp::Publisher<sensor_msgs::msg::BatteryState>::SharedPtr battery_pub_;
   rclcpp::Service<robot_base::srv::SetControlMode>::SharedPtr mode_service_;
 
-  // --- New Members for Magnetometer ---
-  rclcpp::Publisher<sensor_msgs::msg::MagneticField>::SharedPtr mag_pub_;
-  std::vector<double> hw_magnetic_field_;
   // ------------------------------------
   std::vector<uint8_t> rx_buffer_;
 
@@ -87,15 +83,24 @@ private:
   std::string serial_port_name_;
   int serial_baud_rate_;
 
-  // Wheel joint states
+  // wheel joint states
   double hw_position_left_;
   double hw_velocity_left_;
   double hw_position_right_;
   double hw_velocity_right_;
 
-  // Wheel joint commands
+  // wheel joint commands
   double hw_command_velocity_left_;
   double hw_command_velocity_right_;
+
+  // pot_transfer_joint states
+  double hw_state_action_running_;
+  double hw_state_rc_force_ctl_;
+
+  // pot_transfer_joint commands
+  double hw_cmd_rack_index_;
+  double hw_cmd_action_type_;
+  double hw_cmd_action_enable_cmd_;
 
   // Mode commands
   std::atomic<uint16_t> hw_mode1_;
