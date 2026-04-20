@@ -97,11 +97,6 @@ private:
   double hw_state_action_running_;
   double hw_state_rc_force_ctl_;
 
-  // pot_transfer_joint commands
-  double hw_cmd_rack_index_;
-  double hw_cmd_action_type_;
-  double hw_cmd_action_enable_cmd_;
-
   // Mode commands
   std::atomic<uint16_t> hw_mode1_;
   std::atomic<uint16_t> hw_mode2_;

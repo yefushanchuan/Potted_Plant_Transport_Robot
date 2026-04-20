@@ -334,17 +334,6 @@ export_command_interfaces()
     hardware_interface::CommandInterface(
       info_.joints[1].name, "velocity", &hw_command_velocity_right_));
 
-  // 导出 pot_transfer_joint 的命令接口
-  command_interfaces.emplace_back(
-    hardware_interface::CommandInterface(
-      info_.joints[2].name, "rack_index", &hw_cmd_rack_index_));
-  command_interfaces.emplace_back(
-    hardware_interface::CommandInterface(
-      info_.joints[2].name, "action_type", &hw_cmd_action_type_));
-  command_interfaces.emplace_back(
-    hardware_interface::CommandInterface(
-      info_.joints[2].name, "action_enable_cmd", &hw_cmd_action_enable_cmd_));
-
   return command_interfaces;
 }
 

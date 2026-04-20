@@ -319,15 +319,7 @@
             <state_interface name="position"/>
             <state_interface name="velocity"/>
         </joint>
-        <joint name="pot_transfer_joint">
-            <command_interface name="rack_index">
-                <param name="min">-5.0</param>
-                <param name="max">5.0</param>
-            </command_interface>
-            <!--  动作类型：0不修改 1搬运 2卸载 3slave -->
-            <command_interface name="action_type"/>
-            <!--  使能触发：0不修改 1使能 2失能 -->
-            <command_interface name="action_enable_cmd"/>
+        <joint name="robot_state_joint">
             <!--  状态反馈：0未进行/已完成 1正在进行 -->
             <state_interface name="action_running"/>
             <!--  接管状态：0遥控器未接管 1遥控器强制接管 -->

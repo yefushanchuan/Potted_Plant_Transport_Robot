@@ -8,9 +8,6 @@
       joint_state_broadcaster:
         type: joint_state_broadcaster/JointStateBroadcaster
 
-      pot_transfer_controller:
-        type: forward_command_controller/MultiInterfaceForwardCommandController
-
   diff_drive_controller:
     ros__parameters:
       left_wheel_names: ["left_wheel_joint"]
@@ -48,11 +45,3 @@
   joint_state_broadcaster:
     ros__parameters:
       {}
-
-  pot_transfer_controller:
-    ros__parameters:
-      joint: pot_transfer_joint
-      interface_names:
-        - rack_index
-        - action_type
-        - action_enable_cmd
