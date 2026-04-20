@@ -696,6 +696,10 @@ hardware_interface::return_type AgrobotHardwareInterface::read(
                 alarms.emplace_back("电池通信故障");
               }
 
+              // 更新 ros2_control 接口状态
+              hw_state_action_running_ = msg->action_running ? 1.0 : 0.0;
+              hw_state_rc_force_ctl_   = msg->rc_force_ctl ? 1.0 : 0.0;
+
               msg->alarm_list = std::move(alarms);
 
               auto battery_msg = sensor_msgs::msg::BatteryState();
