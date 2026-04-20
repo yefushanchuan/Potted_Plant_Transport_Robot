@@ -100,7 +100,6 @@ private:
   // Mode commands
   std::atomic<uint16_t> hw_mode1_;
   std::atomic<uint16_t> hw_mode2_;
-  std::atomic<bool> has_mode_update_{false};
 
   // 花盆架索引下发缓存
   std::atomic<int8_t> rack_index_cmd_;

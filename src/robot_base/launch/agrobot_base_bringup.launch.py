@@ -98,6 +98,18 @@ def generate_launch_description():
         name="robot_controller_spawner",
     )
 
+    # 加载花盆搬运控制器
+    # 作用: 向 controller_manager 请求加载 pot_transfer_controller，
+    #       订阅 /pot_transfer_controller/commands 话题（Float64MultiArray 类型），
+    #       将数组指令按顺序透传（写入）给 pot_transfer_joint 的 rack_index、action_type、action_enable_cmd 硬件接口
+    # 依赖: 必须在 joint_state_broadcaster 加载完成后执行（由 delay_pot_transfer_controller_spawner 控制时序）
+    pot_transfer_controller_spawner = Node(
+        package="controller_manager",
+        executable="spawner",
+        arguments=["pot_transfer_controller", "--controller-manager", "/controller_manager"],
+        name="pot_transfer_controller_spawner",
+    )
+
     # IMU 数据发布 (硬件驱动)
     # 作用: 驱动 hipnuc IMU 硬件，读取原始传感器数据。
     # 输出: 原本直接发 /imu，现在重映射为 /imu_raw，把它交给下面的滤波节点。
@@ -258,16 +270,25 @@ def generate_launch_description():
         )
     )
 
+    # 3. 只有当 robot_controller 加载完毕（即退出后），才去加载 pot_transfer_controller
+    delay_pot_transfer_controller_spawner = RegisterEventHandler(
+        event_handler=OnProcessExit(
+            target_action=robot_controller_spawner,
+            on_exit=[pot_transfer_controller_spawner],
+        )
+    )
+
     # 组装节点列表
     nodes_list =[
         robot_state_publisher_node,
         ros2_control_node,
         delay_joint_state_spawner,       # 时序控制1
         delay_robot_controller_spawner,  # 时序控制2
+        delay_pot_transfer_controller_spawner,  # 时序控制3
         imu_node,
         imu_filter_node,
         ekf_node,
-        lidar_and_filter_container   
+        lidar_and_filter_container
     ]
 
     # 根据命名空间是否为空来决定是否使用 PushRosNamespace 和 TF 重映射

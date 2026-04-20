@@ -14,8 +14,8 @@ uint8 left_wheel_reset_cmd
 # 使能搬运/卸载动作（bit9） : 0不修改 1使能 2失能
 uint8 action_enable_cmd
 
-# 搬运/卸载/slave状态（bit10-bit11） ： 0不修改 1搬运 2卸载 3slave
-uint8 action_status
+# 搬运/卸载/slave类型（bit10-bit11） ： 0不修改 1搬运 2卸载 3slave
+uint8 action_type
 
 # 充电（bit14）：0不修改 1打开 2关闭
 uint8 charging_on_cmd

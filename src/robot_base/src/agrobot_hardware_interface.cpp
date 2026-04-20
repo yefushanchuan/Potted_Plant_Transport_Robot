@@ -26,7 +26,6 @@ void AgrobotHardwareInterface::resetCommandParams()
 {
   hw_mode1_.store(0);
   hw_mode2_.store(0);
-  has_mode_update_.store(false);
   rack_index_cmd_.store(0);
 }
 
@@ -161,7 +160,7 @@ hardware_interface::CallbackReturn AgrobotHardwareInterface::on_init(
       constexpr uint16_t LEFT_WHEEL_ENABLE_SHIFT = 3;            // bit3-bit4
       constexpr uint16_t LEFT_WHEEL_RESET_BIT = 5;               // bit5
       constexpr uint16_t ACTION_ENABLE_BIT = 9;                  // bit9
-      constexpr uint16_t ACTION_STATUS_BIT = 10;                 // bit10-bit11
+      constexpr uint16_t ACTION_TYPE_BIT = 10;                   // bit10-bit11
       constexpr uint16_t CHARGING_ON_BIT = 14;                   // bit14
 
       auto applyTriStateBit = [&](uint16_t bit, uint8_t cmd, const char * name) -> bool {
@@ -256,7 +255,7 @@ hardware_interface::CallbackReturn AgrobotHardwareInterface::on_init(
         return;
       }
       if (!applyEnable2Bits(
-        ACTION_STATUS_BIT, request->action_status, "action_status"))
+        ACTION_TYPE_BIT, request->action_type, "action_type"))
       {
          this->resetCommandParams();
          response->success = false;
@@ -653,21 +652,15 @@ hardware_interface::return_type AgrobotHardwareInterface::read(
               msg->left_wheel_enabled = (health_word & (1u << 3)) != 0;
               // bit4: left_wheel_alarm
               msg->left_wheel_alarm = (health_word & (1u << 4)) != 0;
-                    
+
               // bit7: action_running (动作进行)
               msg->action_running = (health_word & (1u << 7)) != 0;
 
               // bit8: battery_comm_fault
               msg->battery_comm_fault = (health_word & (1u << 8)) != 0;
 
-              // bit9: remote_connected
-              msg->remote_connected = (health_word & (1u << 9)) != 0;
-
-              // bit10: rc_override
-              msg->rc_in_slave_gear = (health_word & (1u << 10)) != 0;
-
-              // bit11: ready_mode
-              msg->ready_mode = (health_word & (1u << 11)) != 0;
+              // bit9: rc_force_ctl
+              msg->rc_force_ctl = (health_word & (1u << 9)) != 0;
 
               // bit12: charging_on
               msg->charging_on = (health_word & (1u << 12)) != 0;
@@ -801,10 +794,7 @@ hardware_interface::return_type AgrobotHardwareInterface::write(
   if (status_mask != 0) {
     uart::appendUint16TLV(payload, TAG_STATUS_MASK, status_mask);
     uart::appendUint16TLV(payload, TAG_STATUS_VALUE, status_value);
-
-    payload.push_back(TAG_RACK_INDEX);
-    payload.push_back(1); // Length
-    payload.push_back(static_cast<uint8_t>(rack_idx));
+    uart::appendInt8TLV(payload, TAG_RACK_INDEX, rack_idx);
   }
 
   std::vector<uint8_t> frame;
@@ -844,9 +834,6 @@ hardware_interface::return_type AgrobotHardwareInterface::write(
     serial_port_.Write(frame);
 
     // 一次性指令发送后清除标记
-    if (has_mode_update_.load()) {
-      has_mode_update_.store(false);
-    }
     if (hw_mode1_.load() != 0) {
       hw_mode1_.store(0);
     }

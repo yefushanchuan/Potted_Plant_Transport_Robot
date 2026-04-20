@@ -39,6 +39,20 @@ inline int32_t readInt32LE(const uint8_t * data)
   return static_cast<int32_t>(value);
 }
 
+inline void appendInt8TLV(std::vector<uint8_t> & payload, uint8_t tag, int8_t value)
+{
+  payload.push_back(tag);
+  payload.push_back(1);
+  payload.push_back(static_cast<uint8_t>(value));
+}
+
+inline void appendUint8TLV(std::vector<uint8_t> & payload, uint8_t tag, uint8_t value)
+{
+  payload.push_back(tag);
+  payload.push_back(1);
+  payload.push_back(value);
+}
+
 inline void appendUint16TLV(std::vector<uint8_t> & payload, uint8_t tag, uint16_t value)
 {
   payload.push_back(tag);
