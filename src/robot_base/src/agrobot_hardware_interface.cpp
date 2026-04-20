@@ -136,7 +136,7 @@ hardware_interface::CallbackReturn AgrobotHardwareInterface::on_init(
   // 创建车轮信息发布者
   agrobot_info_pub_ = non_realtime_node_->create_publisher<robot_base::msg::AgrobotInfo>(
     "/agrobot_base_info", rclcpp::SystemDefaultsQoS());
-
+  // 创建电池信息发布者
   battery_pub_ = non_realtime_node_->create_publisher<sensor_msgs::msg::BatteryState>(
     "/battery_state", rclcpp::SystemDefaultsQoS());
 
