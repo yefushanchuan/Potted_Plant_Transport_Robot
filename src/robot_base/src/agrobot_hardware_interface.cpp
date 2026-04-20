@@ -130,7 +130,6 @@ hardware_interface::CallbackReturn AgrobotHardwareInterface::on_init(
   last_battery_soc_x100_ = 0;
   last_robot_vx_ = 0.0;
   last_robot_vth_ = 0.0;
-  last_rack_index_ = 0;
   // resetCommandParams() 已清理控制类一次性标记，这里仅保留 Telemetry 缓存初始化
 
   // 创建非实时节点
@@ -544,7 +543,6 @@ hardware_interface::return_type AgrobotHardwareInterface::read(
             uint16_t health_word = last_health_word_;
             uint16_t alarm_info = last_alarm_info_;
             uint16_t battery_soc_x100 = last_battery_soc_x100_;
-            int8_t rack_index = last_rack_index_;
 
             size_t offset = 0;  // 负载偏移
             bool tlv_error = false;
@@ -713,7 +711,6 @@ hardware_interface::return_type AgrobotHardwareInterface::read(
 
               last_robot_vx_ = robot_vx;
               last_robot_vth_ = robot_vth;
-              last_rack_index_ = rack_index;
               last_health_word_ = health_word;
               last_alarm_info_ = alarm_info;
               last_battery_soc_x100_ = battery_soc_x100;

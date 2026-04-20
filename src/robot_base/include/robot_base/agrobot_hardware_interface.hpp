@@ -112,7 +112,6 @@ private:
   uint16_t last_battery_soc_x100_{0};
   double last_robot_vx_{0.0};
   double last_robot_vth_{0.0};
-  int8_t last_rack_index_{0};
 
   // 协议联调信息：write() 产生、read() 发布（避免在 write() 中直接发布话题）
   struct LastTxInfo
