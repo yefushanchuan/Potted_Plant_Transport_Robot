@@ -588,10 +588,6 @@ hardware_interface::return_type AgrobotHardwareInterface::read(
                   if (len != 2) {tlv_error = true; break;}
                   battery_soc_x100 = uart::readUint16LE(data_ptr);
                   break;
-                case TAG_RACK_INDEX:
-                  if (len != 1) {tlv_error = true; break;}
-                  rack_index = static_cast<int8_t>(data_ptr[0]);
-                  break;
                 default:
                   // 未知标签按长度跳过，保证向后兼容
                   break;
