@@ -249,11 +249,14 @@ hardware_interface::CallbackReturn AgrobotHardwareInterface::on_init(
         return;
       }
 
-      this->rack_index_cmd_.store(request->rack_index);
+      uint16_t expected_mask = this->hw_mode1_.load();
+      while (!this->hw_mode1_.compare_exchange_weak(expected_mask, expected_mask | status_mask)) {}
 
-      // 更新状态开关（一次性下发，发送后清空标记）
-      this->hw_mode1_.store(status_mask);
-      this->hw_mode2_.store(status_value);
+      uint16_t expected_val = this->hw_mode2_.load();
+      uint16_t new_val;
+      do {
+          new_val = (expected_val & ~status_mask) | (status_value & status_mask);
+      } while (!this->hw_mode2_.compare_exchange_weak(expected_val, new_val));
 
       RCLCPP_INFO(
         rclcpp::get_logger("AgrobotHardwareInterface"),
@@ -293,8 +296,14 @@ hardware_interface::CallbackReturn AgrobotHardwareInterface::on_init(
       uint16_t mask = (1u << ACTION_ENABLE_BIT) | (0x03u << ACTION_TYPE_SHIFT);
       uint16_t val  = (1u << ACTION_ENABLE_BIT) | ((goal->action_type & 0x03u) << ACTION_TYPE_SHIFT);
       this->rack_index_cmd_.store(goal->rack_index);
-      this->hw_mode1_.store(mask);
-      this->hw_mode2_.store(val);
+      uint16_t expected_mask = this->hw_mode1_.load();
+      while (!this->hw_mode1_.compare_exchange_weak(expected_mask, expected_mask | mask)) {}
+
+      uint16_t expected_val = this->hw_mode2_.load();
+      uint16_t new_val;
+      do {
+          new_val = (expected_val & ~mask) | (val & mask);
+      } while (!this->hw_mode2_.compare_exchange_weak(expected_val, new_val));
       
       auto result = std::make_shared<OperatePot::Result>();
       auto feedback = std::make_shared<OperatePot::Feedback>();
@@ -391,8 +400,14 @@ hardware_interface::CallbackReturn AgrobotHardwareInterface::on_init(
     uint16_t status_mask = (1u << ACTION_ENABLE_BIT);
     uint16_t status_value = 0; 
     
-    this->hw_mode1_.store(status_mask);
-    this->hw_mode2_.store(status_value);
+    uint16_t expected_mask = this->hw_mode1_.load();
+    while (!this->hw_mode1_.compare_exchange_weak(expected_mask, expected_mask | status_mask)) {}
+
+    uint16_t expected_val = this->hw_mode2_.load();
+    uint16_t new_val;
+    do {
+        new_val = (expected_val & ~status_mask) | (status_value & status_mask);
+    } while (!this->hw_mode2_.compare_exchange_weak(expected_val, new_val));
     
     return rclcpp_action::CancelResponse::ACCEPT;
   };
@@ -913,8 +928,8 @@ hardware_interface::return_type AgrobotHardwareInterface::write(
   uart::appendInt32TLV(payload, TAG_W_ANGULAR_MRAD_S, w_angular_mrad_s);
 
   // 一次性下发：状态开关（仅在有新指令时下发）
-  const uint16_t status_mask = hw_mode1_.load();
-  const uint16_t status_value = hw_mode2_.load();
+  const uint16_t status_mask = hw_mode1_.exchange(0);
+  const uint16_t status_value = hw_mode2_.exchange(0);
   int8_t rack_idx = rack_index_cmd_.load();
   if (status_mask != 0) {
     uart::appendUint16TLV(payload, TAG_STATUS_MASK, status_mask);
@@ -957,11 +972,6 @@ hardware_interface::return_type AgrobotHardwareInterface::write(
 
   if (serial_port_.IsOpen()) {
     serial_port_.Write(frame);
-
-    // 一次性指令发送后清除标记
-    if (hw_mode1_.load() != 0) {
-      hw_mode1_.store(0);
-    }
 
     return hardware_interface::return_type::OK;
   } else {
