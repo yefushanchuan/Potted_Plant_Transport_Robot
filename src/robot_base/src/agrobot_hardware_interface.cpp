@@ -448,14 +448,6 @@ std::vector<hardware_interface::StateInterface> AgrobotHardwareInterface::export
     hardware_interface::StateInterface(
       info_.joints[1].name, "velocity", &hw_velocity_right_));
 
-  // 导出 pot_transfer_joint 的状态接口
-  state_interfaces.emplace_back(
-    hardware_interface::StateInterface(
-      info_.joints[2].name, "action_running", &hw_state_action_running_));
-  state_interfaces.emplace_back(
-    hardware_interface::StateInterface(
-      info_.joints[2].name, "rc_force_ctl", &hw_state_rc_force_ctl_));
-
   return state_interfaces;
 }
 

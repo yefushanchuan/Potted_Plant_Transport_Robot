@@ -96,10 +96,6 @@ private:
   double hw_command_velocity_left_;
   double hw_command_velocity_right_;
 
-  // pot_transfer_joint states
-  double hw_state_action_running_;
-  double hw_state_rc_force_ctl_;
-
   // 专门供 Action 跨线程读取底层运行状态的原子变量
   std::atomic<bool> current_action_running_flag_{false};
 

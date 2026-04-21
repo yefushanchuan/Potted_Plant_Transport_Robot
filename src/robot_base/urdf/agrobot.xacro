@@ -319,11 +319,5 @@
             <state_interface name="position"/>
             <state_interface name="velocity"/>
         </joint>
-        <joint name="robot_state_joint">
-            <!--  状态反馈：0未进行/已完成 1正在进行 -->
-            <state_interface name="action_running"/>
-            <!--  接管状态：0遥控器未接管 1遥控器强制接管 -->
-            <state_interface name="rc_force_ctl"/>
-        </joint>
     </ros2_control>
 </robot>
