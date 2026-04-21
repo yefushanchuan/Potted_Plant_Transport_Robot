@@ -30,6 +30,7 @@ find_package(Eigen3 REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/AgrobotInfo.msg"
   "srv/SetControlMode.srv"
+  "action/OperatePot.action"
 )
 
 #=============  agrobot_hardware_interface node==================================

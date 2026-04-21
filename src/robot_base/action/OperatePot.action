@@ -1,0 +1,11 @@
+# Goal: 目标指令
+uint8 action_type  # 1搬运 2卸载 3slave
+int8 rack_index    # 架子索引
+---
+# Result: 最终结果
+bool success
+string message
+---
+# Feedback: 实时反馈
+bool is_running
+string current_state
