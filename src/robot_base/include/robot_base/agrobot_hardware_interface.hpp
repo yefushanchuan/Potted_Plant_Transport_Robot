@@ -104,6 +104,8 @@ private:
 
   std::thread action_thread_;
   std::atomic<bool> shutting_down_{false}; // 用于通知线程尽快退出
+  rclcpp::executors::SingleThreadedExecutor::SharedPtr executor_;
+  std::mutex action_thread_mutex_;
   
   // Mode commands
   std::atomic<uint16_t> hw_mode1_;
