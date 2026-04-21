@@ -51,6 +51,14 @@ constexpr uint8_t TAG_BATT_SOC_X100 = 0x21;     // u16: 电池百分比*100
 constexpr uint8_t TAG_ACK_RESULT = 0x30;        // u8: 0=OK，其它=错误码
 constexpr uint8_t TAG_ACK_REQUEST = 0x40;       // u8: 请求 ACK
 
+constexpr uint16_t RIGHT_WHEEL_ENABLE_SHIFT = 0;  // bit0-bit1
+constexpr uint16_t RIGHT_WHEEL_RESET_BIT = 2;     // bit2
+constexpr uint16_t LEFT_WHEEL_ENABLE_SHIFT = 3;   // bit3-bit4
+constexpr uint16_t LEFT_WHEEL_RESET_BIT = 5;      // bit5
+constexpr uint16_t ACTION_ENABLE_BIT = 9;         // bit9: 0:不修改(Mask=0), 1:使能(写入1), 2:失能(写入0)
+constexpr uint16_t ACTION_TYPE_SHIFT = 10;        // bit10-bit11:  0:不修改(Mask=00), 1:搬运(01), 2:卸载(10), 3:slave(11)
+constexpr uint16_t CHARGING_ON_BIT = 14;          // bit14: 充电控制位
+
 constexpr size_t FRAME_FIXED_HEADER_LEN = 7; // H1 H2 VER SEQ TYPE LEN_L LEN_H
 constexpr size_t FRAME_MIN_SIZE = FRAME_FIXED_HEADER_LEN + 2; // + CRC，payload 为 0 时的最小长度
 constexpr uint16_t MAX_PAYLOAD_LEN = 512; // 单帧最大负载长度（容错上限，防止错误 LEN 导致缓存膨胀）
@@ -149,14 +157,6 @@ hardware_interface::CallbackReturn AgrobotHardwareInterface::on_init(
       uint16_t status_mask = 0;
       uint16_t status_value = 0;
 
-      constexpr uint16_t RIGHT_WHEEL_ENABLE_SHIFT = 0;           // bit0-bit1
-      constexpr uint16_t RIGHT_WHEEL_RESET_BIT = 2;              // bit2
-      constexpr uint16_t LEFT_WHEEL_ENABLE_SHIFT = 3;            // bit3-bit4
-      constexpr uint16_t LEFT_WHEEL_RESET_BIT = 5;               // bit5
-      constexpr uint16_t ACTION_ENABLE_BIT = 9;                  // bit9
-      constexpr uint16_t ACTION_TYPE_BIT = 10;                   // bit10-bit11
-      constexpr uint16_t CHARGING_ON_BIT = 14;                   // bit14
-
       auto applyTriStateBit = [&](uint16_t bit, uint8_t cmd, const char * name) -> bool {
           if (cmd == 0) {
             return true;
@@ -242,20 +242,8 @@ hardware_interface::CallbackReturn AgrobotHardwareInterface::on_init(
         return;
       }
       if (!applyTriStateBit(
-        ACTION_ENABLE_BIT, request->action_enable_cmd, "action_enable"))
+        CHARGING_ON_BIT, request->charging_on_cmd, "charging_on"))
       {
-        this->resetCommandParams(); 
-        response->success = false;
-        return;
-      }
-      if (!applyEnable2Bits(
-        ACTION_TYPE_BIT, request->action_type, "action_type"))
-      {
-         this->resetCommandParams();
-         response->success = false;
-         return;
-      }
-      if (!applyTriStateBit(CHARGING_ON_BIT, request->charging_on_cmd, "charging_on")) {
         this->resetCommandParams();
         response->success = false;
         return;
@@ -269,8 +257,8 @@ hardware_interface::CallbackReturn AgrobotHardwareInterface::on_init(
 
       RCLCPP_INFO(
         rclcpp::get_logger("AgrobotHardwareInterface"),
-        "SetControlMode: status_mask=0x%04X status_value=0x%04X rack_index=%d",
-        status_mask, status_value, request->rack_index);
+        "SetControlMode: status_mask=0x%04X status_value=0x%04X",
+        status_mask, status_value);
 
       response->success = true;
     };
@@ -278,6 +266,144 @@ hardware_interface::CallbackReturn AgrobotHardwareInterface::on_init(
   mode_service_ = non_realtime_node_->create_service<robot_base::srv::SetControlMode>(
     "/set_agrobotbase_ctrlmode", service_callback);
 
+  using OperatePot = robot_base::action::OperatePot;
+  using GoalHandleOperatePot = rclcpp_action::ServerGoalHandle<OperatePot>;
+
+  auto handle_accepted = [this](const std::shared_ptr<GoalHandleOperatePot> goal_handle) {
+    // 如果之前有执行完的遗留线程，先回收掉（防止资源泄漏）
+    if (this->action_thread_.joinable()) {
+      this->action_thread_.join();
+    }
+
+    // 真正上锁：向系统宣告我开始占用了！
+    this->is_action_busy_.store(true);
+
+    // 绑定线程生命周期，绝不用 detach
+    this->action_thread_ = std::thread([this, goal_handle]() {
+      
+      // 【RAII 思想】：无论这个线程因为什么原因退出（成功、失败、取消），必须解锁！
+      // 这是一个 lambda 析构器，保证线程结束时必定执行。
+      auto unlock_guard = std::shared_ptr<void>(nullptr, [this](void*) {
+        this->is_action_busy_.store(false);
+      });
+
+      const auto goal = goal_handle->get_goal();
+      
+      // 组装并下发指令
+      uint16_t mask = (1u << ACTION_ENABLE_BIT) | (0x03u << ACTION_TYPE_SHIFT);
+      uint16_t val  = (1u << ACTION_ENABLE_BIT) | ((goal->action_type & 0x03u) << ACTION_TYPE_SHIFT);
+      this->rack_index_cmd_.store(goal->rack_index);
+      this->hw_mode1_.store(mask);
+      this->hw_mode2_.store(val);
+      
+      auto result = std::make_shared<OperatePot::Result>();
+      auto feedback = std::make_shared<OperatePot::Feedback>();
+      
+      rclcpp::Rate loop_rate(10);
+      
+      // 解决问题4：增加到 50 个 tick (5秒)，防止底层串口稍微卡顿就判失败
+      int wait_start_timeout = 50; 
+      bool has_started = false;
+
+      // 阶段1：等待底层电机启动（注意增加了 !this->shutting_down_.load() 防止节点被强杀）
+      while (rclcpp::ok() && !this->shutting_down_.load() && wait_start_timeout > 0) {
+        if (this->current_action_running_flag_.load()) {
+          has_started = true;
+          break;
+        }
+        if (goal_handle->is_canceling()) {
+          result->success = false;
+          result->message = "启动前被取消";
+          goal_handle->canceled(result);
+          return; // return 会触发 unlock_guard 解锁
+        }
+        wait_start_timeout--;
+        loop_rate.sleep();
+      }
+
+      if (!has_started) {
+        RCLCPP_ERROR(rclcpp::get_logger("AgrobotHardwareInterface"), "Action: 启动超时(5s)，底层无响应");
+        result->success = false;
+        result->message = "硬件超时无响应";
+        goal_handle->abort(result);
+        return;
+      }
+
+      // 阶段2：底层干活中，等待其完成
+      while (rclcpp::ok() && !this->shutting_down_.load()) {
+        if (goal_handle->is_canceling()) {
+          result->success = false;
+          result->message = "执行中途被取消";
+          goal_handle->canceled(result);
+          return;
+        }
+        
+        bool is_running = this->current_action_running_flag_.load(); 
+        feedback->is_running = is_running;
+        goal_handle->publish_feedback(feedback);
+        
+        // 干完活了，退出循环
+        if (!is_running) {
+          break;
+        }
+        loop_rate.sleep();
+      }
+      
+      // 如果是因为节点关闭导致的退出，不要发 succeed
+      if (this->shutting_down_.load()) {
+        return;
+      }
+
+      // 正常完成
+      if (rclcpp::ok()) {
+        result->success = true;
+        result->message = "任务执行完毕";
+        goal_handle->succeed(result);
+        RCLCPP_INFO(rclcpp::get_logger("AgrobotHardwareInterface"), "Action: 任务执行完毕");
+      }
+    }); // 注意：去掉了 detach()
+  };
+
+  auto handle_goal = [this](const rclcpp_action::GoalUUID & /*uuid*/, std::shared_ptr<const OperatePot::Goal> goal) {
+    RCLCPP_INFO(
+      rclcpp::get_logger("AgrobotHardwareInterface"), 
+      "Action: 收到搬运请求, 动作类型 %d, 架子索引 %d", 
+      goal->action_type, goal->rack_index);
+
+    // 【关键修复】：使用软件层面原子锁判断，防止多个 Goal 同时被 Accept
+    if (this->is_action_busy_.load()) {
+      RCLCPP_WARN(
+        rclcpp::get_logger("AgrobotHardwareInterface"), 
+        "底层正在执行动作，拒绝新的 Action 请求");
+      return rclcpp_action::GoalResponse::REJECT;
+    }
+    
+    return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+  };
+
+  auto handle_cancel =[this](const std::shared_ptr<GoalHandleOperatePot> /*goal_handle*/) {
+    RCLCPP_INFO(
+      rclcpp::get_logger("AgrobotHardwareInterface"), 
+      "Action: 收到取消请求，紧急下发失能指令！");
+    
+    // 【关键修复】：消除硬编码，使用统一的常量定义
+    // 只操作动作使能位，将其置为 0 表示失能/停止
+    uint16_t status_mask = (1u << ACTION_ENABLE_BIT);
+    uint16_t status_value = 0; 
+    
+    this->hw_mode1_.store(status_mask);
+    this->hw_mode2_.store(status_value);
+    
+    return rclcpp_action::CancelResponse::ACCEPT;
+  };
+
+  action_server_ = rclcpp_action::create_server<OperatePot>(
+    non_realtime_node_,
+    "operate_pot",
+    handle_goal,
+    handle_cancel,
+    handle_accepted);
+    
   // 创建并启动节点线程
   node_thread_ = std::thread([this]() {rclcpp::spin(this->non_realtime_node_);});
 
@@ -688,6 +814,9 @@ hardware_interface::return_type AgrobotHardwareInterface::read(
               // 更新 ros2_control 接口状态
               hw_state_action_running_ = msg->action_running ? 1.0 : 0.0;
               hw_state_rc_force_ctl_   = msg->rc_force_ctl ? 1.0 : 0.0;
+
+              // 同步给 Action 线程用于判断底层状态
+              current_action_running_flag_.store(msg->action_running);
 
               msg->alarm_list = std::move(alarms);
 

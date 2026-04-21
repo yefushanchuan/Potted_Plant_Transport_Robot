@@ -20,6 +20,8 @@
 #include "robot_base/msg/agrobot_info.hpp"
 #include "robot_base/srv/set_control_mode.hpp"
 #include "sensor_msgs/msg/battery_state.hpp"
+#include "rclcpp_action/rclcpp_action.hpp"
+#include "robot_base/action/operate_pot.hpp"
 
 namespace robot_base
 {
@@ -73,6 +75,7 @@ private:
   rclcpp::Publisher<robot_base::msg::AgrobotInfo>::SharedPtr agrobot_info_pub_;
   rclcpp::Publisher<sensor_msgs::msg::BatteryState>::SharedPtr battery_pub_;
   rclcpp::Service<robot_base::srv::SetControlMode>::SharedPtr mode_service_;
+  rclcpp_action::Server<robot_base::action::OperatePot>::SharedPtr action_server_;
 
   // ------------------------------------
   std::vector<uint8_t> rx_buffer_;
@@ -97,6 +100,15 @@ private:
   double hw_state_action_running_;
   double hw_state_rc_force_ctl_;
 
+  // 专门供 Action 跨线程读取底层运行状态的原子变量
+  std::atomic<bool> current_action_running_flag_{false};
+
+  // 软件层面的互斥锁：只要 Action Server 接管了，不论硬件动没动，都不许别人插手！
+  std::atomic<bool> is_action_busy_{false};
+
+  std::thread action_thread_;
+  std::atomic<bool> shutting_down_{false}; // 用于通知线程尽快退出
+  
   // Mode commands
   std::atomic<uint16_t> hw_mode1_;
   std::atomic<uint16_t> hw_mode2_;
