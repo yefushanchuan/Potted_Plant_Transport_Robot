@@ -151,114 +151,115 @@ hardware_interface::CallbackReturn AgrobotHardwareInterface::on_init(
   auto service_callback =
     [this](const std::shared_ptr<robot_base::srv::SetControlMode::Request> request,
       std::shared_ptr<robot_base::srv::SetControlMode::Response> response)
-    {
-      // 根据协议位定义将控制命令转换为 status_mask/status_value（mask 指定需要修改的位）
-      uint16_t status_mask = 0;
-      uint16_t status_value = 0;
+  {
+    // 根据协议位定义将控制命令转换为 status_mask/status_value（mask 指定需要修改的位）
+    uint16_t status_mask = 0;
+    uint16_t status_value = 0;
 
-      auto applyTriStateBit = [&](uint16_t bit, uint8_t cmd, const char * name) -> bool {
-          if (cmd == 0) {
-            return true;
-          }
-          if (cmd != 1 && cmd != 2) {
-            RCLCPP_ERROR(
-              rclcpp::get_logger("AgrobotHardwareInterface"),
-              "%s_cmd 取值非法：%u（期望 0/1/2）",
-              name,
-              static_cast<unsigned>(cmd));
-            return false;
-          }
-          status_mask |= static_cast<uint16_t>(1u << bit);
-          if (cmd == 1) {
-            status_value |= static_cast<uint16_t>(1u << bit);
-          }
+    auto applyTriStateBit = [&](uint16_t bit, uint8_t cmd, const char * name) -> bool {
+        if (cmd == 0) {
           return true;
-        };
-
-      // 此函数增加cmd = 3 支持（slave模式）
-      auto applyEnable2Bits = [&](uint16_t shift, uint8_t cmd, const char * name) -> bool {
-          if (cmd == 0) {
-            return true;
-          }
-          if (cmd > 3) {
-            RCLCPP_ERROR(
-              rclcpp::get_logger("AgrobotHardwareInterface"),
-              "%s_cmd 取值非法：%u（期望 0/1/2/3）",
-              name,
-              static_cast<unsigned>(cmd));
-            return false;
-          }
-          status_mask |= static_cast<uint16_t>(0x03u << shift);
-          status_value |= static_cast<uint16_t>(
-            (static_cast<uint16_t>(cmd) & 0x03u) << shift);
-          return true;
-        };
-
-      auto applyResetBit = [&](uint16_t bit, uint8_t cmd, const char * name) -> bool {
-          if (cmd == 0) {
-            return true;
-          }
-          if (cmd != 1) {
-            RCLCPP_ERROR(
-              rclcpp::get_logger("AgrobotHardwareInterface"),
-              "%s_cmd 取值非法：%u（期望 0/1）",
-              name,
-              static_cast<unsigned>(cmd));
-            return false;
-          }
-          status_mask |= static_cast<uint16_t>(1u << bit);
+        }
+        if (cmd != 1 && cmd != 2) {
+          RCLCPP_ERROR(
+            rclcpp::get_logger("AgrobotHardwareInterface"),
+            "%s_cmd 取值非法：%u（期望 0/1/2）",
+            name,
+            static_cast<unsigned>(cmd));
+          return false;
+        }
+        status_mask |= static_cast<uint16_t>(1u << bit);
+        if (cmd == 1) {
           status_value |= static_cast<uint16_t>(1u << bit);
+        }
+        return true;
+      };
+
+    // 此函数增加cmd = 3 支持（slave模式）
+    auto applyEnable2Bits = [&](uint16_t shift, uint8_t cmd, const char * name) -> bool {
+        if (cmd == 0) {
           return true;
-        };
+        }
+        if (cmd > 3) {
+          RCLCPP_ERROR(
+            rclcpp::get_logger("AgrobotHardwareInterface"),
+            "%s_cmd 取值非法：%u（期望 0/1/2/3）",
+            name,
+            static_cast<unsigned>(cmd));
+          return false;
+        }
+        status_mask |= static_cast<uint16_t>(0x03u << shift);
+        status_value |= static_cast<uint16_t>(
+          (static_cast<uint16_t>(cmd) & 0x03u) << shift);
+        return true;
+      };
 
-      // 电机控制
-      if (!applyEnable2Bits(
-          RIGHT_WHEEL_ENABLE_SHIFT, request->right_wheel_enable_cmd, "right_wheel_enable"))
-      {
-        response->success = false;
-        return;
-      }
-      if (!applyEnable2Bits(
-          LEFT_WHEEL_ENABLE_SHIFT, request->left_wheel_enable_cmd, "left_wheel_enable"))
-      {
-        response->success = false;
-        return;
-      }
-      if (!applyResetBit(
-          RIGHT_WHEEL_RESET_BIT, request->right_wheel_reset_cmd, "right_wheel_reset"))
-      {
-        response->success = false;
-        return;
-      }
-      if (!applyResetBit(
-        LEFT_WHEEL_RESET_BIT, request->left_wheel_reset_cmd, "left_wheel_reset"))
-      {
-        response->success = false;
-        return;
-      }
-      if (!applyTriStateBit(
-        CHARGING_ON_BIT, request->charging_on_cmd, "charging_on"))
-      {
-        response->success = false;
-        return;
-      }
+    auto applyResetBit = [&](uint16_t bit, uint8_t cmd, const char * name) -> bool {
+        if (cmd == 0) {
+          return true;
+        }
+        if (cmd != 1) {
+          RCLCPP_ERROR(
+            rclcpp::get_logger("AgrobotHardwareInterface"),
+            "%s_cmd 取值非法：%u（期望 0/1）",
+            name,
+            static_cast<unsigned>(cmd));
+          return false;
+        }
+        status_mask |= static_cast<uint16_t>(1u << bit);
+        status_value |= static_cast<uint16_t>(1u << bit);
+        return true;
+      };
 
-      uint16_t expected_mask = this->hw_mode1_.load();
-      while (!this->hw_mode1_.compare_exchange_weak(expected_mask, expected_mask | status_mask)) {}
+    // 电机控制
+    if (!applyEnable2Bits(
+        RIGHT_WHEEL_ENABLE_SHIFT, request->right_wheel_enable_cmd, "right_wheel_enable"))
+    {
+      response->success = false;
+      return;
+    }
+    if (!applyEnable2Bits(
+        LEFT_WHEEL_ENABLE_SHIFT, request->left_wheel_enable_cmd, "left_wheel_enable"))
+    {
+      response->success = false;
+      return;
+    }
+    if (!applyResetBit(
+        RIGHT_WHEEL_RESET_BIT, request->right_wheel_reset_cmd, "right_wheel_reset"))
+    {
+      response->success = false;
+      return;
+    }
+    if (!applyResetBit(
+      LEFT_WHEEL_RESET_BIT, request->left_wheel_reset_cmd, "left_wheel_reset"))
+    {
+      response->success = false;
+      return;
+    }
+    if (!applyTriStateBit(
+      CHARGING_ON_BIT, request->charging_on_cmd, "charging_on"))
+    {
+      response->success = false;
+      return;
+    }
 
-      uint16_t expected_val = this->hw_mode2_.load();
-      uint16_t new_val;
-      do {
-          new_val = (expected_val & ~status_mask) | (status_value & status_mask);
-      } while (!this->hw_mode2_.compare_exchange_weak(expected_val, new_val));
+    uint16_t expected_mask = this->hw_mode1_.load();
+    while (!this->hw_mode1_.compare_exchange_weak(expected_mask, expected_mask | status_mask)) {}
 
-      RCLCPP_INFO(
-        rclcpp::get_logger("AgrobotHardwareInterface"),
-        "SetControlMode: status_mask=0x%04X status_value=0x%04X",
-        status_mask, status_value);
+    uint16_t expected_val = this->hw_mode2_.load();
+    uint16_t new_val;
+    do {
+        new_val = (expected_val & ~status_mask) | (status_value & status_mask);
+    } while (!this->hw_mode2_.compare_exchange_weak(expected_val, new_val));
 
-      response->success = true;
-    };
+    RCLCPP_INFO(
+      rclcpp::get_logger("AgrobotHardwareInterface"),
+      "SetControlMode: status_mask=0x%04X status_value=0x%04X",
+      status_mask, status_value);
+
+    response->success = true;
+  };
+    
   // 创建设置控制模式的服务
   mode_service_ = non_realtime_node_->create_service<robot_base::srv::SetControlMode>(
     "/set_agrobotbase_ctrlmode", service_callback);
@@ -267,28 +268,29 @@ hardware_interface::CallbackReturn AgrobotHardwareInterface::on_init(
   using GoalHandleOperatePot = rclcpp_action::ServerGoalHandle<OperatePot>;
 
   auto handle_accepted = [this](const std::shared_ptr<GoalHandleOperatePot> goal_handle) {
-    // 如果之前有执行完的遗留线程，先回收掉（防止资源泄漏）
+    // 回收旧线程
     {
       std::lock_guard<std::mutex> lock(this->action_thread_mutex_);
       if (this->action_thread_.joinable()) {
         this->action_thread_.join();
       }
 
-      // 绑定线程生命周期，绝不用 detach
       this->action_thread_ = std::thread([this, goal_handle]() {
         
-        // 【RAII 思想】：无论这个线程因为什么原因退出（成功、失败、取消），必须解锁！
-        // 这是一个 lambda 析构器，保证线程结束时必定执行。
         auto unlock_guard = std::shared_ptr<void>(nullptr, [this](void*) {
           this->is_action_busy_.store(false);
         });
 
         const auto goal = goal_handle->get_goal();
+        const bool is_slave_mode = (goal->action_type == 3);
         
-        // 组装并下发指令
         uint16_t mask = (1u << ACTION_ENABLE_BIT) | (0x03u << ACTION_TYPE_SHIFT);
         uint16_t val  = (1u << ACTION_ENABLE_BIT) | ((goal->action_type & 0x03u) << ACTION_TYPE_SHIFT);
-        this->rack_index_cmd_.store(goal->rack_index);
+        
+        if (!is_slave_mode) {
+          this->rack_index_cmd_.store(goal->rack_index);
+        }
+        
         uint16_t expected_mask = this->hw_mode1_.load();
         while (!this->hw_mode1_.compare_exchange_weak(expected_mask, expected_mask | mask)) {}
 
@@ -302,13 +304,11 @@ hardware_interface::CallbackReturn AgrobotHardwareInterface::on_init(
         auto feedback = std::make_shared<OperatePot::Feedback>();
         
         rclcpp::Rate loop_rate(10);
-        
-        // 解决问题4：增加到 50 个 tick (5秒)，防止底层串口稍微卡顿就判失败
-        int wait_start_timeout = 50; 
+        int wait_start_timeout = 50;
         bool has_started = false;
 
-        // 阶段1：等待底层电机启动（注意增加了 !this->shutting_down_.load() 防止节点被强杀）
-        while (rclcpp::ok() && !this->shutting_down_.load() && wait_start_timeout > 0) {
+        // 阶段1：启动确认
+        while (rclcpp::ok() && !this->shutting_down_.load() && wait_start_timeout > 0 && !is_slave_mode) {
           if (this->current_action_running_flag_.load()) {
             has_started = true;
             break;
@@ -317,10 +317,15 @@ hardware_interface::CallbackReturn AgrobotHardwareInterface::on_init(
             result->success = false;
             result->message = "启动前被取消";
             goal_handle->canceled(result);
-            return; // return 会触发 unlock_guard 解锁
+            return;
           }
           wait_start_timeout--;
           loop_rate.sleep();
+        }
+
+        // Slave 模式不需要等启动反馈，直接进入阶段 2
+        if (is_slave_mode) {
+          has_started = true;
         }
 
         if (!has_started) {
@@ -331,49 +336,68 @@ hardware_interface::CallbackReturn AgrobotHardwareInterface::on_init(
           return;
         }
 
-        // 阶段2：底层干活中，等待其完成
-        while (rclcpp::ok() && !this->shutting_down_.load()) {
-          if (goal_handle->is_canceling()) {
-            result->success = false;
-            result->message = "执行中途被取消";
-            goal_handle->canceled(result);
-            return;
+        // 阶段2：执行中
+        if (is_slave_mode) {
+          // 【关键修复 2】：Slave 模式在循环内持续发送 feedback，保持 Action 活跃
+          while (rclcpp::ok() && !this->shutting_down_.load()) {
+            if (goal_handle->is_canceling()) {
+              // 客户端主动取消 Slave 是预期内的正常行为，所以 success 设为 true
+              result->success = true;
+              result->message = "slave 模式已主动取消并退出";
+              goal_handle->canceled(result);
+              return;
+            }
+            
+            feedback->is_running = true;
+            goal_handle->publish_feedback(feedback);
+            
+            loop_rate.sleep();
           }
-          
-          bool is_running = this->current_action_running_flag_.load(); 
-          feedback->is_running = is_running;
-          goal_handle->publish_feedback(feedback);
-          
-          // 干完活了，退出循环
-          if (!is_running) {
-            break;
+        } else {
+          // 非 slave：等 running 结束
+          while (rclcpp::ok() && !this->shutting_down_.load()) {
+            if (goal_handle->is_canceling()) {
+              // 搬运或卸载中途被取消，算作任务失败
+              result->success = false; 
+              result->message = "执行中途被取消";
+              goal_handle->canceled(result);
+              return;
+            }
+            
+            bool is_running = this->current_action_running_flag_.load(); 
+            feedback->is_running = is_running;
+            goal_handle->publish_feedback(feedback);
+            
+            if (!is_running) {
+              break;
+            }
+            loop_rate.sleep();
           }
-          loop_rate.sleep();
         }
         
-        // 如果是因为节点关闭导致的退出，不要发 succeed
+        // 节点关闭检查
         if (this->shutting_down_.load()) {
           result->success = false;
           result->message = "节点正在停用，任务中断";
-          goal_handle->abort(result);  // 【修复】：必须终结
+          goal_handle->abort(result);
           return;
         }
 
         // 正常完成
         if (rclcpp::ok()) {
           result->success = true;
-          result->message = "任务执行完毕";
+          result->message = is_slave_mode ? "slave 模式运行结束" : "任务执行完毕";
           goal_handle->succeed(result);
-          RCLCPP_INFO(rclcpp::get_logger("AgrobotHardwareInterface"), "Action: 任务执行完毕");
+          RCLCPP_INFO(rclcpp::get_logger("AgrobotHardwareInterface"), "Action: %s", result->message.c_str());
         }
-      }); // 注意：去掉了 detach()
+      });
     }
   };
 
   auto handle_goal = [this](const rclcpp_action::GoalUUID & /*uuid*/, std::shared_ptr<const OperatePot::Goal> goal) {
     RCLCPP_INFO(
       rclcpp::get_logger("AgrobotHardwareInterface"), 
-      "Action: 收到搬运请求, 动作类型 %d, 架子索引 %d", 
+      "Action: 收到请求, 动作类型 %d, 架子索引 %d", 
       goal->action_type, goal->rack_index);
 
     bool expected = false;
@@ -393,8 +417,7 @@ hardware_interface::CallbackReturn AgrobotHardwareInterface::on_init(
     RCLCPP_INFO(
       rclcpp::get_logger("AgrobotHardwareInterface"), 
       "Action: 收到取消请求，紧急下发失能指令！");
-    
-    // 【关键修复】：消除硬编码，使用统一的常量定义
+
     // 只操作动作使能位，将其置为 0 表示失能/停止
     uint16_t status_mask = (1u << ACTION_ENABLE_BIT);
     uint16_t status_value = 0; 
@@ -737,8 +760,8 @@ hardware_interface::return_type AgrobotHardwareInterface::read(
                   break;
                 case TAG_W_ANGULAR_MRAD_S:
                   if (len != 4) {tlv_error = true; break;}
-                  double raw_robot_vth = static_cast<double>(uart::readInt32LE(data_ptr)) / 1000.0;
-                  robot_vth = -raw_robot_vth;
+                  robot_vth = static_cast<double>(uart::readInt32LE(data_ptr)) / 1000.0;
+                  robot_vth = -robot_vth;
                   break;
                 case TAG_HEALTH_WORD:
                   if (len != 2) {tlv_error = true; break;}
@@ -777,7 +800,7 @@ hardware_interface::return_type AgrobotHardwareInterface::read(
               // 发布底盘信息
               auto msg = std::make_unique<robot_base::msg::AgrobotInfo>();
               msg->speed_x = robot_vx;
-              msg->speed_z = robot_vth;
+              msg->speed_z = robot_vth; //ROS协议
               msg->power = static_cast<float>(battery_soc_x100) / 100.0f;
               msg->flag_1 = static_cast<uint8_t>(0x00);
 
@@ -812,18 +835,17 @@ hardware_interface::return_type AgrobotHardwareInterface::read(
               msg->left_wheel_enabled = (health_word & (1u << 3)) != 0;
               // bit4: left_wheel_alarm
               msg->left_wheel_alarm = (health_word & (1u << 4)) != 0;
-
-              // bit7: action_running (动作进行)
+              // bit7: action_running
               msg->action_running = (health_word & (1u << 7)) != 0;
-
               // bit8: battery_comm_fault
               msg->battery_comm_fault = (health_word & (1u << 8)) != 0;
-
               // bit9: rc_force_ctl
               msg->rc_force_ctl = (health_word & (1u << 9)) != 0;
-
               // bit12: charging_on
               msg->charging_on = (health_word & (1u << 12)) != 0;
+
+              // 同步给 Action 线程用于判断底层状态
+              current_action_running_flag_.store(msg->action_running);
 
               // 综合电机报警标志
               msg->motor_alarm = msg->right_wheel_alarm || msg->left_wheel_alarm || (alarm_info != 0);
@@ -851,9 +873,6 @@ hardware_interface::return_type AgrobotHardwareInterface::read(
               if (msg->battery_comm_fault) {
                 alarms.emplace_back("电池通信故障");
               }
-
-              // 同步给 Action 线程用于判断底层状态
-              current_action_running_flag_.store(msg->action_running);
 
               msg->alarm_list = std::move(alarms);
 
@@ -944,7 +963,8 @@ hardware_interface::return_type AgrobotHardwareInterface::write(
   vth = -vth;  // ROS 中正值为逆时针旋转，协议中正值为顺时针，需取反转换
   uint16_t status_mask = hw_mode1_.exchange(0);
   uint16_t status_value = hw_mode2_.exchange(0);
-  int8_t rack_idx = rack_index_cmd_.load(); 
+  int8_t rack_idx = 0; // 默认值，只有在特定指令下才会被更新
+
   // 按新协议组装 Command TLV
   std::vector<uint8_t> payload;
   const int32_t v_linear_mm_s = static_cast<int32_t>(std::lround(vx * 1000.0));
@@ -953,16 +973,17 @@ hardware_interface::return_type AgrobotHardwareInterface::write(
   uart::appendInt32TLV(payload, TAG_W_ANGULAR_MRAD_S, w_angular_mrad_s);
 
   if (status_mask != 0) {
-  uart::appendUint16TLV(payload, TAG_STATUS_MASK, status_mask);
-  uart::appendUint16TLV(payload, TAG_STATUS_VALUE, status_value);
-  
-  // 仅当掩码中包含动作指令时，才下发架子索引
-  if ((status_mask & (1u << ACTION_ENABLE_BIT)) || 
-      (status_mask & (0x03u << ACTION_TYPE_SHIFT))) 
-  {
-    uart::appendInt8TLV(payload, TAG_RACK_INDEX, rack_idx);
+    uart::appendUint16TLV(payload, TAG_STATUS_MASK, status_mask);
+    uart::appendUint16TLV(payload, TAG_STATUS_VALUE, status_value);
+    
+    // 仅当掩码中包含动作指令时，才下发架子索引
+    if ((status_mask & (1u << ACTION_ENABLE_BIT)) || 
+        (status_mask & (0x03u << ACTION_TYPE_SHIFT))) 
+    {
+      rack_idx = rack_index_cmd_.exchange(0); 
+      uart::appendInt8TLV(payload, TAG_RACK_INDEX, rack_idx);
+    }
   }
-}
 
   std::vector<uint8_t> frame;
   frame.reserve(FRAME_FIXED_HEADER_LEN + payload.size() + 2);
@@ -999,7 +1020,6 @@ hardware_interface::return_type AgrobotHardwareInterface::write(
 
   if (serial_port_.IsOpen()) {
     serial_port_.Write(frame);
-
     return hardware_interface::return_type::OK;
   } else {
     RCLCPP_ERROR(rclcpp::get_logger("AgrobotHardwareInterface"), "serial port not open");
