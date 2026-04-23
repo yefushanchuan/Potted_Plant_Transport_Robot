@@ -26,7 +26,6 @@ def generate_launch_description() -> LaunchDescription:
             default_value=(
                 "agrobot_localization_bringup.launch.py,"
                 "3_agrobot_nav_by_route_bringup.launch.py,"
-                "pheno_module_controller.launch.py"
             ),
             description="comma separated launch list for navigation mode",
         ),

@@ -50,7 +50,6 @@
 //灌溉子模块节点
 // #include "robot_ctrl/bt_plugins/condition/is_pot_detected_condition.hpp"
 //表型子模块节点
-#include "robot_ctrl/bt_plugins/action/camera_capture_action.hpp"
 #include "robot_ctrl/bt_plugins/action/taskfile_upload_action.hpp"
 #include "robot_ctrl/bt_plugins/action/record_failed_taskfile_action.hpp"
 #include "robot_ctrl/bt_plugins/action/get_pending_taskfile_action.hpp"
@@ -117,7 +116,6 @@ int main(int argc, char **argv)
     factory.registerNodeType<robot_ctrl::SetTaskLockedAction>("SetTaskLocked");
     factory.registerNodeType<robot_ctrl::SetIcpActive>("SetIcpActive");
     factory.registerNodeType<robot_ctrl::SetRobotState>("SetRobotState");
-    factory.registerNodeType<robot_ctrl::CameraCaptureAction>("CameraCapture");
     
     factory.registerNodeType<robot_ctrl::TaskfileUploadAction>("TaskfileUpload");
     factory.registerNodeType<robot_ctrl::RecordFailedTaskfileAction>("RecordFailedTaskfile");

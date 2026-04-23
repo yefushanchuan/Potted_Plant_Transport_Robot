@@ -27,8 +27,9 @@ find_package(std_srvs REQUIRED)
 find_package(apriltag_msgs REQUIRED)
 find_package(rosidl_default_runtime REQUIRED)
 find_package(nlohmann_json REQUIRED)
+find_package(robot_base REQUIRED) 
+find_package(nav2_behavior_tree REQUIRED)
 
-find_package(pheno_module_controller REQUIRED)
 # find_package(pot_detection REQUIRED)
 
 # find_package(robot_base REQUIRED) 
@@ -113,13 +114,12 @@ add_library(robot_ctrl_bt_plugins SHARED
   src/bt_plugins/condition/is_robot_started_condition.cpp
   src/bt_plugins/condition/is_battery_low_condition.cpp
   src/bt_plugins/condition/is_time_for_action_condition.cpp
-
+  src/bt_plugins/action/operate_pot_action_node.cpp
   ##自动充电子模块
   # src/bt_plugins/action/dock_robot_action.cpp
   # src/bt_plugins/action/undock_robot_action.cpp
 
   ##表型子模块
-  src/bt_plugins/action/camera_capture_action.cpp
   src/bt_plugins/action/taskfile_upload_action.cpp
   src/bt_plugins/action/taskfile_retry_queue_storage.cpp
   src/bt_plugins/action/record_failed_taskfile_action.cpp
@@ -150,7 +150,8 @@ ament_target_dependencies(robot_ctrl_bt_plugins
   rclcpp_lifecycle
   lifecycle_msgs
   sensor_msgs
-  pheno_module_controller
+  robot_base
+  nav2_behavior_tree
   # pot_detection
   # robot_charge
 )

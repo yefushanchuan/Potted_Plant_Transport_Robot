@@ -9,7 +9,6 @@
   - robot_bringup:1_agrobot_base_bringup.launch.py
   - robot_bringup:agrobot_localization_bringup.launch.py
   - robot_bringup:3_agrobot_nav_by_route_bringup.launch.py
-  - robot_bringup:pheno_module_controller.launch.py
   - robot_bringup:2_agrobot_mapping_bringup.launch.py
 
 服务接口：
@@ -70,7 +69,6 @@ class LaunchManagerNode(Node):
     DEFAULT_NAVIGATION_LAUNCHES = ",".join([
         "agrobot_localization_bringup.launch.py",
         "3_agrobot_nav_by_route_bringup.launch.py",
-        "pheno_module_controller.launch.py",
     ])
     DEFAULT_MAPPING_LAUNCHES = "2_agrobot_mapping_bringup.launch.py"
 

@@ -20,13 +20,13 @@
   <class name="LaunchManagerAction"
          type="robot_ctrl::LaunchManagerAction"
          base_class_type="BT::SyncActionNode"/>
-  <class name="CameraCapture"
-         type="robot_ctrl::CameraCaptureAction"
-         base_class_type="BT::StatefulActionNode"/>
   <class name="TaskfileUpload"
          type="robot_ctrl::TaskfileUploadAction"
          base_class_type="BT::StatefulActionNode"/>
   <class name="RepeatWithBlackboard"
          type="robot_ctrl::RepeatWithBlackboard"
          base_class_type="BT::DecoratorNode"/>
+  <class name="OperatePot"
+         type="robot_ctrl::OperatePotAction"
+         base_class_type="nav2_behavior_tree::BtActionNodeBase"/>
 </library>
