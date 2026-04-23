@@ -267,6 +267,46 @@ hardware_interface::CallbackReturn AgrobotHardwareInterface::on_init(
   using OperatePot = robot_base::action::OperatePot;
   using GoalHandleOperatePot = rclcpp_action::ServerGoalHandle<OperatePot>;
 
+  auto handle_goal = [this](const rclcpp_action::GoalUUID & /*uuid*/, std::shared_ptr<const OperatePot::Goal> goal) {
+    RCLCPP_INFO(
+      rclcpp::get_logger("AgrobotHardwareInterface"), 
+      "Action: 收到请求, 动作类型 %d, 架子索引 %d", 
+      goal->action_type, goal->rack_index);
+
+    bool expected = false;
+    // 原子操作：如果当前 busy 为 false (expected)，则将其瞬间改为 true，并放行；
+    // 如果当前已经是 true，说明正在忙，直接拒绝。
+    if (!this->is_action_busy_.compare_exchange_strong(expected, true)) {
+      RCLCPP_WARN(
+        rclcpp::get_logger("AgrobotHardwareInterface"), 
+        "底层正在执行动作，拒绝新的 Action 请求");
+      return rclcpp_action::GoalResponse::REJECT;
+    }
+    
+    return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+  };
+
+  auto handle_cancel =[this](const std::shared_ptr<GoalHandleOperatePot> /*goal_handle*/) {
+    RCLCPP_INFO(
+      rclcpp::get_logger("AgrobotHardwareInterface"), 
+      "Action: 收到取消请求，紧急下发失能指令！");
+
+    // 只操作动作使能位，将其置为 0 表示失能/停止
+    uint16_t status_mask = (1u << ACTION_ENABLE_BIT);
+    uint16_t status_value = 0; 
+    
+    uint16_t expected_mask = this->hw_mode1_.load();
+    while (!this->hw_mode1_.compare_exchange_weak(expected_mask, expected_mask | status_mask)) {}
+
+    uint16_t expected_val = this->hw_mode2_.load();
+    uint16_t new_val;
+    do {
+        new_val = (expected_val & ~status_mask) | (status_value & status_mask);
+    } while (!this->hw_mode2_.compare_exchange_weak(expected_val, new_val));
+    
+    return rclcpp_action::CancelResponse::ACCEPT;
+  };
+
   auto handle_accepted = [this](const std::shared_ptr<GoalHandleOperatePot> goal_handle) {
     // 回收旧线程
     {
@@ -392,46 +432,6 @@ hardware_interface::CallbackReturn AgrobotHardwareInterface::on_init(
         }
       });
     }
-  };
-
-  auto handle_goal = [this](const rclcpp_action::GoalUUID & /*uuid*/, std::shared_ptr<const OperatePot::Goal> goal) {
-    RCLCPP_INFO(
-      rclcpp::get_logger("AgrobotHardwareInterface"), 
-      "Action: 收到请求, 动作类型 %d, 架子索引 %d", 
-      goal->action_type, goal->rack_index);
-
-    bool expected = false;
-    // 原子操作：如果当前 busy 为 false (expected)，则将其瞬间改为 true，并放行；
-    // 如果当前已经是 true，说明正在忙，直接拒绝。
-    if (!this->is_action_busy_.compare_exchange_strong(expected, true)) {
-      RCLCPP_WARN(
-        rclcpp::get_logger("AgrobotHardwareInterface"), 
-        "底层正在执行动作，拒绝新的 Action 请求");
-      return rclcpp_action::GoalResponse::REJECT;
-    }
-    
-    return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
-  };  
-
-  auto handle_cancel =[this](const std::shared_ptr<GoalHandleOperatePot> /*goal_handle*/) {
-    RCLCPP_INFO(
-      rclcpp::get_logger("AgrobotHardwareInterface"), 
-      "Action: 收到取消请求，紧急下发失能指令！");
-
-    // 只操作动作使能位，将其置为 0 表示失能/停止
-    uint16_t status_mask = (1u << ACTION_ENABLE_BIT);
-    uint16_t status_value = 0; 
-    
-    uint16_t expected_mask = this->hw_mode1_.load();
-    while (!this->hw_mode1_.compare_exchange_weak(expected_mask, expected_mask | status_mask)) {}
-
-    uint16_t expected_val = this->hw_mode2_.load();
-    uint16_t new_val;
-    do {
-        new_val = (expected_val & ~status_mask) | (status_value & status_mask);
-    } while (!this->hw_mode2_.compare_exchange_weak(expected_val, new_val));
-    
-    return rclcpp_action::CancelResponse::ACCEPT;
   };
 
   action_server_ = rclcpp_action::create_server<OperatePot>(
