@@ -341,12 +341,20 @@ hardware_interface::CallbackReturn AgrobotHardwareInterface::on_init(
         auto result = std::make_shared<OperatePot::Result>();
         auto feedback = std::make_shared<OperatePot::Feedback>();
         
+        if (is_slave_mode) {
+            result->success = true;
+            result->message = "slave 模式已设置";
+            goal_handle->succeed(result);
+            RCLCPP_INFO(rclcpp::get_logger("AgrobotHardwareInterface"), "Action: %s", result->message.c_str());
+            return;
+        }
+        
         rclcpp::Rate loop_rate(10);
         int wait_start_timeout = 10;
         bool has_started = false;
 
         // 阶段1：启动确认
-        while (rclcpp::ok() && !this->shutting_down_.load() && wait_start_timeout > 0 && !is_slave_mode) {
+        while (rclcpp::ok() && !this->shutting_down_.load() && wait_start_timeout > 0) {
           if (this->current_action_running_flag_.load()) {
             has_started = true;
             break;
@@ -361,11 +369,6 @@ hardware_interface::CallbackReturn AgrobotHardwareInterface::on_init(
           loop_rate.sleep();
         }
 
-        // Slave 模式不需要等启动反馈，直接进入阶段 2
-        if (is_slave_mode) {
-          has_started = true;
-        }
-
         if (!has_started) {
           RCLCPP_ERROR(rclcpp::get_logger("AgrobotHardwareInterface"), "Action: 启动超时(1s)，底层无响应");
           result->success = false;
@@ -375,45 +378,24 @@ hardware_interface::CallbackReturn AgrobotHardwareInterface::on_init(
         }
 
         // 阶段2：执行中
-        if (is_slave_mode) {
-          // 【关键修复 2】：Slave 模式在循环内持续发送 feedback，保持 Action 活跃
-          while (rclcpp::ok() && !this->shutting_down_.load()) {
-            if (goal_handle->is_canceling()) {
-              // 客户端主动取消 Slave 是预期内的正常行为，所以 success 设为 true
-              result->success = true;
-              result->message = "slave 模式已主动取消并退出";
-              goal_handle->canceled(result);
-              return;
-            }
-            
-            feedback->is_running = true;
-            goal_handle->publish_feedback(feedback);
-            
-            loop_rate.sleep();
+        while (rclcpp::ok() && !this->shutting_down_.load()) {
+          if (goal_handle->is_canceling()) {
+            result->success = false; 
+            result->message = "执行中途被取消";
+            goal_handle->canceled(result);
+            return;
           }
-        } else {
-          // 非 slave：等 running 结束
-          while (rclcpp::ok() && !this->shutting_down_.load()) {
-            if (goal_handle->is_canceling()) {
-              // 搬运或卸载中途被取消，算作任务失败
-              result->success = false; 
-              result->message = "执行中途被取消";
-              goal_handle->canceled(result);
-              return;
-            }
-            
-            bool is_running = this->current_action_running_flag_.load(); 
-            feedback->is_running = is_running;
-            goal_handle->publish_feedback(feedback);
-            
-            if (!is_running) {
-              break;
-            }
-            loop_rate.sleep();
+
+          bool is_running = this->current_action_running_flag_.load(); 
+          feedback->is_running = is_running;
+          goal_handle->publish_feedback(feedback);
+          
+          if (!is_running) {
+            break;
           }
+          loop_rate.sleep();
         }
-        
-        // 节点关闭检查
+      
         if (this->shutting_down_.load()) {
           result->success = false;
           result->message = "节点正在停用，任务中断";
@@ -421,10 +403,9 @@ hardware_interface::CallbackReturn AgrobotHardwareInterface::on_init(
           return;
         }
 
-        // 正常完成
         if (rclcpp::ok()) {
           result->success = true;
-          result->message = is_slave_mode ? "slave 模式运行结束" : "任务执行完毕";
+          result->message = "任务执行完毕";
           goal_handle->succeed(result);
           RCLCPP_INFO(rclcpp::get_logger("AgrobotHardwareInterface"), "Action: %s", result->message.c_str());
         }
