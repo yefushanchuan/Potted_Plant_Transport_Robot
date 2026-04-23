@@ -274,8 +274,7 @@ hardware_interface::CallbackReturn AgrobotHardwareInterface::on_init(
       goal->action_type, goal->rack_index);
 
     bool expected = false;
-    // 原子操作：如果当前 busy 为 false (expected)，则将其瞬间改为 true，并放行；
-    // 如果当前已经是 true，说明正在忙，直接拒绝。
+    // 原子操作：如果当前 busy 为 false (expected)，则将其瞬间改为 true，并放行
     if (!this->is_action_busy_.compare_exchange_strong(expected, true)) {
       RCLCPP_WARN(
         rclcpp::get_logger("AgrobotHardwareInterface"), 
