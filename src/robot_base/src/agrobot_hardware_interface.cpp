@@ -311,7 +311,7 @@ hardware_interface::CallbackReturn AgrobotHardwareInterface::on_init(
       std::lock_guard<std::mutex> lock(this->action_thread_mutex_);
       if (this->action_thread_.joinable()) {
         this->action_thread_.join();
-      }
+      } // 旧线程结束后才启动新线程，确保同一时间只有一个动作线程在运行
 
       this->action_thread_ = std::thread([this, goal_handle]() {
         
