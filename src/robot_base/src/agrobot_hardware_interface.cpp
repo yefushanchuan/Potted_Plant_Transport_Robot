@@ -307,7 +307,6 @@ hardware_interface::CallbackReturn AgrobotHardwareInterface::on_init(
   };
 
   auto handle_accepted = [this](const std::shared_ptr<GoalHandleOperatePot> goal_handle) {
-    // 回收旧线程
     {
       std::lock_guard<std::mutex> lock(this->action_thread_mutex_);
       if (this->action_thread_.joinable()) {
