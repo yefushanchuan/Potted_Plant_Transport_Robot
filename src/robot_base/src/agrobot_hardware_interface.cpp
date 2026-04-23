@@ -342,7 +342,7 @@ hardware_interface::CallbackReturn AgrobotHardwareInterface::on_init(
         auto feedback = std::make_shared<OperatePot::Feedback>();
         
         rclcpp::Rate loop_rate(10);
-        int wait_start_timeout = 50;
+        int wait_start_timeout = 500;
         bool has_started = false;
 
         // 阶段1：启动确认
