@@ -367,7 +367,7 @@ hardware_interface::CallbackReturn AgrobotHardwareInterface::on_init(
         }
 
         if (!has_started) {
-          RCLCPP_ERROR(rclcpp::get_logger("AgrobotHardwareInterface"), "Action: 启动超时(5s)，底层无响应");
+          RCLCPP_ERROR(rclcpp::get_logger("AgrobotHardwareInterface"), "Action: 启动超时(50s)，底层无响应");
           result->success = false;
           result->message = "硬件超时无响应";
           goal_handle->abort(result);
