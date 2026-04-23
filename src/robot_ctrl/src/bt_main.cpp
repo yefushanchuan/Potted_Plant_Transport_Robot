@@ -55,7 +55,7 @@
 #include "robot_ctrl/bt_plugins/action/get_pending_taskfile_action.hpp"
 #include "robot_ctrl/bt_plugins/action/ack_pending_taskfile_action.hpp"
 #include "robot_ctrl/bt_plugins/action/taskfile_retry_queue_storage.hpp"
-
+#include "robot_ctrl/bt_plugins/action/operate_pot_action_node.hpp"
 
 int main(int argc, char **argv)
 {
@@ -128,6 +128,13 @@ int main(int argc, char **argv)
     // factory.registerNodeType<robot_ctrl::DockRobotActionBT>("DockRobot");
     // factory.registerNodeType<robot_ctrl::UndockRobotActionBT>("UndockRobot");
     factory.registerNodeType<robot_ctrl::LaunchManagerAction>("LaunchManager");
+    BT::NodeBuilder operate_pot_builder =
+        [](const std::string& name, const BT::NodeConfiguration& config)
+    {
+        return std::make_unique<robot_ctrl::OperatePotAction>(
+            name, "operate_pot", config);
+    };
+    factory.registerBuilder<robot_ctrl::OperatePotAction>("OperatePot", operate_pot_builder);
     //conditions
     factory.registerNodeType<robot_ctrl::IsCommand>("IsTaskCommand");
     factory.registerNodeType<robot_ctrl::TaskUpdate>("TaskUpdate");
