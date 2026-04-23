@@ -342,7 +342,7 @@ hardware_interface::CallbackReturn AgrobotHardwareInterface::on_init(
         auto feedback = std::make_shared<OperatePot::Feedback>();
         
         rclcpp::Rate loop_rate(10);
-        int wait_start_timeout = 500;
+        int wait_start_timeout = 10;
         bool has_started = false;
 
         // 阶段1：启动确认
@@ -367,7 +367,7 @@ hardware_interface::CallbackReturn AgrobotHardwareInterface::on_init(
         }
 
         if (!has_started) {
-          RCLCPP_ERROR(rclcpp::get_logger("AgrobotHardwareInterface"), "Action: 启动超时(50s)，底层无响应");
+          RCLCPP_ERROR(rclcpp::get_logger("AgrobotHardwareInterface"), "Action: 启动超时(1s)，底层无响应");
           result->success = false;
           result->message = "硬件超时无响应";
           goal_handle->abort(result);
