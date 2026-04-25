@@ -28,5 +28,5 @@
          base_class_type="BT::DecoratorNode"/>
   <class name="OperatePot"
          type="robot_ctrl::OperatePotAction"
-         base_class_type="nav2_behavior_tree::BtActionNodeBase"/>
+         base_class_type="BT::ActionNodeBase"/>
 </library>
