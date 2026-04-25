@@ -170,7 +170,6 @@ target_link_libraries(bt_main
 install(TARGETS bt_main DESTINATION lib/${PROJECT_NAME})
 
 
-pluginlib_export_plugin_description_file(behaviortree_cpp_v3 config/behavior_trees/other/bt_plugins.xml)
 install(TARGETS robot_ctrl_bt_plugins
   LIBRARY DESTINATION lib
 )
