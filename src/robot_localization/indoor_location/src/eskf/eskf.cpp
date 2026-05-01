@@ -47,9 +47,6 @@ void ErrorStateKalmanFilter::reset(void){
   dx_ = Eigen::Matrix<double, 18, 1>::Zero();
 
   v_ = Eigen::Vector3d::Zero();
-
-  bg_ = Eigen::Vector3d::Zero();
-  ba_ = Eigen::Vector3d::Zero();
   g_ = options_.g_;
 
   Eigen::Vector3d gyro_last_ = Eigen::Vector3d::Zero();

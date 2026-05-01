@@ -1212,8 +1212,14 @@ public:
         Sophus::SO3d rot_base_be = integrateRotation(start_time, end_time, imus);
 
         Eigen::Vector3d rso3_be = rot_base_be.log();
-        Eigen::Vector3d tbe     = Eigen::Vector3d::Zero();
         double dt_be            = end_time - start_time;
+
+        Eigen::Vector3d v_start = act_pose.vel.cast<double>();
+        Eigen::AngleAxisd roll_s(act_pose.orient(0), Eigen::Vector3d::UnitX());
+        Eigen::AngleAxisd pitch_s(act_pose.orient(1), Eigen::Vector3d::UnitY());
+        Eigen::AngleAxisd yaw_s(act_pose.orient(2), Eigen::Vector3d::UnitZ());
+        Eigen::Matrix3d R_ws = (yaw_s * pitch_s * roll_s).toRotationMatrix();
+        Eigen::Vector3d tbe = R_ws.transpose() * v_start * dt_be;
 
         if (dt_be <= 0) {
             RCLCPP_ERROR(nh_->get_logger(), "[去畸变] 无效的时间跨度: start=%.6f, end=%.6f",
@@ -1247,11 +1253,12 @@ public:
 
         RCLCPP_INFO(nh_->get_logger(),
                     "[去畸变] 点云数=%zu | IMU数=%zu | 耗时=%.2fms | "
-                    "旋转角度=(%.2f°, %.2f°, %.2f°) | 时间跨度=%.1fms",
+                    "旋转角度=(%.2f°, %.2f°, %.2f°) | 平移补偿=(%.4f, %.4f, %.4f)m | 时间跨度=%.1fms",
                     cloud->size(), imus.size(), duration.count() / 1000.0,
                     rot_base_be.angleX() * 180.0 / M_PI,
                     rot_base_be.angleY() * 180.0 / M_PI,
                     rot_base_be.angleZ() * 180.0 / M_PI,
+                    tbe(0), tbe(1), tbe(2),
                     (end_time - start_time) * 1000.0);
     }
 
