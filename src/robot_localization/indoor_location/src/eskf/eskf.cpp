@@ -37,8 +37,8 @@ ErrorStateKalmanFilter::ErrorStateKalmanFilter(std::string yaml_file_path){
   ba_ = Eigen::Vector3d::Zero();
   g_ = options_.g_;
 
-  Eigen::Vector3d gyro_last_ = Eigen::Vector3d::Zero();
-  Eigen::Vector3d acc_last_ = -options_.g_;
+  gyro_last_ = Eigen::Vector3d::Zero();
+  acc_last_ = -options_.g_;
 }
 
 
@@ -49,8 +49,8 @@ void ErrorStateKalmanFilter::reset(void){
   v_ = Eigen::Vector3d::Zero();
   g_ = options_.g_;
 
-  Eigen::Vector3d gyro_last_ = Eigen::Vector3d::Zero();
-  Eigen::Vector3d acc_last_ = -options_.g_;
+  gyro_last_ = Eigen::Vector3d::Zero();
+  acc_last_ = -options_.g_;
 }
 
 
