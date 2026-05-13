@@ -200,10 +200,29 @@ private:
       marker_array.markers.push_back(del);
     }
 
-    int plant_id = 0;
+    // ── Collect detections passing threshold ─────────────────────────────
+    struct Detection {
+      const ClusterResult* cr;
+      float conf;
+    };
+    std::vector<Detection> detections;
     for (const auto & cr : clusters) {
       float conf = classifier_->classify(cr);
       if (conf < get_parameter("classifier.confidence_threshold").as_double()) continue;
+      detections.push_back({&cr, conf});
+    }
+
+    // ── Sort by cy descending (left → right in base_footprint) ──────────
+    std::sort(detections.begin(), detections.end(),
+      [](const Detection & a, const Detection & b) {
+        return a.cr->cy > b.cr->cy;
+      });
+
+    // ── Assign ids and publish ──────────────────────────────────────────
+    int plant_id = 0;
+    for (const auto & det : detections) {
+      const auto & cr = *det.cr;
+      float conf = det.conf;
 
       // ── Fill message ───────────────────────────────────────────────────
       plant_detector::msg::PlantCluster cluster_msg;
@@ -243,7 +262,6 @@ private:
         bbox.scale.x = cr.width();
         bbox.scale.y = cr.depth();
         bbox.scale.z = cr.height();
-        // Green, semi-transparent; shade by confidence
         bbox.color.r = 0.0f;
         bbox.color.g = conf;
         bbox.color.b = 0.2f;
@@ -266,7 +284,6 @@ private:
         txt.pose.orientation.w = 1.0;
         txt.scale.z = 0.12f;
         txt.color.r = 1.0f; txt.color.g = 1.0f; txt.color.b = 1.0f; txt.color.a = 1.0f;
-        // Format: "Plant#0  (x, y) m"
         char buf[128];
         snprintf(buf, sizeof(buf),
           "Plant#%d\n(%.2f, %.2f, %.2f) m\nconf:%.0f%%",
