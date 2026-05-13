@@ -55,6 +55,10 @@ def generate_launch_description():
                 executable="fastlio2_node",
                 name="fastlio2_node",
                 output="screen",
+                remappings=[
+                    ("tf", "/tf"),
+                    ("tf_static", "/tf_static"),
+                ],
                 parameters=[{
                     "config_path": config_path,
                      "use_sim_time": use_sim_time
