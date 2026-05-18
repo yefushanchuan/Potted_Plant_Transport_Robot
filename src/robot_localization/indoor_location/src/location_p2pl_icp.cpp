@@ -838,7 +838,7 @@ public:
         rclcpp::Time stamp = getTime(time);
 
         if (!enable_map_odom_tf_) {
-            geometry_msgs::msg::TransformStamped stamp;
+            geometry_msgs::msg::TransformStamped transformStamped;
             transformStamped.header.frame_id    = frame_id;
             transformStamped.child_frame_id     = child_frame;
             transformStamped.header.stamp       = stamp;
