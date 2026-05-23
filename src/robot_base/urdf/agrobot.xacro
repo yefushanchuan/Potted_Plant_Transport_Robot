@@ -258,12 +258,12 @@
             </geometry>
         </collision>
         <inertial>
-            <mass value="50"/>
-            <inertia ixx="${(1/12)*50*(3*middle_radius*middle_radius + middle_height*middle_height)}" 
-                     ixy="0" ixz="0" 
-                     iyy="${(1/12)*50*(3*middle_radius*middle_radius + middle_height*middle_height)}" 
-                     iyz="0" 
-                     izz="${0.5*50*middle_radius*middle_radius}"/>
+            <mass value="10"/>
+            <inertia ixx="${(1/12)*10*(3*middle_radius*middle_radius + middle_height*middle_height)}"
+                     ixy="0" ixz="0"
+                     iyy="${(1/12)*10*(3*middle_radius*middle_radius + middle_height*middle_height)}"
+                     iyz="0"
+                     izz="${0.5*10*middle_radius*middle_radius}"/>
         </inertial>
     </link>
 

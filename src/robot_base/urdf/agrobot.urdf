@@ -84,8 +84,8 @@
       </geometry>
     </collision>
     <inertial>
-      <mass value="50"/>
-      <inertia ixx="1.3087499999999996" ixy="0" ixz="0" iyy="1.3087499999999996" iyz="0" izz="2.25"/>
+      <mass value="10"/>
+      <inertia ixx="0.2617499999999999" ixy="0" ixz="0" iyy="0.2617499999999999" iyz="0" izz="0.44999999999999996"/>
     </inertial>
   </link>
   <!-- ======================== IMU传感器 ======================== -->
