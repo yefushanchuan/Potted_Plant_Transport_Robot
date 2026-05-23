@@ -132,10 +132,12 @@
       <inertia ixx="3.578125e-05" ixy="0" ixz="0" iyy="3.578125e-05" iyz="0" izz="3.7812500000000004e-05"/>
     </inertial>
   </link>
-  <joint name="back_caster_joint" type="fixed">
+  <joint name="back_caster_joint" type="continuous">
     <parent link="chassis_link"/>
     <child link="back_caster_link"/>
     <origin rpy="0 0 0" xyz="-0.25 0 -0.16"/>
+    <axis xyz="0 0 1"/>
+    <dynamics damping="0.1" friction="0.0"/>
   </joint>
   <link name="left_wheel_link">
     <visual>
@@ -261,8 +263,8 @@
     </joint>
     <joint name="right_wheel_joint">
       <command_interface name="velocity">
-        <param name="min">-1.0</param>
-        <param name="max">1.0</param>
+        <param name="min">-10.0</param>
+        <param name="max">10.0</param>
       </command_interface>
       <state_interface name="position"/>
       <state_interface name="velocity"/>
