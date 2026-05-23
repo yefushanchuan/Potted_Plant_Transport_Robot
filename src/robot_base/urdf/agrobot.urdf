@@ -112,6 +112,16 @@
     <child link="imu_link"/>
     <origin rpy="0 0 0" xyz="-0.257 0 -0.03"/>
   </joint>
+  <!-- 转向关节：绕竖直轴(Yaw)自由旋转 -->
+  <link name="back_caster_fork_link"/>
+  <joint name="back_caster_yaw_joint" type="continuous">
+    <parent link="chassis_link"/>
+    <child link="back_caster_fork_link"/>
+    <origin rpy="0 0 0" xyz="-0.25 0 -0.16"/>
+    <axis xyz="0 0 1"/>
+    <dynamics damping="0.1" friction="0.0"/>
+  </joint>
+  <!-- 滚动关节：轮子绕自身轴心(Y)自由转动 -->
   <link name="back_caster_link">
     <visual>
       <origin rpy="1.570796326795 0 0" xyz="0 0 0"/>
@@ -132,12 +142,12 @@
       <inertia ixx="3.578125e-05" ixy="0" ixz="0" iyy="3.578125e-05" iyz="0" izz="3.7812500000000004e-05"/>
     </inertial>
   </link>
-  <joint name="back_caster_joint" type="continuous">
-    <parent link="chassis_link"/>
+  <joint name="back_caster_wheel_joint" type="continuous">
+    <parent link="back_caster_fork_link"/>
     <child link="back_caster_link"/>
-    <origin rpy="0 0 0" xyz="-0.25 0 -0.16"/>
-    <axis xyz="0 0 1"/>
-    <dynamics damping="0.1" friction="0.0"/>
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <dynamics damping="0.05" friction="0.0"/>
   </joint>
   <link name="left_wheel_link">
     <visual>
