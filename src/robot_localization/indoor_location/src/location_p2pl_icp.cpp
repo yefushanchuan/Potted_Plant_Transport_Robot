@@ -1351,7 +1351,7 @@ public:
                 perf_stat.cloud_registration_time_ms = 
                     std::chrono::duration<double, std::milli>(reg_end - reg_start).count();
                 
-                if (localizier3d->fitness_ > (reloc_threshold_ * 1.2)) {
+                if (localizier3d->fitness_ > (reloc_threshold_)) {
                     RCLCPP_WARN(nh_->get_logger(), 
                                 "[重定位] 成功: fitness=%.3f, pos=(%.2f, %.2f, %.2f)",
                                 localizier3d->fitness_, 
@@ -1376,7 +1376,7 @@ public:
                 } else {
                     RCLCPP_WARN_THROTTLE(nh_->get_logger(), *nh_->get_clock(), 2000,
                                         "[重定位] 进行中: fitness=%.3f (阈值=%.3f)",
-                                        localizier3d->fitness_, reloc_threshold_ * 1.2);
+                                        localizier3d->fitness_, reloc_threshold_);
                 }
             } else {
                 if (!m_package.imus.empty()) {

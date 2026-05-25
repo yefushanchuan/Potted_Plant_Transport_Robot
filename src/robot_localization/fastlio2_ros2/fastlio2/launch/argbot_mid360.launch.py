@@ -79,7 +79,7 @@ def generate_launch_description():
             # 播放 rosbag（带仿真时间） 如果是实车就不用 测试可用
             ExecuteProcess(
                 condition=IfCondition(play_bag),
-                cmd=["ros2", "bag", "play", bag_path, "--clock", "--rate", "30.0"],
+                cmd=["ros2", "bag", "play", bag_path, "--clock", "--rate", "1.0"],
                 output="screen",
             ),
             # IncludeLaunchDescription(
