@@ -52,11 +52,11 @@ IcpNode::IcpNode(const rclcpp::NodeOptions &options)
 
     icp_rough_.setMaximumIterations(rough_iter_);
     icp_rough_.setInputTarget(rough_map_);
-    icp_rough_.setMaxCorrespondenceDistance(5.0); 
+    icp_rough_.setMaxCorrespondenceDistance(1.5);
 
     icp_refine_.setMaximumIterations(refine_iter_);
     icp_refine_.setInputTarget(refine_map_);
-    icp_refine_.setMaxCorrespondenceDistance(3.0);
+    icp_refine_.setMaxCorrespondenceDistance(0.5);
 
     RCLCPP_INFO(this->get_logger(), "pcd point size: %ld, %ld",
                 refine_map_->size(), rough_map_->size());
@@ -413,20 +413,32 @@ Eigen::Matrix4d IcpNode::multiAlignSync(PointCloudXYZI::Ptr source,
 
     icp_refine_.setInputSource(refine_source_norm);
     icp_refine_.align(*align_point, best_rough_transform);
-    score_ = icp_refine_.getFitnessScore();
+    error_ = icp_refine_.getFitnessScore();
 
     if (!icp_refine_.hasConverged())
         return Eigen::Matrix4d::Zero();
-    if (score_ > thresh_)
+    if (error_ > thresh_)
         return Eigen::Matrix4d::Zero();
+
+    // 安全检查：结果偏离初始猜测太远则判定失败
+    Eigen::Matrix4f result = icp_refine_.getFinalTransformation();
+    double dx = result(0, 3) - xyz(0);
+    double dy = result(1, 3) - xyz(1);
+    double drift = std::sqrt(dx * dx + dy * dy);
+    if (drift > xy_offset_ * 4) {  // 允许漂移范围：搜索半径的4倍
+        RCLCPP_WARN(this->get_logger(),
+                    "⚠️ 匹配结果偏离初始猜测过远 (%.2fm > %.2fm)，判定失败",
+                    drift, xy_offset_ * 4);
+        return Eigen::Matrix4d::Zero();
+    }
 
     success_ = true;
 
     auto toc = std::chrono::system_clock::now();
     std::chrono::duration<double> duration = toc - tic;
 
-    RCLCPP_INFO(this->get_logger(), "✅ 匹配成功! 耗时: %.2f ms | Score: %.3f",
-                duration.count() * 1000, score_);
+    RCLCPP_INFO(this->get_logger(), "✅ 匹配成功! 耗时: %.2f s | Error: %.3f",
+                duration.count(), error_);
 
     return icp_refine_.getFinalTransformation().cast<double>();
 }

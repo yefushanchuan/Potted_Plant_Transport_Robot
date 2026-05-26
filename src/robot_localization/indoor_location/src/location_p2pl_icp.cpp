@@ -151,6 +151,7 @@ public:
     rclcpp::TimerBase::SharedPtr extrinsics_timer_;
 
     bool   use_reloc_          = false;
+    bool   has_tracked_once_   = false;
     float  reloc_threshold_    = 0.0;
     double voxel_leaf_size_    = 0.0;
     double imu_scale_          = 0.0;
@@ -1044,7 +1045,7 @@ public:
         // 3. 智能拦截逻辑
         // 如果主节点现在没有在迷失（use_reloc_ == false），而且匹配得分大于阈值
         if (!use_reloc_ && localizier3d->fitness_ > reloc_threshold_) {
-            if (diff_dist < 1.0) { // 阈值可以根据实际车速调，1.0米是个不错的经验值
+            if (diff_dist < 0.5) { // 主节点自行恢复且偏差小于0.5m，忽略ICP结果避免抖动
                 RCLCPP_INFO(nh_->get_logger(), 
                     "💡 Node A 算完了，但主节点已自行恢复且偏差很小(%.2fm)。为防止延时拉扯，忽略此次空投。", 
                     diff_dist);
@@ -1409,7 +1410,7 @@ public:
                     use_reloc_ = true;
                     localizier3d->setRelocMode();
                     should_publish = false;
-                    if (call_node_a_pub_->get_subscription_count() > 0) {
+                    if (has_tracked_once_ && call_node_a_pub_->get_subscription_count() > 0) {
                         geometry_msgs::msg::PoseWithCovarianceStamped help_msg;
                         help_msg.header.stamp = nh_->get_clock()->now();
                         help_msg.header.frame_id = map_frame_;
@@ -1428,9 +1429,13 @@ public:
                         help_msg.pose.pose.orientation.w = q.w();
                         
                         call_node_a_pub_->publish(help_msg);
+                    } else if (!has_tracked_once_) {
+                        RCLCPP_WARN_THROTTLE(nh_->get_logger(), *nh_->get_clock(), 5000,
+                            "[定位] 首帧丢失，等待重定位节点自动定位或手动 2D Pose Estimate 标定...");
                     }
                 } else {
                     should_publish = true;
+                    has_tracked_once_ = true;
                 }
             }
             

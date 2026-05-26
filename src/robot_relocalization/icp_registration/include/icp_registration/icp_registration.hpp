@@ -84,7 +84,7 @@ class IcpNode : public rclcpp::Node {
   bool use_yaml_initial_pose_;
   bool has_sensor_tf_ = false;
 
-  double score_;
+  double error_;
   double thresh_;
   double xy_offset_;
   double yaw_resolution_;
