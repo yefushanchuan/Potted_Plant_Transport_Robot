@@ -101,6 +101,11 @@ install(
         DESTINATION share/${PROJECT_NAME}
 )
 
+install(PROGRAMS
+        scripts/reloc_experiment_recorder.py
+        DESTINATION lib/${PROJECT_NAME}
+)
+
 # 安装包含目录
 install(DIRECTORY "include/"
         DESTINATION include
