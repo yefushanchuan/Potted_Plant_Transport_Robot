@@ -1101,6 +1101,14 @@ public:
             RCLCPP_INFO(nh_->get_logger(), "test reloc");
             act_pose.pos(0) = act_pose.pos(0) + 5.0;
             act_pose.pos(1) = 4.0;
+        } else if (msg->data == "force_lost") {
+            RCLCPP_WARN(nh_->get_logger(), "[测试] 人为制造迷失: 将位姿偏移 (+5, +3, 0)");
+            act_pose.pos(0) += 5.0;
+            act_pose.pos(1) += 3.0;
+            eskf->setMean(act_pose.pos.cast<double>(),
+                          act_pose.orient.cast<double>(),
+                          act_pose.vel.cast<double>());
+            eskf->reset();
         }
     }
 
