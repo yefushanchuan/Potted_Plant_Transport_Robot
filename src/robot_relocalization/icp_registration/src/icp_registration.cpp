@@ -56,7 +56,7 @@ IcpNode::IcpNode(const rclcpp::NodeOptions &options)
 
     icp_refine_.setMaximumIterations(refine_iter_);
     icp_refine_.setInputTarget(refine_map_);
-    icp_refine_.setMaxCorrespondenceDistance(0.5);
+    icp_refine_.setMaxCorrespondenceDistance(0.8);
 
     RCLCPP_INFO(this->get_logger(), "pcd point size: %ld, %ld",
                 refine_map_->size(), rough_map_->size());
@@ -425,7 +425,7 @@ Eigen::Matrix4d IcpNode::multiAlignSync(PointCloudXYZI::Ptr source,
     double dx = result(0, 3) - xyz(0);
     double dy = result(1, 3) - xyz(1);
     double drift = std::sqrt(dx * dx + dy * dy);
-    if (drift > xy_offset_ * 4) {  // 允许漂移范围：搜索半径的4倍
+    if (drift > xy_offset_ * 5) {  // 允许漂移范围：搜索半径的5倍
         RCLCPP_WARN(this->get_logger(),
                     "⚠️ 匹配结果偏离初始猜测过远 (%.2fm > %.2fm)，判定失败",
                     drift, xy_offset_ * 4);
