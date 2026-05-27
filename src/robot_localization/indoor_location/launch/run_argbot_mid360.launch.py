@@ -60,10 +60,10 @@ def _launch_setup(context):
 
     return[
         Node(
-            package='rviz2', 
-            executable='rviz2', 
+            package='rviz2',
+            executable='rviz2',
             name='rviz2',
-            arguments=['-d', LaunchConfiguration('rviz_config_path'),'--ros-args', '--log-level', 'WARN'],
+            arguments=['-d', LaunchConfiguration('rviz_config_path'), '--ros-args', '--log-level', 'WARN'],
             output='screen',
             parameters=[{'use_sim_time': use_sim_time}],
         ),
@@ -81,7 +81,7 @@ def _launch_setup(context):
                 "use_sim_time": use_sim_time,
                 "map_filename": resolved_map_file
             }],
-            arguments=['--ros-args', '--log-level', 'WARN'],
+            arguments=['--ros-args', '--log-level', LaunchConfiguration('log_level')],
         ),
 
         # ICP 重定位节点
@@ -97,6 +97,7 @@ def _launch_setup(context):
                     'pcd_path': resolved_map_file,
                 }
             ],
+            arguments=['--ros-args', '--log-level', LaunchConfiguration('log_level')],
         ),
     ]
 
@@ -111,6 +112,7 @@ def generate_launch_description():
         DeclareLaunchArgument('map_name', default_value='map.pcd'),
         DeclareLaunchArgument('rviz_config_path', default_value=PathJoinSubstitution([FindPackageShare('indoor_location'), 'config/rviz/livox_rviz_config.rviz'])),
         DeclareLaunchArgument('enable_icp_registration', default_value='true', description='Whether to launch icp_registration node'),
+        DeclareLaunchArgument('log_level', default_value='WARN', description='ROS2 log level: DEBUG/INFO/WARN/ERROR/FATAL'),
 
         # 统一启动节点
         OpaqueFunction(function=_launch_setup),

@@ -1036,28 +1036,38 @@ public:
         // 1. 提取 Node A 算出来的坐标
         double node_a_x = pose_msg->pose.pose.position.x;
         double node_a_y = pose_msg->pose.pose.position.y;
-        
+
         // 2. 计算 Node A 坐标与当前主节点坐标的直线偏差距离
         double dx = act_pose.pos(0) - node_a_x;
         double dy = act_pose.pos(1) - node_a_y;
         double diff_dist = std::sqrt(dx * dx + dy * dy);
 
+        RCLCPP_INFO(nh_->get_logger(),
+            "[initpose] 收到重定位结果: (%.2f,%.2f) | 主节点当前: (%.2f,%.2f) 偏差=%.2fm | "
+            "模式=%s fitness=%.3f 阈值=%.2f",
+            node_a_x, node_a_y,
+            act_pose.pos(0), act_pose.pos(1), diff_dist,
+            use_reloc_ ? "重定位中" : "正常跟踪",
+            localizier3d->fitness_,
+            reloc_threshold_);
+
         // 3. 智能拦截逻辑
         // 如果主节点现在没有在迷失（use_reloc_ == false），而且匹配得分大于阈值
         if (!use_reloc_ && localizier3d->fitness_ > reloc_threshold_) {
             if (diff_dist < 0.5) { // 主节点自行恢复且偏差小于0.5m，忽略ICP结果避免抖动
-                RCLCPP_INFO(nh_->get_logger(), 
-                    "💡 Node A 算完了，但主节点已自行恢复且偏差很小(%.2fm)。为防止延时拉扯，忽略此次空投。", 
+                RCLCPP_INFO(nh_->get_logger(),
+                    "[initpose] 拒绝: 主节点已自行恢复且偏差很小(%.2fm < 0.5m)，忽略避免抖动",
                     diff_dist);
                 return; // 直接拦截，不执行覆盖！
             } else {
-                RCLCPP_WARN(nh_->get_logger(), 
-                    "⚠️ 危险！主节点自认为正常，但与 Node A 的绝对坐标相差达 %.2fm！疑似陷入局部误匹配，准备强行接管！", 
-                    diff_dist);
+                RCLCPP_WARN(nh_->get_logger(),
+                    "[initpose] 强制接管: 主节点自认为正常(fitness=%.3f)，但与重定位结果相差%.2fm！疑似局部误匹配",
+                    localizier3d->fitness_, diff_dist);
             }
         } else {
-            RCLCPP_INFO(nh_->get_logger(), 
-                "🆘 主节点仍在迷失中，像抓住了救命稻草，正在接受 Node A 绝对位姿接管！");
+            RCLCPP_INFO(nh_->get_logger(),
+                "[initpose] 接受: 主节点仍在迷失中(fitness=%.3f)，接受重定位结果",
+                localizier3d->fitness_);
         }
 
         // 4. 执行接管覆盖逻辑
@@ -1349,13 +1359,15 @@ public:
                 auto reg_start = std::chrono::high_resolution_clock::now();
                 act_pose = localizier3d->location(act_pose, cloud_in);
                 auto reg_end = std::chrono::high_resolution_clock::now();
-                perf_stat.cloud_registration_time_ms = 
+                perf_stat.cloud_registration_time_ms =
                     std::chrono::duration<double, std::milli>(reg_end - reg_start).count();
-                
+
                 if (localizier3d->fitness_ > (reloc_threshold_)) {
-                    RCLCPP_WARN(nh_->get_logger(), 
-                                "[重定位] 成功: fitness=%.3f, pos=(%.2f, %.2f, %.2f)",
-                                localizier3d->fitness_, 
+                    RCLCPP_WARN(nh_->get_logger(),
+                                "[重定位] 成功: fitness=%.3f(%u/%zu) 阈值=%.2f 对应距离=%.1f pos=(%.2f, %.2f, %.2f)",
+                                localizier3d->fitness_,
+                                localizier3d->features_.pickup_num, cloud_in->size(),
+                                reloc_threshold_, localizier3d->use_correspondences_threshold_,
                                 act_pose.pos(0), act_pose.pos(1), act_pose.pos(2));
                     
                     localizier3d->setNormalMode();
@@ -1376,8 +1388,11 @@ public:
                         std::chrono::duration<double, std::milli>(eskf_end - eskf_start).count();
                 } else {
                     RCLCPP_WARN_THROTTLE(nh_->get_logger(), *nh_->get_clock(), 2000,
-                                        "[重定位] 进行中: fitness=%.3f (阈值=%.3f)",
-                                        localizier3d->fitness_, reloc_threshold_);
+                                        "[重定位] 进行中: fitness=%.3f(%u/%zu) 阈值=%.3f 对应距离=%.1f pos=(%.2f,%.2f,%.2f)",
+                                        localizier3d->fitness_,
+                                        localizier3d->features_.pickup_num, cloud_in->size(),
+                                        reloc_threshold_, localizier3d->use_correspondences_threshold_,
+                                        act_pose.pos(0), act_pose.pos(1), act_pose.pos(2));
                 }
             } else {
                 if (!m_package.imus.empty()) {
@@ -1392,21 +1407,24 @@ public:
                 auto reg_start = std::chrono::high_resolution_clock::now();
                 act_pose = localizier3d->location(act_pose, cloud_in);
                 auto reg_end = std::chrono::high_resolution_clock::now();
-                perf_stat.cloud_registration_time_ms = 
+                perf_stat.cloud_registration_time_ms =
                     std::chrono::duration<double, std::milli>(reg_end - reg_start).count();
-                
+
                 if (!m_package.imus.empty()) {
                     auto eskf_start = std::chrono::high_resolution_clock::now();
                     eskf->correct(act_pose);
                     auto eskf_end = std::chrono::high_resolution_clock::now();
-                    perf_stat.eskf_correct_time_ms = 
+                    perf_stat.eskf_correct_time_ms =
                         std::chrono::duration<double, std::milli>(eskf_end - eskf_start).count();
                 }
-                
+
                 if (localizier3d->fitness_ < reloc_threshold_) {
-                    RCLCPP_WARN(nh_->get_logger(), 
-                                "[定位] Fitness过低 (%.3f < %.3f)，切换内部重定位，并呼叫 Node A 协助！",
-                                localizier3d->fitness_, reloc_threshold_);
+                    RCLCPP_WARN(nh_->get_logger(),
+                                "[定位] Fitness过低 (%.3f(%u/%zu) < %.3f) 对应距离=%.1f pos=(%.2f,%.2f,%.2f)，切换内部重定位，并呼叫 Node A 协助！",
+                                localizier3d->fitness_,
+                                localizier3d->features_.pickup_num, cloud_in->size(),
+                                reloc_threshold_, localizier3d->use_correspondences_threshold_,
+                                act_pose.pos(0), act_pose.pos(1), act_pose.pos(2));
                     use_reloc_ = true;
                     localizier3d->setRelocMode();
                     should_publish = false;
@@ -1436,6 +1454,18 @@ public:
                 } else {
                     should_publish = true;
                     has_tracked_once_ = true;
+
+                    // 诊断日志：每20帧输出一次特征匹配详情
+                    if (process_count % 20 == 0) {
+                        RCLCPP_INFO(nh_->get_logger(),
+                                    "[定位诊断] fitness=%.3f(%u/%zu) 阈值=%.2f 对应距离=%.1f "
+                                    "pos=(%.2f,%.2f,%.2f) yaw=%.1f°",
+                                    localizier3d->fitness_,
+                                    localizier3d->features_.pickup_num, cloud_in->size(),
+                                    reloc_threshold_, localizier3d->use_correspondences_threshold_,
+                                    act_pose.pos(0), act_pose.pos(1), act_pose.pos(2),
+                                    act_pose.orient(2) * 57.3);
+                    }
                 }
             }
             

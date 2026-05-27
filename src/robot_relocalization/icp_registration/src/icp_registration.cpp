@@ -356,9 +356,6 @@ Eigen::Matrix4d IcpNode::multiAlignSync(PointCloudXYZI::Ptr source,
     std::vector<Eigen::Matrix4f> candidates;
     Eigen::Matrix4f temp_pose;
 
-    RCLCPP_INFO(this->get_logger(), "开始匹配 | Guess: X=%.2f Y=%.2f Yaw=%.2f",
-                xyz(0), xyz(1), rpy(2) * 180.0 / M_PI);
-
     for (int i = -3; i <= 3; i++) {
         for (int j = -3; j <= 3; j++) {
             for (int k = -yaw_steps_; k <= yaw_steps_; k++) {
@@ -374,6 +371,12 @@ Eigen::Matrix4d IcpNode::multiAlignSync(PointCloudXYZI::Ptr source,
             }
         }
     }
+
+    RCLCPP_INFO(this->get_logger(), "开始匹配 | Guess: X=%.2f Y=%.2f Yaw=%.2f | "
+                "搜索范围: XY=±%.1fm(%dx%d) Yaw=±%.0f°(step=%.0f°) 共%zu个候选",
+                xyz(0), xyz(1), rpy(2) * 180.0 / M_PI,
+                3 * xy_offset_, 7, 7, yaw_steps_ * yaw_resolution_ * 180.0 / M_PI,
+                yaw_resolution_ * 180.0 / M_PI, candidates.size());
 
     pcl::PointCloud<pcl::PointXYZI>::Ptr rough_source(new pcl::PointCloud<pcl::PointXYZI>);
     pcl::PointCloud<pcl::PointXYZI>::Ptr refine_source(new pcl::PointCloud<pcl::PointXYZI>);
@@ -393,14 +396,19 @@ Eigen::Matrix4d IcpNode::multiAlignSync(PointCloudXYZI::Ptr source,
 
     auto tic = std::chrono::system_clock::now();
 
+    int converged_count = 0;
+    int passed_filter_count = 0;
+
     for (Eigen::Matrix4f &init_pose : candidates) {
         icp_rough_.setInputSource(rough_source_norm);
         icp_rough_.align(*align_point, init_pose);
         if (!icp_rough_.hasConverged())
             continue;
+        converged_count++;
         double rough_score = icp_rough_.getFitnessScore();
         if (rough_score > 2 * thresh_)
             continue;
+        passed_filter_count++;
         if (rough_score < best_rough_score) {
             best_rough_score = rough_score;
             rough_converge = true;
@@ -408,17 +416,37 @@ Eigen::Matrix4d IcpNode::multiAlignSync(PointCloudXYZI::Ptr source,
         }
     }
 
-    if (!rough_converge)
+    RCLCPP_INFO(this->get_logger(),
+                "[Rough] 候选=%zu | 收敛=%d | 通过滤波=%d(阈值%.1f) | 最佳=%.3f | "
+                "源点云=%zu(粗糙)/%zu(精细) | 地图=%zu(粗糙)/%zu(精细)",
+                candidates.size(), converged_count, passed_filter_count, 2 * thresh_,
+                best_rough_score,
+                rough_source_norm->size(), refine_source_norm->size(),
+                rough_map_->size(), refine_map_->size());
+
+    if (!rough_converge) {
+        RCLCPP_ERROR(this->get_logger(), "[Rough] 失败: 无候选收敛，检查搜索范围和点云质量");
         return Eigen::Matrix4d::Zero();
+    }
 
     icp_refine_.setInputSource(refine_source_norm);
     icp_refine_.align(*align_point, best_rough_transform);
     error_ = icp_refine_.getFitnessScore();
 
-    if (!icp_refine_.hasConverged())
+    RCLCPP_INFO(this->get_logger(),
+                "[Refine] 收敛=%s | fitness=%.3f (阈值=%.1f) | 对应距离=%.1f",
+                icp_refine_.hasConverged() ? "是" : "否",
+                error_, thresh_, icp_refine_.getMaxCorrespondenceDistance());
+
+    if (!icp_refine_.hasConverged()) {
+        RCLCPP_ERROR(this->get_logger(), "[Refine] 失败: 未收敛");
         return Eigen::Matrix4d::Zero();
-    if (error_ > thresh_)
+    }
+    if (error_ > thresh_) {
+        RCLCPP_ERROR(this->get_logger(), "[Refine] 失败: fitness=%.3f > 阈值=%.1f，"
+                     "可能是位姿偏差过大或局部几何模糊", error_, thresh_);
         return Eigen::Matrix4d::Zero();
+    }
 
     // 安全检查：结果偏离初始猜测太远则判定失败
     Eigen::Matrix4f result = icp_refine_.getFinalTransformation();
@@ -427,8 +455,9 @@ Eigen::Matrix4d IcpNode::multiAlignSync(PointCloudXYZI::Ptr source,
     double drift = std::sqrt(dx * dx + dy * dy);
     if (drift > xy_offset_ * 5) {  // 允许漂移范围：搜索半径的5倍
         RCLCPP_WARN(this->get_logger(),
-                    "⚠️ 匹配结果偏离初始猜测过远 (%.2fm > %.2fm)，判定失败",
-                    drift, xy_offset_ * 4);
+                    "[Drift] 失败: 结果=(%.2f,%.2f) 猜测=(%.2f,%.2f) 偏移=%.2fm > 阈值%.2fm，"
+                    "可能是ICP发散",
+                    result(0, 3), result(1, 3), xyz(0), xyz(1), drift, xy_offset_ * 5);
         return Eigen::Matrix4d::Zero();
     }
 
