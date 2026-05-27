@@ -87,6 +87,7 @@ class IcpNode : public rclcpp::Node {
   double error_;
   double thresh_;
   double xy_offset_;
+  double drift_threshold_;
   double yaw_resolution_;
   int yaw_steps_;
 

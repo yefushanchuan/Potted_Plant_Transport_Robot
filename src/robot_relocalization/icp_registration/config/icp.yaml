@@ -20,6 +20,7 @@
     xy_offset:       0.2
     yaw_offset:      20.0
     yaw_resolution:  5.0
+    drift_threshold: 5.0    # 允许结果偏离初始猜测的最大距离(米)，求救场景初始猜测可能是错的
 
     # Initial Guess [x, y, z, roll, pitch, yaw]
     initial_pose: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]

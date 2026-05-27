@@ -70,6 +70,7 @@ IcpNode::IcpNode(const rclcpp::NodeOptions &options)
     publish_pose_ = this->declare_parameter("publish_pose", true);
     thresh_ = this->declare_parameter("thresh", 0.15);
     xy_offset_ = this->declare_parameter("xy_offset", 0.2);
+    drift_threshold_ = this->declare_parameter("drift_threshold", 5.0);
 
     double yaw_offset_deg = this->declare_parameter("yaw_offset", 30.0);
     double yaw_resolution_deg = this->declare_parameter("yaw_resolution", 10.0);
@@ -453,11 +454,11 @@ Eigen::Matrix4d IcpNode::multiAlignSync(PointCloudXYZI::Ptr source,
     double dx = result(0, 3) - xyz(0);
     double dy = result(1, 3) - xyz(1);
     double drift = std::sqrt(dx * dx + dy * dy);
-    if (drift > xy_offset_ * 5) {  // 允许漂移范围：搜索半径的5倍
+    if (drift > drift_threshold_) {
         RCLCPP_WARN(this->get_logger(),
                     "[Drift] 失败: 结果=(%.2f,%.2f) 猜测=(%.2f,%.2f) 偏移=%.2fm > 阈值%.2fm，"
                     "可能是ICP发散",
-                    result(0, 3), result(1, 3), xyz(0), xyz(1), drift, xy_offset_ * 5);
+                    result(0, 3), result(1, 3), xyz(0), xyz(1), drift, drift_threshold_);
         return Eigen::Matrix4d::Zero();
     }
 
