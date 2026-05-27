@@ -52,11 +52,11 @@ IcpNode::IcpNode(const rclcpp::NodeOptions &options)
 
     icp_rough_.setMaximumIterations(rough_iter_);
     icp_rough_.setInputTarget(rough_map_);
-    icp_rough_.setMaxCorrespondenceDistance(1.5);
+    icp_rough_.setMaxCorrespondenceDistance(2.5);
 
     icp_refine_.setMaximumIterations(refine_iter_);
     icp_refine_.setInputTarget(refine_map_);
-    icp_refine_.setMaxCorrespondenceDistance(1.0);
+    icp_refine_.setMaxCorrespondenceDistance(1.5);
 
     RCLCPP_INFO(this->get_logger(), "pcd point size: %ld, %ld",
                 refine_map_->size(), rough_map_->size());
