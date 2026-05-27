@@ -158,6 +158,7 @@ public:
 
     double force_lost_offset_x_ = 0.5;
     double force_lost_offset_y_ = 0.3;
+    double force_lost_offset_yaw_ = 0.0;  // 弧度
 
     Eigen::Matrix3f imu2link_rot_;
 
@@ -581,7 +582,10 @@ public:
                                 config["force_lost_offset_x"].as<double>() : 0.5;
         force_lost_offset_y_ = config["force_lost_offset_y"] ?
                                 config["force_lost_offset_y"].as<double>() : 0.3;
-        RCLCPP_INFO(nh_->get_logger(), "force_lost 偏移: (%.2f, %.2f)", force_lost_offset_x_, force_lost_offset_y_);
+        force_lost_offset_yaw_ = config["force_lost_offset_yaw"] ?
+                                  config["force_lost_offset_yaw"].as<double>() * Deg2Rad : 0.0;
+        RCLCPP_INFO(nh_->get_logger(), "force_lost 偏移: (%.2f, %.2f, %.1f°)",
+                    force_lost_offset_x_, force_lost_offset_y_, force_lost_offset_yaw_ * Rad2Deg);
 
         // 创建定时器，每5秒输出一次性能统计
         stats_timer_ = nh_->create_wall_timer(
@@ -1111,9 +1115,11 @@ public:
             act_pose.pos(0) = act_pose.pos(0) + 5.0;
             act_pose.pos(1) = 4.0;
         } else if (msg->data == "force_lost") {
-            RCLCPP_WARN(nh_->get_logger(), "[测试] 人为制造迷失: 将位姿偏移 (%.2f, %.2f, 0)", force_lost_offset_x_, force_lost_offset_y_);
+            RCLCPP_WARN(nh_->get_logger(), "[测试] 人为制造迷失: 将位姿偏移 (%.2f, %.2f, %.1f°)",
+                        force_lost_offset_x_, force_lost_offset_y_, force_lost_offset_yaw_ * Rad2Deg);
             act_pose.pos(0) += force_lost_offset_x_;
             act_pose.pos(1) += force_lost_offset_y_;
+            act_pose.orient(2) += force_lost_offset_yaw_;
             eskf->setMean(act_pose.pos.cast<double>(),
                           act_pose.orient.cast<double>(),
                           act_pose.vel.cast<double>());
