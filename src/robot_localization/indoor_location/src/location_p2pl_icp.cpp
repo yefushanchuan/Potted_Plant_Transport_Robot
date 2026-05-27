@@ -1116,6 +1116,11 @@ public:
             act_pose.pos(0) = act_pose.pos(0) + 5.0;
             act_pose.pos(1) = 4.0;
         } else if (msg->data.rfind("force_lost", 0) == 0) {
+            if (use_reloc_) {
+                RCLCPP_WARN(nh_->get_logger(), "[测试] 当前已在迷失状态，忽略重复 force_lost 命令");
+                return;
+            }
+
             double dx = force_lost_offset_x_;
             double dy = force_lost_offset_y_;
             double dyaw = force_lost_offset_yaw_;
