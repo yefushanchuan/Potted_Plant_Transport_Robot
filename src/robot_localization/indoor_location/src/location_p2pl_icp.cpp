@@ -30,6 +30,7 @@
 #include <csignal>
 #include <thread>
 #include <condition_variable>
+#include <sstream>
 #include <atomic>
 
 using namespace std::chrono_literals;
@@ -1114,12 +1115,23 @@ public:
             RCLCPP_INFO(nh_->get_logger(), "test reloc");
             act_pose.pos(0) = act_pose.pos(0) + 5.0;
             act_pose.pos(1) = 4.0;
-        } else if (msg->data == "force_lost") {
+        } else if (msg->data.rfind("force_lost", 0) == 0) {
+            double dx = force_lost_offset_x_;
+            double dy = force_lost_offset_y_;
+            double dyaw = force_lost_offset_yaw_;
+
+            // 解析可选参数: "force_lost" 或 "force_lost 1.5 0.3 20"
+            std::istringstream iss(msg->data);
+            std::string cmd;
+            iss >> cmd;  // 跳过 "force_lost"
+            if (iss >> dx) { if (!(iss >> dy)) {} }
+            if (iss >> dyaw) { dyaw *= Deg2Rad; }  // 命令行参数角度转弧度
+
             RCLCPP_WARN(nh_->get_logger(), "[测试] 人为制造迷失: 将位姿偏移 (%.2f, %.2f, %.1f°)",
-                        force_lost_offset_x_, force_lost_offset_y_, force_lost_offset_yaw_ * Rad2Deg);
-            act_pose.pos(0) += force_lost_offset_x_;
-            act_pose.pos(1) += force_lost_offset_y_;
-            act_pose.orient(2) += force_lost_offset_yaw_;
+                        dx, dy, dyaw * Rad2Deg);
+            act_pose.pos(0) += dx;
+            act_pose.pos(1) += dy;
+            act_pose.orient(2) += dyaw;
             eskf->setMean(act_pose.pos.cast<double>(),
                           act_pose.orient.cast<double>(),
                           act_pose.vel.cast<double>());
