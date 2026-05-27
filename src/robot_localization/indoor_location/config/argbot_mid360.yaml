@@ -87,7 +87,7 @@ map_grid_resoltion: 30.0
 ###################location################
 
 ###################测试参数################
-force_lost_offset_x: 3.0    #force_lost 命令的 X 偏移量(米)，需超出ICP匹配范围(>1.2m)且在地图可通行区域内
-force_lost_offset_y: 0.0    #force_lost 命令的 Y 偏移量(米)，走廊窄避免撞墙
+force_lost_offset_x: -0.2   #force_lost 命令的 X 偏移量(米)，地图XY与实际相反
+force_lost_offset_y: 3.0    #force_lost 命令的 Y 偏移量(米)，沿走廊方向偏移3m
 force_lost_offset_yaw: 30.0 #force_lost 命令的 yaw 偏移量(度)，需超出重定位yaw搜索范围(±20°)
 ###################测试参数################
