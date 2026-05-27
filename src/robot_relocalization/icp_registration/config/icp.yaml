@@ -16,7 +16,7 @@
     pose_topic: "/icp_pose"
 
     # ICP Search Parameters
-    thresh:          1.0
+    thresh:          1.5
     xy_offset:       0.2
     yaw_offset:      20.0
     yaw_resolution:  5.0
