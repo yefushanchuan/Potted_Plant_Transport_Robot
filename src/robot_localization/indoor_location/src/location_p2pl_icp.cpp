@@ -156,6 +156,8 @@ public:
     float  reloc_threshold_    = 0.0;
     double voxel_leaf_size_    = 0.0;
     double imu_scale_          = 0.0;
+    int    reloc_fail_count_   = 0;      // 连续低于阈值的帧数
+    static constexpr int RELOC_HELP_DELAY = 10; // 连续多少帧才呼叫副节点
 
     double force_lost_offset_x_ = 0.5;
     double force_lost_offset_y_ = 0.3;
@@ -1366,6 +1368,7 @@ public:
                     pose_refine_inited_ = false;
 
                     has_new_global_pose_ = false;
+                    reloc_fail_count_ = 0;
                     RCLCPP_INFO(nh_->get_logger(), "✅ 全局位姿覆盖完成，已恢复平滑跟踪状态！");
                 }
             }
@@ -1409,30 +1412,50 @@ public:
                                 localizier3d->features_.pickup_num, cloud_in->size(),
                                 reloc_threshold_, localizier3d->use_correspondences_threshold_,
                                 act_pose.pos(0), act_pose.pos(1), act_pose.pos(2));
-                    
+
                     localizier3d->setNormalMode();
                     use_reloc_ = false;
+                    reloc_fail_count_ = 0;
                     should_publish = true;
-                    
+
                     if (pose_refine_force_accept_reloc_) {
                         pose_refine_force_accept_next_ = true;
                     }
-                    
+
                     auto eskf_start = std::chrono::high_resolution_clock::now();
-                    eskf->setMean(act_pose.pos.cast<double>(), 
-                                  act_pose.orient.cast<double>(), 
+                    eskf->setMean(act_pose.pos.cast<double>(),
+                                  act_pose.orient.cast<double>(),
                                   act_pose.vel.cast<double>());
                     eskf->reset();
                     auto eskf_end = std::chrono::high_resolution_clock::now();
-                    perf_stat.eskf_correct_time_ms = 
+                    perf_stat.eskf_correct_time_ms =
                         std::chrono::duration<double, std::milli>(eskf_end - eskf_start).count();
                 } else {
+                    reloc_fail_count_++;
                     RCLCPP_WARN_THROTTLE(nh_->get_logger(), *nh_->get_clock(), 2000,
-                                        "[重定位] 进行中: fitness=%.3f(%u/%zu) 阈值=%.3f 对应距离=%.1f pos=(%.2f,%.2f,%.2f)",
+                                        "[重定位] 进行中(%d/%d): fitness=%.3f(%u/%zu) 阈值=%.3f 对应距离=%.1f pos=(%.2f,%.2f,%.2f)",
+                                        reloc_fail_count_, RELOC_HELP_DELAY,
                                         localizier3d->fitness_,
                                         localizier3d->features_.pickup_num, cloud_in->size(),
                                         reloc_threshold_, localizier3d->use_correspondences_threshold_,
                                         act_pose.pos(0), act_pose.pos(1), act_pose.pos(2));
+
+                    if (reloc_fail_count_ >= RELOC_HELP_DELAY && has_tracked_once_ &&
+                        call_node_a_pub_->get_subscription_count() > 0) {
+                        geometry_msgs::msg::PoseWithCovarianceStamped help_msg;
+                        help_msg.header.stamp = nh_->get_clock()->now();
+                        help_msg.header.frame_id = map_frame_;
+                        help_msg.pose.pose.position.x = act_pose.pos(0);
+                        help_msg.pose.pose.position.y = act_pose.pos(1);
+                        help_msg.pose.pose.position.z = act_pose.pos(2);
+                        tf2::Quaternion q;
+                        q.setRPY(act_pose.orient(0), act_pose.orient(1), act_pose.orient(2));
+                        help_msg.pose.pose.orientation.x = q.x();
+                        help_msg.pose.pose.orientation.y = q.y();
+                        help_msg.pose.pose.orientation.z = q.z();
+                        help_msg.pose.pose.orientation.w = q.w();
+                        call_node_a_pub_->publish(help_msg);
+                    }
                 }
             } else {
                 if (!m_package.imus.empty()) {
@@ -1460,37 +1483,15 @@ public:
 
                 if (localizier3d->fitness_ < reloc_threshold_) {
                     RCLCPP_WARN(nh_->get_logger(),
-                                "[定位] Fitness过低 (%.3f(%u/%zu) < %.3f) 对应距离=%.1f pos=(%.2f,%.2f,%.2f)，切换内部重定位，并呼叫 Node A 协助！",
+                                "[定位] Fitness过低 (%.3f(%u/%zu) < %.3f) 对应距离=%.1f pos=(%.2f,%.2f,%.2f)，切换内部重定位",
                                 localizier3d->fitness_,
                                 localizier3d->features_.pickup_num, cloud_in->size(),
                                 reloc_threshold_, localizier3d->use_correspondences_threshold_,
                                 act_pose.pos(0), act_pose.pos(1), act_pose.pos(2));
                     use_reloc_ = true;
                     localizier3d->setRelocMode();
+                    reloc_fail_count_ = 0;
                     should_publish = false;
-                    if (has_tracked_once_ && call_node_a_pub_->get_subscription_count() > 0) {
-                        geometry_msgs::msg::PoseWithCovarianceStamped help_msg;
-                        help_msg.header.stamp = nh_->get_clock()->now();
-                        help_msg.header.frame_id = map_frame_;
-                        
-                        // 使用迷失前最后一刻的位姿
-                        help_msg.pose.pose.position.x = act_pose.pos(0);
-                        help_msg.pose.pose.position.y = act_pose.pos(1);
-                        help_msg.pose.pose.position.z = act_pose.pos(2);
-                        
-                        // 欧拉角转四元数
-                        tf2::Quaternion q;
-                        q.setRPY(act_pose.orient(0), act_pose.orient(1), act_pose.orient(2));
-                        help_msg.pose.pose.orientation.x = q.x();
-                        help_msg.pose.pose.orientation.y = q.y();
-                        help_msg.pose.pose.orientation.z = q.z();
-                        help_msg.pose.pose.orientation.w = q.w();
-                        
-                        call_node_a_pub_->publish(help_msg);
-                    } else if (!has_tracked_once_) {
-                        RCLCPP_WARN_THROTTLE(nh_->get_logger(), *nh_->get_clock(), 5000,
-                            "[定位] 首帧丢失，等待重定位节点自动定位或手动 2D Pose Estimate 标定...");
-                    }
                 } else {
                     should_publish = true;
                     has_tracked_once_ = true;
