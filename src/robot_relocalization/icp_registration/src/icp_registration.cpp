@@ -357,8 +357,8 @@ Eigen::Matrix4d IcpNode::multiAlignSync(PointCloudXYZI::Ptr source,
     std::vector<Eigen::Matrix4f> candidates;
     Eigen::Matrix4f temp_pose;
 
-    for (int i = -3; i <= 3; i++) {
-        for (int j = -3; j <= 3; j++) {
+    for (int i = -2; i <= 2; i++) {
+        for (int j = -2; j <= 2; j++) {
             for (int k = -yaw_steps_; k <= yaw_steps_; k++) {
                 Eigen::Vector3f pos(xyz(0) + i * xy_offset_,
                                     xyz(1) + j * xy_offset_,
@@ -376,7 +376,7 @@ Eigen::Matrix4d IcpNode::multiAlignSync(PointCloudXYZI::Ptr source,
     RCLCPP_INFO(this->get_logger(), "开始匹配 | Guess: X=%.2f Y=%.2f Yaw=%.2f | "
                 "搜索范围: XY=±%.1fm(%dx%d) Yaw=±%.0f°(step=%.0f°) 共%zu个候选",
                 xyz(0), xyz(1), rpy(2) * 180.0 / M_PI,
-                3 * xy_offset_, 7, 7, yaw_steps_ * yaw_resolution_ * 180.0 / M_PI,
+                2 * xy_offset_, 5, 5, yaw_steps_ * yaw_resolution_ * 180.0 / M_PI,
                 yaw_resolution_ * 180.0 / M_PI, candidates.size());
 
     pcl::PointCloud<pcl::PointXYZI>::Ptr rough_source(new pcl::PointCloud<pcl::PointXYZI>);
