@@ -1,0 +1,10 @@
+builtin_interfaces/Time stamp
+int32    frame_id
+float64  total_ms
+float64  filter_ms
+float64  cluster_ms
+float64  classify_ms
+int32    raw_points
+int32    filtered_points
+int32    cluster_count
+int32    detected_plants

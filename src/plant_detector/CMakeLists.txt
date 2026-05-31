@@ -17,6 +17,7 @@ find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(builtin_interfaces REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_sensor_msgs REQUIRED)
@@ -31,7 +32,8 @@ find_package(rosidl_default_generators REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/PlantCluster.msg"
   "msg/PlantClusterArray.msg"
-  DEPENDENCIES geometry_msgs std_msgs
+  "msg/PlantMetrics.msg"
+  DEPENDENCIES geometry_msgs std_msgs builtin_interfaces
 )
 
 # ── Main node executable ─────────────────────────────────────────────────────

@@ -16,14 +16,15 @@
     pose_topic: "/icp_pose"
 
     # ICP Search Parameters
-    thresh:          1.0
-    xy_offset:       0.2
-    yaw_offset:      30.0
-    yaw_resolution:  5.0
+    thresh:          1.5
+    xy_offset:       0.5    #从0.2增大到0.5，搜索范围从±0.6m扩大到±1.5m
+    yaw_offset:      20.0
+    yaw_resolution:  10.0   #从5°改为10°，步进变大候选数从441减到245
+    drift_threshold: 3.0    # 允许结果偏离初始猜测的最大距离(米)，走廊对称环境需收紧避免匹配到错误段
 
     # Initial Guess [x, y, z, roll, pitch, yaw]
     initial_pose: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-    use_yaml_initial_pose: true
+    use_yaml_initial_pose: false
     
     # Output Options
     publish_pose: true

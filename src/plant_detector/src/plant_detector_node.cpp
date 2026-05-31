@@ -22,6 +22,7 @@
 #include "plant_detector/plant_classifier.hpp"
 #include "plant_detector/msg/plant_cluster.hpp"
 #include "plant_detector/msg/plant_cluster_array.hpp"
+#include "plant_detector/msg/plant_metrics.hpp"
 
 using namespace plant_detector;
 using std::placeholders::_1;
@@ -87,6 +88,8 @@ public:
       "plant_detector/markers", 10);
     pub_filtered_ = create_publisher<sensor_msgs::msg::PointCloud2>(
       "plant_detector/filtered_cloud", 10);
+    pub_metrics_  = create_publisher<plant_detector::msg::PlantMetrics>(
+      "plant_detector/metrics", 10);
 
     // ── Subscriber ───────────────────────────────────────────────────────
     std::string lidar_topic = get_parameter("lidar_topic").as_string();
@@ -174,19 +177,23 @@ private:
     if (raw->empty()) return;
 
     // ── Ground removal ───────────────────────────────────────────────────
+    auto t1 = std::chrono::steady_clock::now();
     pcl::PointCloud<pcl::PointXYZI>::Ptr obstacle_cloud;
     ground_remover_->remove(raw, obstacle_cloud);
+    auto t2 = std::chrono::steady_clock::now();
 
     // Publish filtered cloud (for visualisation / debugging)
     if (pub_filtered_->get_subscription_count() > 0) {
       auto filtered_msg = std::make_unique<sensor_msgs::msg::PointCloud2>();
       pcl::toROSMsg(*obstacle_cloud, *filtered_msg);
       filtered_msg->header = cloud_transformed.header;
-      pub_filtered_->publish(std::move(filtered_msg)); // handle ownership transfer with std::move
+      pub_filtered_->publish(std::move(filtered_msg));
     }
 
     // ── Clustering ────────────────────────────────────────────────────────
+    auto t3 = std::chrono::steady_clock::now();
     auto clusters = clusterer_->cluster(obstacle_cloud);
+    auto t4 = std::chrono::steady_clock::now();
 
     // ── Classification & publish ─────────────────────────────────────────
     plant_detector::msg::PlantClusterArray cluster_array;
@@ -200,10 +207,30 @@ private:
       marker_array.markers.push_back(del);
     }
 
-    int plant_id = 0;
+    // ── Collect detections passing threshold ─────────────────────────────
+    auto t5 = std::chrono::steady_clock::now();
+    struct Detection {
+      const ClusterResult* cr;
+      float conf;
+    };
+    std::vector<Detection> detections;
     for (const auto & cr : clusters) {
       float conf = classifier_->classify(cr);
       if (conf < get_parameter("classifier.confidence_threshold").as_double()) continue;
+      detections.push_back({&cr, conf});
+    }
+
+    // ── Sort by cy descending (left → right in base_footprint) ──────────
+    std::sort(detections.begin(), detections.end(),
+      [](const Detection & a, const Detection & b) {
+        return a.cr->cy > b.cr->cy;
+      });
+
+    // ── Assign ids and publish ──────────────────────────────────────────
+    int plant_id = 0;
+    for (const auto & det : detections) {
+      const auto & cr = *det.cr;
+      float conf = det.conf;
 
       // ── Fill message ───────────────────────────────────────────────────
       plant_detector::msg::PlantCluster cluster_msg;
@@ -243,7 +270,6 @@ private:
         bbox.scale.x = cr.width();
         bbox.scale.y = cr.depth();
         bbox.scale.z = cr.height();
-        // Green, semi-transparent; shade by confidence
         bbox.color.r = 0.0f;
         bbox.color.g = conf;
         bbox.color.b = 0.2f;
@@ -266,7 +292,6 @@ private:
         txt.pose.orientation.w = 1.0;
         txt.scale.z = 0.12f;
         txt.color.r = 1.0f; txt.color.g = 1.0f; txt.color.b = 1.0f; txt.color.a = 1.0f;
-        // Format: "Plant#0  (x, y) m"
         char buf[128];
         snprintf(buf, sizeof(buf),
           "Plant#%d\n(%.2f, %.2f, %.2f) m\nconf:%.0f%%",
@@ -278,15 +303,32 @@ private:
 
       ++plant_id;
     }
+    auto t6 = std::chrono::steady_clock::now();
 
     pub_clusters_->publish(cluster_array);
     pub_markers_->publish(marker_array);
 
-    auto dt = std::chrono::duration_cast<std::chrono::milliseconds>(
-      std::chrono::steady_clock::now() - t0).count();
+    // ── Publish metrics ──────────────────────────────────────────────────
+    auto to_ms = [](auto from, auto to) {
+      return std::chrono::duration<double, std::milli>(to - from).count();
+    };
+
+    plant_detector::msg::PlantMetrics metrics;
+    metrics.stamp           = cloud_transformed.header.stamp;
+    metrics.frame_id        = frame_count_++;
+    metrics.total_ms        = to_ms(t0, t6);
+    metrics.filter_ms       = to_ms(t1, t2);
+    metrics.cluster_ms      = to_ms(t3, t4);
+    metrics.classify_ms     = to_ms(t5, t6);
+    metrics.raw_points      = static_cast<int>(raw->size());
+    metrics.filtered_points = static_cast<int>(obstacle_cloud->size());
+    metrics.cluster_count   = static_cast<int>(clusters.size());
+    metrics.detected_plants = plant_id;
+    pub_metrics_->publish(metrics);
+
     RCLCPP_DEBUG(get_logger(),
-      "Pipeline: %zu raw pts → %zu clusters → %d plants  [%ld ms]",
-      raw->size(), clusters.size(), plant_id, dt);
+      "Pipeline: %zu raw pts → %zu clusters → %d plants  [%.1f ms]",
+      raw->size(), clusters.size(), plant_id, metrics.total_ms);
   }
 
   // ── Members ────────────────────────────────────────────────────────────
@@ -300,6 +342,8 @@ private:
   rclcpp::Publisher<plant_detector::msg::PlantClusterArray>::SharedPtr pub_clusters_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr          pub_markers_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr                 pub_filtered_;
+  rclcpp::Publisher<plant_detector::msg::PlantMetrics>::SharedPtr             pub_metrics_;
+  int frame_count_ = 0;
 };
 
 } // namespace plant_detector

@@ -52,11 +52,11 @@ IcpNode::IcpNode(const rclcpp::NodeOptions &options)
 
     icp_rough_.setMaximumIterations(rough_iter_);
     icp_rough_.setInputTarget(rough_map_);
-    icp_rough_.setMaxCorrespondenceDistance(5.0); 
+    icp_rough_.setMaxCorrespondenceDistance(2.5);
 
     icp_refine_.setMaximumIterations(refine_iter_);
     icp_refine_.setInputTarget(refine_map_);
-    icp_refine_.setMaxCorrespondenceDistance(3.0);
+    icp_refine_.setMaxCorrespondenceDistance(1.0);
 
     RCLCPP_INFO(this->get_logger(), "pcd point size: %ld, %ld",
                 refine_map_->size(), rough_map_->size());
@@ -70,6 +70,7 @@ IcpNode::IcpNode(const rclcpp::NodeOptions &options)
     publish_pose_ = this->declare_parameter("publish_pose", true);
     thresh_ = this->declare_parameter("thresh", 0.15);
     xy_offset_ = this->declare_parameter("xy_offset", 0.2);
+    drift_threshold_ = this->declare_parameter("drift_threshold", 5.0);
 
     double yaw_offset_deg = this->declare_parameter("yaw_offset", 30.0);
     double yaw_resolution_deg = this->declare_parameter("yaw_resolution", 10.0);
@@ -356,11 +357,8 @@ Eigen::Matrix4d IcpNode::multiAlignSync(PointCloudXYZI::Ptr source,
     std::vector<Eigen::Matrix4f> candidates;
     Eigen::Matrix4f temp_pose;
 
-    RCLCPP_INFO(this->get_logger(), "开始匹配 | Guess: X=%.2f Y=%.2f Yaw=%.2f",
-                xyz(0), xyz(1), rpy(2) * 180.0 / M_PI);
-
-    for (int i = -3; i <= 3; i++) {
-        for (int j = -3; j <= 3; j++) {
+    for (int i = -2; i <= 2; i++) {
+        for (int j = -2; j <= 2; j++) {
             for (int k = -yaw_steps_; k <= yaw_steps_; k++) {
                 Eigen::Vector3f pos(xyz(0) + i * xy_offset_,
                                     xyz(1) + j * xy_offset_,
@@ -374,6 +372,12 @@ Eigen::Matrix4d IcpNode::multiAlignSync(PointCloudXYZI::Ptr source,
             }
         }
     }
+
+    RCLCPP_INFO(this->get_logger(), "开始匹配 | Guess: X=%.2f Y=%.2f Yaw=%.2f | "
+                "搜索范围: XY=±%.1fm(%dx%d) Yaw=±%.0f°(step=%.0f°) 共%zu个候选",
+                xyz(0), xyz(1), rpy(2) * 180.0 / M_PI,
+                2 * xy_offset_, 5, 5, yaw_steps_ * yaw_resolution_ * 180.0 / M_PI,
+                yaw_resolution_ * 180.0 / M_PI, candidates.size());
 
     pcl::PointCloud<pcl::PointXYZI>::Ptr rough_source(new pcl::PointCloud<pcl::PointXYZI>);
     pcl::PointCloud<pcl::PointXYZI>::Ptr refine_source(new pcl::PointCloud<pcl::PointXYZI>);
@@ -393,14 +397,19 @@ Eigen::Matrix4d IcpNode::multiAlignSync(PointCloudXYZI::Ptr source,
 
     auto tic = std::chrono::system_clock::now();
 
+    int converged_count = 0;
+    int passed_filter_count = 0;
+
     for (Eigen::Matrix4f &init_pose : candidates) {
         icp_rough_.setInputSource(rough_source_norm);
         icp_rough_.align(*align_point, init_pose);
         if (!icp_rough_.hasConverged())
             continue;
+        converged_count++;
         double rough_score = icp_rough_.getFitnessScore();
         if (rough_score > 2 * thresh_)
             continue;
+        passed_filter_count++;
         if (rough_score < best_rough_score) {
             best_rough_score = rough_score;
             rough_converge = true;
@@ -408,25 +417,58 @@ Eigen::Matrix4d IcpNode::multiAlignSync(PointCloudXYZI::Ptr source,
         }
     }
 
-    if (!rough_converge)
+    RCLCPP_INFO(this->get_logger(),
+                "[Rough] 候选=%zu | 收敛=%d | 通过滤波=%d(阈值%.1f) | 最佳=%.3f | "
+                "源点云=%zu(粗糙)/%zu(精细) | 地图=%zu(粗糙)/%zu(精细)",
+                candidates.size(), converged_count, passed_filter_count, 2 * thresh_,
+                best_rough_score,
+                rough_source_norm->size(), refine_source_norm->size(),
+                rough_map_->size(), refine_map_->size());
+
+    if (!rough_converge) {
+        RCLCPP_ERROR(this->get_logger(), "[Rough] 失败: 无候选收敛，检查搜索范围和点云质量");
         return Eigen::Matrix4d::Zero();
+    }
 
     icp_refine_.setInputSource(refine_source_norm);
     icp_refine_.align(*align_point, best_rough_transform);
-    score_ = icp_refine_.getFitnessScore();
+    error_ = icp_refine_.getFitnessScore();
 
-    if (!icp_refine_.hasConverged())
+    RCLCPP_INFO(this->get_logger(),
+                "[Refine] 收敛=%s | fitness=%.3f (阈值=%.1f) | 对应距离=%.1f",
+                icp_refine_.hasConverged() ? "是" : "否",
+                error_, thresh_, icp_refine_.getMaxCorrespondenceDistance());
+
+    if (!icp_refine_.hasConverged()) {
+        RCLCPP_ERROR(this->get_logger(), "[Refine] 失败: 未收敛");
         return Eigen::Matrix4d::Zero();
-    if (score_ > thresh_)
+    }
+    if (error_ > thresh_) {
+        RCLCPP_ERROR(this->get_logger(), "[Refine] 失败: fitness=%.3f > 阈值=%.1f，"
+                     "可能是位姿偏差过大或局部几何模糊", error_, thresh_);
         return Eigen::Matrix4d::Zero();
+    }
+
+    // 安全检查：结果偏离初始猜测太远则判定失败
+    Eigen::Matrix4f result = icp_refine_.getFinalTransformation();
+    double dx = result(0, 3) - xyz(0);
+    double dy = result(1, 3) - xyz(1);
+    double drift = std::sqrt(dx * dx + dy * dy);
+    if (drift > drift_threshold_) {
+        RCLCPP_WARN(this->get_logger(),
+                    "[Drift] 失败: 结果=(%.2f,%.2f) 猜测=(%.2f,%.2f) 偏移=%.2fm > 阈值%.2fm，"
+                    "可能是ICP发散",
+                    result(0, 3), result(1, 3), xyz(0), xyz(1), drift, drift_threshold_);
+        return Eigen::Matrix4d::Zero();
+    }
 
     success_ = true;
 
     auto toc = std::chrono::system_clock::now();
     std::chrono::duration<double> duration = toc - tic;
 
-    RCLCPP_INFO(this->get_logger(), "✅ 匹配成功! 耗时: %.2f ms | Score: %.3f",
-                duration.count() * 1000, score_);
+    RCLCPP_INFO(this->get_logger(), "✅ 匹配成功! 耗时: %.2f s | Error: %.3f",
+                duration.count(), error_);
 
     return icp_refine_.getFinalTransformation().cast<double>();
 }

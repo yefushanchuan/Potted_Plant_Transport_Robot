@@ -92,8 +92,8 @@
             </collision>
             <inertial>
                 <origin xyz="0 0 0" rpy="${M_PI/2} 0 0"/>
-                <mass value="0.5"/>
-                <inertia ixx="${0.5*(3*wheel_radius*wheel_radius + wheel_length*wheel_length)/12}" ixy="0" ixz="0" iyy="${0.5*(3*wheel_radius*wheel_radius + wheel_length*wheel_length)/12}" iyz="0" izz="${0.5*wheel_radius*wheel_radius/2}"/>
+                <mass value="5.0"/>
+                <inertia ixx="${5.0*(3*wheel_radius*wheel_radius + wheel_length*wheel_length)/12}" ixy="0" ixz="0" iyy="${5.0*(3*wheel_radius*wheel_radius + wheel_length*wheel_length)/12}" iyz="0" izz="${5.0*wheel_radius*wheel_radius/2}"/>
             </inertial>
         </link>
 
@@ -102,8 +102,8 @@
             <child link="${name}_wheel_link"/>
             <origin xyz="${x_offset} ${y_offset} ${z_offset}" rpy="0 0 0"/>
             <axis xyz="0 1 0"/>
-            <limit effort="10.0" velocity="10.0"/>
-            <dynamics damping="0.1" friction="0.1"/>
+            <limit effort="10000.0" velocity="1000.0"/>
+            <dynamics damping="0.0" friction="0.0"/>
         </joint>
     </xacro:macro>
 
@@ -118,18 +118,17 @@
                 <material name="gray"/>
             </visual>
             <collision>
-                <origin xyz="0 0 0" rpy="${M_PI/2} 0 0"/>
+                <origin xyz="0 0 0" rpy="0 0 0"/>
                 <geometry>
-                    <cylinder length="${caster_length}" radius="${caster_radius}"/>
+                    <sphere radius="${caster_radius}"/>
                 </geometry>
             </collision>
             <inertial>
-                <origin xyz="0 0 0" rpy="${M_PI/2} 0 0"/>
+                <origin xyz="0 0 0" rpy="0 0 0"/>
                 <mass value="0.1"/>
-                <inertia ixx="${0.1*(3*caster_radius*caster_radius + caster_length*caster_length)/12}" ixy="0" ixz="0" iyy="${0.1*(3*caster_radius*caster_radius + caster_length*caster_length)/12}" iyz="0" izz="${0.1*caster_radius*caster_radius/2}"/>
+                <inertia ixx="${0.4*0.1*caster_radius*caster_radius}" ixy="0" ixz="0" iyy="${0.4*0.1*caster_radius*caster_radius}" iyz="0" izz="${0.4*0.1*caster_radius*caster_radius}"/>
             </inertial>
         </link>
-
         <joint name="${name}_caster_joint" type="fixed">
             <parent link="${parent_link}"/>
             <child link="${name}_caster_link"/>
@@ -222,8 +221,8 @@
             </geometry>
         </collision>
         <inertial>
-            <mass value="50"/>
-            <inertia ixx="${(1/12)*50*(vehicle_width*vehicle_width + vehicle_height*vehicle_height)}" ixy="0" ixz="0" iyy="${(1/12)*50*(vehicle_length*vehicle_length + vehicle_height*vehicle_height)}" iyz="0" izz="${(1/12)*50*(vehicle_length*vehicle_length + vehicle_width*vehicle_width)}"/>
+            <mass value="30"/>
+            <inertia ixx="${(1/12)*30*(vehicle_width*vehicle_width + vehicle_height*vehicle_height)}" ixy="0" ixz="0" iyy="${(1/12)*30*(vehicle_length*vehicle_length + vehicle_height*vehicle_height)}" iyz="0" izz="${(1/12)*30*(vehicle_length*vehicle_length + vehicle_width*vehicle_width)}"/>
         </inertial>
     </link>
 
@@ -246,12 +245,12 @@
             </geometry>
         </collision>
         <inertial>
-            <mass value="50"/>
-            <inertia ixx="${(1/12)*50*(3*middle_radius*middle_radius + middle_height*middle_height)}" 
-                     ixy="0" ixz="0" 
-                     iyy="${(1/12)*50*(3*middle_radius*middle_radius + middle_height*middle_height)}" 
-                     iyz="0" 
-                     izz="${0.5*50*middle_radius*middle_radius}"/>
+            <mass value="10"/>
+            <inertia ixx="${(1/12)*10*(3*middle_radius*middle_radius + middle_height*middle_height)}"
+                     ixy="0" ixz="0"
+                     iyy="${(1/12)*10*(3*middle_radius*middle_radius + middle_height*middle_height)}"
+                     iyz="0"
+                     izz="${0.5*10*middle_radius*middle_radius}"/>
         </inertial>
     </link>
 
@@ -313,8 +312,8 @@
         </joint>
         <joint name="right_wheel_joint">
             <command_interface name="velocity">
-                <param name="min">-1.0</param>
-                <param name="max">1.0</param>
+                <param name="min">-10.0</param>
+                <param name="max">10.0</param>
             </command_interface>
             <state_interface name="position"/>
             <state_interface name="velocity"/>
