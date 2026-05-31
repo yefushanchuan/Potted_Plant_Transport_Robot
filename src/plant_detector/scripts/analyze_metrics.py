@@ -6,7 +6,7 @@ Usage:
 
 Example:
     python3 analyze_metrics.py realtime_exp
-    python3 analyze_metrics.py realtime_exp --save-fig metrics_report.png
+    python3 analyze_metrics.py realtime_exp --save-fig metrics_report.svg
 """
 
 import argparse
@@ -124,7 +124,7 @@ def plot_histograms(total, filt, clust, cls, fps, save_path=None):
     plt.tight_layout()
 
     if save_path:
-        fig.savefig(save_path, dpi=150, bbox_inches="tight")
+        fig.savefig(save_path, format="svg", bbox_inches="tight")
         print(f"\nFigure saved to: {save_path}")
     else:
         plt.show()
@@ -133,7 +133,7 @@ def plot_histograms(total, filt, clust, cls, fps, save_path=None):
 def main():
     parser = argparse.ArgumentParser(description="Analyze plant_detector metrics from a ROS 2 bag")
     parser.add_argument("bag_path", help="Path to the bag directory")
-    parser.add_argument("--save-fig", metavar="PNG", help="Save histogram to file instead of showing")
+    parser.add_argument("--save-fig", metavar="SVG", help="Save histogram to file instead of showing")
     args = parser.parse_args()
 
     bag = Path(args.bag_path)
