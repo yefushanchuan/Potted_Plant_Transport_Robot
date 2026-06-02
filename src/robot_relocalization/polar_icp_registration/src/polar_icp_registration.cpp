@@ -286,8 +286,10 @@ PolarRing PolarIcpNode::extractPolarRing(const CloudXYZI::Ptr &cloud) const {
     ring.bin_angle = 2.0f * M_PI / ring_bins_;
     ring.max_rho.assign(ring_bins_, 0.0f);
 
+    int bev_count = 0;
     for (const auto &pt : cloud->points) {
         if (pt.z < bev_z_min_ || pt.z > bev_z_max_) continue;
+        bev_count++;
         float rho   = std::sqrt(pt.x * pt.x + pt.y * pt.y);
         float theta = std::atan2(pt.y, pt.x);
         if (theta < 0) theta += 2.0f * M_PI;
@@ -296,6 +298,8 @@ PolarRing PolarIcpNode::extractPolarRing(const CloudXYZI::Ptr &cloud) const {
             ring.max_rho[bin] = rho;
         }
     }
+    RCLCPP_DEBUG(this->get_logger(), "[Ring] total=%zu bev_pass=%d bins=%d",
+                 cloud->size(), bev_count, ring_bins_);
     return ring;
 }
 
@@ -318,6 +322,8 @@ float PolarIcpNode::computeYawOffset(const PolarRing &src, const PolarRing &tgt)
     float yaw = 2.0f * M_PI - (2.0f * M_PI * best_shift / ring_bins_);
     while (yaw >  M_PI) yaw -= 2.0f * M_PI;
     while (yaw < -M_PI) yaw += 2.0f * M_PI;
+    RCLCPP_DEBUG(this->get_logger(), "[Yaw] best_shift=%d/%d corr=%.1f yaw=%.2f°",
+                 best_shift, ring_bins_, best_corr, yaw * 180.0f / M_PI);
     return yaw;
 }
 
@@ -353,10 +359,18 @@ Eigen::Vector2f PolarIcpNode::computeTranslation(const CloudXYZI::Ptr &src,
                 }
             }
         }
-        if (count < 10) break;
-        dx += sum_ex / count;
-        dy += sum_ey / count;
+        if (count < 10) {
+            RCLCPP_DEBUG(this->get_logger(), "[Trans] iter=%d count=%d < 10, break", iter, count);
+            break;
+        }
+        float mean_ex = sum_ex / count;
+        float mean_ey = sum_ey / count;
+        dx += mean_ex;
+        dy += mean_ey;
+        RCLCPP_DEBUG(this->get_logger(), "[Trans] iter=%d count=%d mean=(%.3f, %.3f) cum=(%.3f, %.3f)",
+                     iter, count, mean_ex, mean_ey, dx, dy);
     }
+    RCLCPP_DEBUG(this->get_logger(), "[Trans] result=(%.3f, %.3f)", dx, dy);
     return Eigen::Vector2f(dx, dy);
 }
 
@@ -375,6 +389,10 @@ int PolarIcpNode::findBestKeyframe(const PolarRing &src_ring) const {
     }
     src_norm = std::sqrt(src_norm) + 1e-6f;
 
+    // 记录所有关键帧的相关值用于 debug
+    std::vector<std::pair<float, int>> all_corrs;
+    all_corrs.reserve(keyframes_.size());
+
     for (size_t i = 0; i < keyframes_.size(); i++) {
         const auto &kf_ring = keyframes_[i].ring;
 
@@ -385,12 +403,23 @@ int PolarIcpNode::findBestKeyframe(const PolarRing &src_ring) const {
             kf_norm += kf_ring.max_rho[b] * kf_ring.max_rho[b];
         }
         float corr = dot / (src_norm * (std::sqrt(kf_norm) + 1e-6f));
+        all_corrs.emplace_back(corr, static_cast<int>(i));
 
         if (corr > best_corr) {
             best_corr = corr;
             best_idx = static_cast<int>(i);
         }
     }
+
+    // 打印 top-3 匹配结果
+    std::sort(all_corrs.begin(), all_corrs.end(),
+              [](const auto &a, const auto &b) { return a.first > b.first; });
+    int top_n = std::min(3, static_cast<int>(all_corrs.size()));
+    for (int k = 0; k < top_n; k++) {
+        RCLCPP_DEBUG(this->get_logger(), "[KF] top%d: #%d corr=%.4f",
+                     k + 1, all_corrs[k].second, all_corrs[k].first);
+    }
+
     return best_idx;
 }
 
@@ -431,6 +460,11 @@ Eigen::Matrix4d PolarIcpNode::multiResICP(const CloudXYZI::Ptr &source,
 
         if (icp.hasConverged()) {
             current_T = icp.getFinalTransformation();
+            RCLCPP_DEBUG(this->get_logger(), "[MultiResICP] level=%zu res=%.2f src=%zu converged, fitness=%.4f",
+                         level, res, src_down->size(), icp.getFitnessScore());
+        } else {
+            RCLCPP_DEBUG(this->get_logger(), "[MultiResICP] level=%zu res=%.2f src=%zu NOT converged",
+                         level, res, src_down->size());
         }
     }
 
@@ -644,6 +678,7 @@ void PolarIcpNode::pointcloudCallback(const sensor_msgs::msg::PointCloud2::Share
 
     CloudXYZI::Ptr transformed(new CloudXYZI);
     pcl::transformPointCloud(*raw, *transformed, base_to_sensor_T_);
+    RCLCPP_DEBUG(this->get_logger(), "[Cloud] raw=%zu transformed=%zu", raw->size(), transformed->size());
     {
         std::lock_guard<std::mutex> lock(cloud_mutex_);
         cloud_in_ = transformed;
