@@ -22,10 +22,10 @@
     ring_bins:  360       # 极坐标角度 bin 数（1°分辨率）
     bev_z_min: 0.2        # 鸟瞰投影 z 下界（排除地面）
     bev_z_max: 2.0        # 鸟瞰投影 z 上界（排除天花板）
-    bev_crop_radius: 30.0 # 单地图模式裁剪半径(米)
+    bev_crop_radius: 10.0 # 单地图模式裁剪半径(米)
 
     # ── Fine Registration: Multi-resolution ICP ──
-    octree_resolutions: [2.0, 1.0, 0.5, 0.2]   # 从粗到精
+    octree_resolutions: [1.0, 0.5, 0.2]   # 从粗到精
     refine_iter: 5                              # 每层 ICP 迭代次数
     refine_max_corr_dist: 1.0                   # 精配准最大对应距离
 
