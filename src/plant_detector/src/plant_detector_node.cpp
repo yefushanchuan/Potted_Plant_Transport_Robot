@@ -246,7 +246,7 @@ private:
       cluster_msg.confidence  = conf;
       cluster_array.clusters.push_back(cluster_msg);
 
-      RCLCPP_INFO(get_logger(),
+      RCLCPP_DEBUG(get_logger(),
         "[Plant #%d]  pos=(%.2f, %.2f, %.2f) m  "
         "size=(w=%.2f d=%.2f h=%.2f)  conf=%.2f  pts=%d",
         plant_id,

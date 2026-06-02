@@ -972,7 +972,7 @@ public:
         double sys_timestamp = nh_->get_clock()->now().seconds();
         double time_diff     = sys_timestamp - msg_timestamp;
         
-        RCLCPP_INFO(nh_->get_logger(), 
+        RCLCPP_DEBUG(nh_->get_logger(),
                     "[LiDAR回调] 消息时间=%.6f | 系统时间=%.6f | 差值=%.3fs(%.0fms)",
                     msg_timestamp, sys_timestamp, time_diff, time_diff * 1000.0);
         
@@ -1304,7 +1304,7 @@ public:
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
             undistort_end - undistort_start);
 
-        RCLCPP_INFO(nh_->get_logger(),
+        RCLCPP_DEBUG(nh_->get_logger(),
                     "[去畸变] 点云数=%zu | IMU数=%zu | 耗时=%.2fms | "
                     "旋转角度=(%.2f°, %.2f°, %.2f°) | 平移补偿=(%.4f, %.4f, %.4f)m | 时间跨度=%.1fms",
                     cloud->size(), imus.size(), duration.count() / 1000.0,
@@ -1571,7 +1571,7 @@ public:
             }
             loc_status_pub_->publish(status_msg);
             
-            RCLCPP_INFO(nh_->get_logger(),
+            RCLCPP_DEBUG(nh_->get_logger(),
                        "[第%d帧] 同步云末=%.6f | 系统时间=%.6f | "
                        "数据延迟=%.3fs(%.0fms) | 算法=%.1fms | IMU=%d个 | 配准=%.1fms | "
                        "fitness=%.3f | pos=(%.2f,%.2f,%.2f) | yaw=%.1f°",
