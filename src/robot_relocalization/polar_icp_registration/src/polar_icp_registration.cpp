@@ -91,6 +91,9 @@ void PolarIcpNode::loadKeyframeDatabase(const std::string &db_dir) {
         kf.octree.reset(new pcl::octree::OctreePointCloudSearch<PointXYZI>(res));
         kf.octree->setInputCloud(kf.cloud);
         kf.octree->addPointsFromInputCloud();
+
+        // 预计算法线（避免精配准时重复计算）
+        kf.cloud_with_normals = addNormals(kf.cloud);
     }
     f.close();
 
@@ -365,13 +368,24 @@ int PolarIcpNode::findBestKeyframe(const PolarRing &src_ring) const {
     int best_idx = -1;
     float best_corr = -1.0f;
 
+    // 预计算 source 环的模长
+    float src_norm = 0.0f;
+    for (int b = 0; b < ring_bins_; b++) {
+        src_norm += src_ring.max_rho[b] * src_ring.max_rho[b];
+    }
+    src_norm = std::sqrt(src_norm) + 1e-6f;
+
     for (size_t i = 0; i < keyframes_.size(); i++) {
         const auto &kf_ring = keyframes_[i].ring;
-        // 计算相关值（不需要 shift，因为要找位置最近的关键帧，不是求 yaw）
-        float corr = 0.0f;
+
+        // 余弦相似度：消除绝对 ρ 值差异，只比较形状
+        float dot = 0.0f, kf_norm = 0.0f;
         for (int b = 0; b < ring_bins_; b++) {
-            corr += src_ring.max_rho[b] * kf_ring.max_rho[b];
+            dot     += src_ring.max_rho[b] * kf_ring.max_rho[b];
+            kf_norm += kf_ring.max_rho[b] * kf_ring.max_rho[b];
         }
+        float corr = dot / (src_norm * (std::sqrt(kf_norm) + 1e-6f));
+
         if (corr > best_corr) {
             best_corr = corr;
             best_idx = static_cast<int>(i);
@@ -389,8 +403,8 @@ Eigen::Matrix4d PolarIcpNode::multiResICP(const CloudXYZI::Ptr &source,
                                            const KeyframeData &kf) {
     Eigen::Matrix4f current_T = init_guess.cast<float>();
 
-    // 用关键帧的点云做精配准
-    CloudXYZIN::Ptr tgt_norm = addNormals(kf.cloud);
+    // 用关键帧预计算法线的点云做精配准
+    CloudXYZIN::Ptr tgt_norm = kf.cloud_with_normals;
 
     // 从粗到精逐层
     for (size_t level = 0; level < octree_resolutions_.size(); level++) {
@@ -496,7 +510,7 @@ Eigen::Matrix4d PolarIcpNode::coarseToFineAlign(CloudXYZI::Ptr source,
         // 6. fitness 验证（无 drift 检查，因为没有可靠的初始猜测）
         CloudXYZIN::Ptr src_norm = addNormals(source);
         icp_refine_.setInputSource(src_norm);
-        icp_refine_.setInputTarget(addNormals(best_kf.cloud));
+        icp_refine_.setInputTarget(best_kf.cloud_with_normals);
         CloudXYZIN::Ptr aligned(new CloudXYZIN);
         icp_refine_.align(*aligned, T_final.cast<float>());
 
@@ -630,8 +644,11 @@ void PolarIcpNode::pointcloudCallback(const sensor_msgs::msg::PointCloud2::Share
 
     CloudXYZI::Ptr transformed(new CloudXYZI);
     pcl::transformPointCloud(*raw, *transformed, base_to_sensor_T_);
-    cloud_in_ = transformed;
-    has_cloud_ = true;
+    {
+        std::lock_guard<std::mutex> lock(cloud_mutex_);
+        cloud_in_ = transformed;
+        has_cloud_ = true;
+    }
 
     if (use_yaml_initial_pose_) {
         RCLCPP_INFO_ONCE(this->get_logger(), "Auto-relocating from YAML pose...");
@@ -647,7 +664,7 @@ void PolarIcpNode::pointcloudCallback(const sensor_msgs::msg::PointCloud2::Share
         guess.block<3, 3>(0, 0) = q.toRotationMatrix();
         guess.block<3, 1>(0, 3) = pos;
 
-        Eigen::Matrix4d result = coarseToFineAlign(cloud_in_, guess);
+        Eigen::Matrix4d result = coarseToFineAlign(transformed, guess);
 
         if (success_) {
             geometry_msgs::msg::PoseWithCovarianceStamped pose_msg;
@@ -699,9 +716,15 @@ void PolarIcpNode::pointcloudCallback(const sensor_msgs::msg::PointCloud2::Share
 
 void PolarIcpNode::initialPoseCallback(
     const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg) {
-    if (!has_cloud_) {
-        RCLCPP_WARN(this->get_logger(), "No pointcloud yet!");
-        return;
+    // 拷贝点云引用，避免长时间持锁
+    CloudXYZI::Ptr cloud_copy;
+    {
+        std::lock_guard<std::mutex> lock(cloud_mutex_);
+        if (!has_cloud_) {
+            RCLCPP_WARN(this->get_logger(), "No pointcloud yet!");
+            return;
+        }
+        cloud_copy = cloud_in_;
     }
 
     RCLCPP_INFO(this->get_logger(), "Received initial guess, starting polar ICP...");
@@ -717,7 +740,7 @@ void PolarIcpNode::initialPoseCallback(
     guess.block<3, 3>(0, 0) = q.toRotationMatrix();
     guess.block<3, 1>(0, 3) = pos;
 
-    Eigen::Matrix4d result = coarseToFineAlign(cloud_in_, guess);
+    Eigen::Matrix4d result = coarseToFineAlign(cloud_copy, guess);
 
     if (!success_) {
         RCLCPP_ERROR(this->get_logger(), "❌ Relocalization failed!");

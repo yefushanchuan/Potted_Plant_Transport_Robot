@@ -95,8 +95,8 @@ void printUsage() {
     std::cout << "用法: kf_extract <map.pcd> <poses.txt> <output_dir> [选项]\n"
               << "选项:\n"
               << "  --origin x y z      重定义原点（地图和位姿同步平移）\n"
-              << "  --distance 10.0     关键帧间距阈值(米)\n"
-              << "  --radius 20.0       每个关键帧裁剪半径(米)\n"
+              << "  --distance 3.0      关键帧间距阈值(米)\n"
+              << "  --radius 25.0       每个关键帧裁剪半径(米)\n"
               << "  --bins 360          极坐标环 bin 数\n"
               << "  --z_min -0.5        BEV z 下界\n"
               << "  --z_max 2.0         BEV z 上界\n"
@@ -116,8 +116,8 @@ int main(int argc, char **argv) {
     // 默认参数
     double origin_x = 0, origin_y = 0, origin_z = 0;
     bool use_origin = false;
-    double min_distance = 20.0;
-    double crop_radius = 10.0;
+    double min_distance = 3.0;
+    double crop_radius = 25.0;
     int ring_bins = 360;
     float z_min = 0.2f, z_max = 2.0f;
     float leaf_size = 0.1f;

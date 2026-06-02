@@ -3,6 +3,7 @@
 
 // std
 #include <filesystem>
+#include <mutex>
 #include <vector>
 
 // ros
@@ -49,6 +50,7 @@ struct KeyframeData {
     Eigen::Matrix4d pose;              // 世界坐标系下的位姿
     PolarRing ring;                    // 预计算的环特征
     CloudXYZI::Ptr cloud;              // 局部点云
+    CloudXYZIN::Ptr cloud_with_normals;  // 预计算法线的点云（精配准用）
     pcl::octree::OctreePointCloudSearch<PointXYZI>::Ptr octree;  // 八叉树（用于精配准）
 };
 
@@ -98,6 +100,7 @@ private:
     std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
 
     // ── 点云缓存 ──
+    std::mutex cloud_mutex_;
     CloudXYZI::Ptr cloud_in_;
 
     // ── 地图数据 ──
