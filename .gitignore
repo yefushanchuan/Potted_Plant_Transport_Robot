@@ -8,7 +8,3 @@ __pycache__/
 .claude/
 
 # ROS2 bags (large files)
-exp_bag/
-exp_a_traj/
-accuracy_exp/
-realtime_exp/
