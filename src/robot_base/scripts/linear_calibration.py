@@ -7,14 +7,34 @@ import math
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
 from time import time
+from rclpy.action import ActionClient
+from robot_base.action import OperatePot
+
+
+def enter_slave_mode():
+    """发送 action_type=3 (Slave) 切换到从机模式，使底盘响应速度命令。"""
+    node = rclpy.create_node('_enter_slave')
+    client = ActionClient(node, OperatePot, 'operate_pot')
+    if not client.wait_for_server(timeout_sec=3.0):
+        node.get_logger().error('operate_pot action server 不可用')
+        node.destroy_node()
+        return False
+    goal = OperatePot.Goal()
+    goal.action_type = 3  # Slave
+    goal.rack_index = 0
+    future = client.send_goal_async(goal)
+    rclpy.spin_until_future_complete(node, future, timeout_sec=3.0)
+    ok = future.result() is not None
+    node.destroy_node()
+    return ok
 
 
 class LinearCalibrationNode(Node):
     def __init__(self, target_distance, speed):
         super().__init__('linear_calibration_node')
 
-        self.target_distance = target_distance  # meters
-        self.speed = speed  # m/s
+        self.target_distance = target_distance
+        self.speed = speed
 
         self.cmd_vel = self.create_publisher(
             Twist, '/diff_drive_controller/cmd_vel_unstamped', 1)
@@ -66,7 +86,6 @@ class LinearCalibrationNode(Node):
                 f'Average speed:    {actual_speed:.4f} m/s')
             self.get_logger().info(
                 f'Lateral drift:    {abs(y - self.start_y):.4f} m')
-            # stop
             self.cmd_vel.publish(Twist())
             sys.exit(0)
         else:
@@ -80,6 +99,11 @@ class LinearCalibrationNode(Node):
 
 def main(args=None):
     rclpy.init(args=args)
+
+    if enter_slave_mode():
+        print('[linear_calibration] 已切换到 Slave 模式')
+    else:
+        print('[linear_calibration] ⚠️ 切换 Slave 模式失败')
 
     target_distance = 1.0
     speed = 0.1

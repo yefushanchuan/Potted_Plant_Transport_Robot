@@ -17,6 +17,8 @@ UART_TYPE_ACK = 0x02
 TAG_V_LINEAR_MM_S = 0x01
 TAG_W_ANGULAR_MRAD_S = 0x02
 TAG_Z_LIFT_MM = 0x03
+TAG_STATUS_MASK = 0x11
+TAG_STATUS_VALUE = 0x12
 TAG_HEALTH_WORD = 0x14
 TAG_ALARM_INFO = 0x15
 TAG_BATT_SOC_X100 = 0x21
@@ -44,10 +46,24 @@ def append_int32_tlv(payload, tag, value):
     payload.extend(struct.pack('<i', value))
 
 
-def build_command_frame(v_linear_mm_s, w_angular_mrad_s, seq_id=0):
+def append_uint16_tlv(payload, tag, value):
+    payload.append(tag)
+    payload.append(2)
+    payload.extend(struct.pack('<H', value))
+
+
+# action_type=3 (Slave): bit9=enable, bit10-11=type=3
+ACTION_STATUS_MASK = (1 << 9) | (0x03 << 10)   # 0x0E00
+ACTION_STATUS_VALUE = (1 << 9) | (3 << 10)     # 0x0E00
+
+
+def build_command_frame(v_linear_mm_s, w_angular_mrad_s, seq_id=0, slave_mode=False):
     payload = []
     append_int32_tlv(payload, TAG_V_LINEAR_MM_S, int(v_linear_mm_s))
     append_int32_tlv(payload, TAG_W_ANGULAR_MRAD_S, int(w_angular_mrad_s))
+    if slave_mode:
+        append_uint16_tlv(payload, TAG_STATUS_MASK, ACTION_STATUS_MASK)
+        append_uint16_tlv(payload, TAG_STATUS_VALUE, ACTION_STATUS_VALUE)
 
     frame = bytearray()
     frame.append(FRAME_HEAD_1)
@@ -196,8 +212,10 @@ def send_velocity_and_track(serial_port, baudrate, v_linear_mm_s, w_angular_mrad
         last_print_time = start_time
         print_interval = 1.0 / update_rate
 
+        first_frame = True
         while time.time() - start_time < duration:
-            frame = build_command_frame(v_linear_mm_s, w_angular_mrad_s, seq_id)
+            frame = build_command_frame(v_linear_mm_s, w_angular_mrad_s, seq_id, slave_mode=first_frame)
+            first_frame = False
             seq_id = (seq_id + 1) & 0xFF
 
             ser.write(frame)
@@ -255,10 +273,10 @@ def send_velocity_and_track(serial_port, baudrate, v_linear_mm_s, w_angular_mrad
         return False
 
 
-def send_velocity(serial_port, baudrate, v_linear_mm_s, w_angular_mrad_s):
+def send_velocity(serial_port, baudrate, v_linear_mm_s, w_angular_mrad_s, slave_mode=False):
     try:
         ser = serial.Serial(port=serial_port, baudrate=baudrate, timeout=1)
-        frame = build_command_frame(v_linear_mm_s, w_angular_mrad_s)
+        frame = build_command_frame(v_linear_mm_s, w_angular_mrad_s, slave_mode=slave_mode)
         print(f"Sending frame: {bytes_to_hex_string(frame)}")
         ser.write(frame)
         print("Frame sent successfully")
@@ -309,8 +327,10 @@ def main():
     else:
         time_start = time.time()
         now = time.time()
+        first_frame = True
         while now - time_start < 2:
-            success = send_velocity(args.port, args.baudrate, args.v, args.w)
+            success = send_velocity(args.port, args.baudrate, args.v, args.w, slave_mode=first_frame)
+            first_frame = False
             now = time.time()
         success = send_velocity(args.port, args.baudrate, 0.0, 0.0)
 

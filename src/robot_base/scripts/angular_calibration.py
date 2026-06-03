@@ -4,97 +4,128 @@ from rclpy.node import Node
 import math
 from geometry_msgs.msg import Twist
 import sys
-import tf_transformations
-from tf2_ros import LookupException, ConnectivityException, TransformException, ExtrapolationException
-from tf2_ros.buffer import Buffer
-from tf2_ros.transform_listener import TransformListener
-from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Imu
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
+from rclpy.action import ActionClient
+from robot_base.action import OperatePot
+
+
+def enter_slave_mode():
+    """发送 action_type=3 (Slave) 切换到从机模式。"""
+    node = rclpy.create_node('_enter_slave')
+    client = ActionClient(node, OperatePot, 'operate_pot')
+    if not client.wait_for_server(timeout_sec=3.0):
+        node.get_logger().error('operate_pot action server 不可用')
+        node.destroy_node()
+        return False
+    goal = OperatePot.Goal()
+    goal.action_type = 3
+    goal.rack_index = 0
+    future = client.send_goal_async(goal)
+    rclpy.spin_until_future_complete(node, future, timeout_sec=3.0)
+    ok = future.result() is not None
+    node.destroy_node()
+    return ok
+
 
 class angleCheckNodeV2(Node):
-    def __init__(self):
-        # Give the node a name
+    def __init__(self, target_angle):
         super().__init__('angle_check_node')
 
-        self.imu_sub = self.create_subscription(Imu, "/imu", self.imutopic,1)
-        self.imu_sub  # prevent unused variable warning 
+        imu_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+        )
+        self.imu_sub = self.create_subscription(Imu, "/imu", self.imutopic, imu_qos)
 
-        self.target_yaw = math.pi
-        self.r_speed     = 1.0 # rad per second
-        self.r_tolerance = 0.10 # meters
-        # self.odom_linear_scale_correction = rospy.get_param('~odom_linear_scale_correction', 1.0)
+        self.target_angle = target_angle  # 要旋转的总角度 (rad)
+        self.r_speed     = 0.3            # rad/s
+        self.r_tolerance = 0.05           # rad
         self.start_test = True
-        
-        self.tf_buffer = Buffer()
-        self.tf_listener = TransformListener(self.tf_buffer, self)
-        self.get_logger().info("Bring up rqt_reconfigure to control the test.")
 
-        # Publisher to control the robot's speed
-        # 注意：ros2_control 的 diff_drive_controller 在 use_stamped_vel=false 时订阅 /diff_drive_controller/cmd_vel_unstamped (Twist)
         self.cmd_vel = self.create_publisher(Twist, '/diff_drive_controller/cmd_vel_unstamped', 1)
-        self.timer = self.create_timer(0.05, self.timer_callback) # 单位是秒
-        self.imu_data = 0
+        self.timer = self.create_timer(0.05, self.timer_callback)
         self.cntFre = 0
-        self.iniPose = True
+
+        # IMU wz 积分
+        self.prev_wz = None
+        self.prev_time = None
+        self.accumulated = 0.0
+        self.imu_yaw = 0.0  # IMU 四元数算出的 yaw（仅显示用）
+        self.last_cb_time = None   # 最近一次回调时间
+        self.cb_count = 0          # 回调计数
+        self.last_accumulated = 0.0  # 上次打印时的累计值
+
+    def imutopic(self, data):
+        # 用 IMU 的 wz 积分（不受 ±π 限制）
+        now = self.get_clock().now().nanoseconds / 1e9
+        wz = data.angular_velocity.z  # yaw 角速度 rad/s
+
+        self.cb_count += 1
+        self.last_cb_time = now
+
+        if self.prev_time is not None:
+            dt = now - self.prev_time
+            if 0 < dt < 0.1:  # 合理的 dt 范围
+                self.accumulated += wz * dt
+
+        self.prev_wz = wz
+        self.prev_time = now
+
+        # 同时记录 IMU 四元数 yaw（仅显示）
+        x, y, z, w = data.orientation.x, data.orientation.y, data.orientation.z, data.orientation.w
+        self.imu_yaw = math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
 
     def timer_callback(self):
-        # print("odomCB, 20Hz")   
-        
-        from_frame_rel = 'base_link'
-        to_frame_rel = 'odom'
-        now = rclpy.time.Time()
-        trans = self.tf_buffer.lookup_transform(
-            to_frame_rel,
-            from_frame_rel,
-            now)
-        self.yaw = tf_transformations.euler_from_quaternion([trans.transform.rotation.x, trans.transform.rotation.y, trans.transform.rotation.z, trans.transform.rotation.w])[2]
-        if self.iniPose == True:
-            self.get_logger().info('初始位置')
-            self.get_logger().info('self.yaw："%f"' % self.yaw)
-            self.get_logger().info('self.imu_data"%f"' % self.imu_data)
-            self.iniPose=False
+        if self.prev_time is None:
+            return  # 还没收到 IMU 数据
 
-        if self.cntFre == 10:
+        if self.cntFre == 20:
             self.cntFre = 0
-            self.get_logger().info('self.yaw："%f"' % self.yaw)
-            self.get_logger().info('self.imu_data"%f"' % self.imu_data)
-        self.cntFre = self.cntFre + 1
-        
+            delta = self.accumulated - self.last_accumulated
+            now = self.get_clock().now().nanoseconds / 1e9
+            cb_age = (now - self.last_cb_time) if self.last_cb_time else -1
+            self.get_logger().info(
+                'imu_yaw=%.3f  累计=%.3f  wz=%.4f  delta=%.4f  cb_count=%d  cb_age=%.1fs' %
+                (self.imu_yaw, self.accumulated, self.prev_wz or 0, delta, self.cb_count, cb_age))
+            if abs(delta) < 0.001:
+                self.get_logger().warn('⚠️ 累计角度停滞! wz=%.6f  IMU回调仍在=%s' %
+                                       (self.prev_wz or 0, '是' if cb_age < 1.0 else '否(超时)'))
+            self.last_accumulated = self.accumulated
+        self.cntFre += 1
 
-        self.d_yaw = self.target_yaw - self.yaw
-        # print("d_yaw: ",self.d_yaw)
-        if abs(self.d_yaw) < self.r_tolerance or not self.start_test:
-            move_cmd = Twist()
-            self.cmd_vel.publish(move_cmd)
+        remaining = self.target_angle - self.accumulated
+        if abs(remaining) < self.r_tolerance or not self.start_test:
+            self.cmd_vel.publish(Twist())
             self.get_logger().info('Target reached! Stopping robot.')
-            self.get_logger().info('Final yaw: "%f"' % self.yaw)
-            self.get_logger().info('Final imu_data: "%f"' % self.imu_data)
+            self.get_logger().info('accumulated: %.3f rad (%.1f°)' %
+                                   (self.accumulated, math.degrees(self.accumulated)))
             sys.exit(0)
         else:
             move_cmd = Twist()
-            if self.d_yaw < 0:
-                move_cmd.angular.z = -1 * self.r_speed
-            else:
-                move_cmd.angular.z =      self.r_speed
+            move_cmd.angular.z = self.r_speed if remaining > 0 else -self.r_speed
             self.cmd_vel.publish(move_cmd)
-
-    def imutopic(self, data):
-        # print("imutopic")
-        self.imu_data = tf_transformations.euler_from_quaternion([data.orientation.x, data.orientation.y, data.orientation.z, data.orientation.w])[2]
-        # self.get_logger().info('self.imu_data"%f"' % self.imu_data)
 
 
 def main(args=None):
     rclpy.init(args=args)
 
-    minimal_subscriber = angleCheckNodeV2()
+    # 默认转一圈 (2π)
+    target_angle = 2.0 * math.pi
+    if len(sys.argv) >= 2:
+        target_angle = float(sys.argv[1])
 
-    rclpy.spin(minimal_subscriber)
+    if enter_slave_mode():
+        print('[angular_calibration] 已切换到 Slave 模式')
+    else:
+        print('[angular_calibration] ⚠️ 切换 Slave 模式失败')
 
-    # Destroy the node explicitly
-    # (optional - otherwise it will be done automatically
-    # when the garbage collector destroys the node object)
-    minimal_subscriber.destroy_node()
+    print(f'[angular_calibration] 目标旋转: {target_angle:.2f} rad ({math.degrees(target_angle):.1f}°)')
+
+    node = angleCheckNodeV2(target_angle)
+    rclpy.spin(node)
+    node.destroy_node()
     rclpy.shutdown()
 
 

@@ -122,7 +122,7 @@ def generate_launch_description():
         parameters=[{
             'use_mag': False,           # 室内不用磁力计
             'publish_tf': False,        # 坚决不发 TF，全权交给 EKF，避免冲突
-            'do_bias_estimation': True, # 消除陀螺仪静态漂移
+            'do_bias_estimation': False, # 关闭：bias estimation 会误扣旋转信号
             'do_adaptive_gain': True
         }],
         remappings=[
