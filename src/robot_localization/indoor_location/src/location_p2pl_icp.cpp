@@ -1070,7 +1070,7 @@ public:
         // 3. 智能拦截逻辑
         // 如果主节点现在没有在迷失（use_reloc_ == false），而且匹配得分大于阈值
         if (!use_reloc_ && localizier3d->fitness_ > reloc_threshold_) {
-            if (diff_dist < 0.5) { // 主节点自行恢复且偏差小于0.5m，忽略ICP结果避免抖动
+            if (diff_dist < 0.1) { // 主节点自行恢复且偏差小于0.1m，忽略ICP结果避免抖动
                 RCLCPP_INFO(nh_->get_logger(),
                     "[initpose] 拒绝: 主节点已自行恢复且偏差很小(%.2fm < 0.5m)，忽略避免抖动",
                     diff_dist);
