@@ -147,7 +147,7 @@ def generate_launch_description():
     )
 
     # ========== Nav2 核心栈 ==========
-    
+
     # 使用 LaunchConfiguration 引用解析后的路径
     map_yaml_path = LaunchConfiguration('map_yaml_resolved')
 
@@ -296,8 +296,8 @@ def generate_launch_description():
         # 先执行路径解析
         resolve_map_action,
 
-        # 辅助节点
-        clear_costmap_caller_launch,
+        # 辅助节点 (已禁用: Ctrl+C 无法正确清理此子 launch 进程，且导航精度实验不需要定时清 costmap)
+        # clear_costmap_caller_launch,
 
         # Nav2 Nodes
         map_server_node,
