@@ -70,7 +70,8 @@ controller_server:
   ros__parameters:
     use_sim_time: false                           # 真实机器人设为 false
     odom_topic: odom                              # 订阅里程计的话题
-    controller_frequency: 10.0                    # 局部控制器的运行频率（10Hz = 每秒下发 10 次速度指令）
+    controller_frequency: 5.0                     # 局部控制器的运行频率（5Hz，定位节点 ICP 更新慢，降频避免 TF extrapolation）
+    transform_tolerance: 0.5                      # TF 转换时间容忍度：0.5 秒
     min_x_velocity_threshold: 0.001               # X轴线速度死区：指令低于 0.001 m/s 时直接当做 0 处理
     min_y_velocity_threshold: 0.0                 # Y轴线速度死区（差速车没有Y轴移动）
     min_theta_velocity_threshold: 0.001           # 角速度死区：低于 0.001 rad/s 当做 0 处理
@@ -94,18 +95,7 @@ controller_server:
 
     # --- 核心控制器逻辑配置 ---
     FollowPath:
-      plugin: "nav2_rotation_shim_controller::RotationShimController" # 包装器：先让差速车原地旋转对准路径，再往前走
-      primary_controller: "dwb_core::DWBLocalPlanner"                 # 真正的底层规划算法：DWB（动态窗口法）
-
-      # ---------- RotationShim (旋转垫片) 针对差速车的特殊参数 ----------
-      angular_dist_threshold: 0.785               # 开始旋转的阈值：当路线角度偏离车头 > 0.785弧度(45度)时，强制停车并原地旋转
-      angular_disengage_threshold: 0.3925         # 结束旋转的阈值：当角度偏差缩小到 0.3925弧度(22.5度)内时，退出纯旋转，开始边转边走
-      forward_sampling_distance: 0.35             # 往前看多远：取前方 0.35 米处的路径点来计算角度偏差
-      rotate_to_heading_angular_vel: 0.2          # 原地旋转阶段的角速度：0.2 rad/s
-      max_angular_accel: 0.5                      # 原地旋转阶段的最大角加速度：1.5 rad/s^2
-      simulate_ahead_time: 1.0                    # 碰撞检测：模拟预测未来 1.0 秒内的旋转会不会碰到障碍物
-      rotate_to_goal_heading: false               # 到达 XY 终点后，是否要用此插件单独原地旋转对准终点朝向（设为 false 则由 DWB 完成）
-      # -----------------------------------------------------------
+      plugin: "dwb_core::DWBLocalPlanner"                               # 直接使用 DWB，去掉 RotationShimController（后者 transformPoseToBaseFrame 硬编码 transform_timeout=0.1s 导致 TF extrapolation，且差速车不需要额外旋转层）
 
       # ---------- DWB 算法的核心参数 ----------
       use_dwa: true                               # 必须设为 true 以启用动态窗口法核心逻辑
@@ -125,18 +115,18 @@ controller_server:
       # --- 速度限制 ---
       min_vel_x: 0.0                              # 最小X向速度：0.0 表示绝对不允许倒车
       min_vel_y: 0.0                              # 最小Y向速度：差速车不能横移，必须为 0
-      max_vel_x: 0.50                             # 最大前进速度：0.5 米/秒
+      max_vel_x: 0.20                             # 最大前进速度：极度保守的安全速度 0.2 米/秒
       max_vel_y: 0.0                              # 最大Y向速度：0
-      max_vel_theta: 0.2                          # 最大旋转角速度：0.2 rad/s
-      min_vel_theta: -0.2                         # 最大反向旋转角速度：-0.2 rad/s
+      max_vel_theta: 0.5                          # 最大旋转角速度：0.5 rad/s (允许车身快速转弯)
+      min_vel_theta: -0.5                         # 最大反向旋转角速度：-0.5 rad/s
       min_speed_xy: 0.0                           # 机器人最小的绝对线速度限制
-      max_speed_xy: 0.6                           # 机器人最大的绝对线速度合量（大于 max_vel_x 作为硬上限）
+      max_speed_xy: 0.4                           # 机器人最大的绝对线速度合量（这里0.4大于max_vel_x，作为硬上限）
 
       # --- 加速度与减速度限制 ---
-      acc_lim_x: 0.2                              # X轴最大加速度：0.2 m/s^2
+      acc_lim_x: 0.2                              # X轴最大加速度：0.2 m/s^2 (起步缓慢平稳)
       acc_lim_y: 0.0                              # Y轴加速度：0
       acc_lim_theta: 1.0                          # 旋转角加速度：1.0 rad/s^2
-      decel_lim_x: -0.3                           # X轴最大减速度(刹车)：-0.3 m/s^2
+      decel_lim_x: -0.3                           # X轴最大减速度(刹车)：-0.3 m/s^2 (比加速猛一点，确保遇到障碍能刹住)
       decel_lim_y: 0.0                            # Y轴减速度：0
       decel_lim_theta: -1.5                       # 旋转角减速度：-1.5 rad/s^2
 
@@ -153,9 +143,9 @@ controller_server:
       stateful: true                              # 保持 DWB 内部状态
 
       # --- 评委权重配置 (scale 值越大，机器人越看重这个指标) ---
-      BaseObstacle.scale: 50.0                    # 避障权重：30.0。保证不会撞墙。
-      PathAlign.scale: 50.0                       # 贴合路径朝向的权重：高达 60.0。强制机器人车头必须顺着路径方向。
-      PathAlign.forward_point_distance: 0.5       # 计算 PathAlign 时，参考前方 0.5 米处的路径点
+      BaseObstacle.scale: 50.0                    # 避障权重：50.0。高于 PathAlign(30)，确保避障优先
+      PathAlign.scale: 30.0                       # 贴合路径朝向的权重：30.0。降低避免贴墙走
+      PathAlign.forward_point_distance: 0.3       # 计算 PathAlign 时，参考前方 0.3 米处的路径点（原 0.5 导致切弯过早）
       PathDist.scale: 10.0                        # 距离路径远近的权重：10.0。约束车不能偏离规划的线太远。
       GoalAlign.scale: 25.0                       # 局部目标朝向权重：25.0。
       GoalAlign.forward_point_distance: 0.24      # 计算 GoalAlign 时参考前方 0.24 米处。
@@ -219,15 +209,15 @@ local_costmap:
           data_type: "LaserScan"                  # 数据类型是 2D 激光雷达
           raytrace_max_range: 3.0                 # 清除空旷区域的最大射线距离：3.0 米 (此范围内的空间被视为安全)
           raytrace_min_range: 0.0                 # 清除的最小射线距离：0 米
-          obstacle_max_range: 2.5                 # 标记障碍物的最大有效距离：2.5 米以内的障碍物才写入代价地图
+          obstacle_max_range: 3.5                 # 标记障碍物的最大有效距离：3.5 米以内的障碍物写入代价地图
           obstacle_min_range: 0.0                 # 标记障碍物的最小有效距离
 
       # 图层3：膨胀层 (把障碍物往外扩一圈，防止机器人紧贴着墙走而发生物理刮蹭)
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         enabled: true
-        cost_scaling_factor: 2.5                  # 成本衰减系数。2.5 表示离开障碍物后，代价值下降得相对缓慢
-        inflation_radius: 0.40                    # 膨胀半径：0.40 米。任何距离障碍物小于 0.40 米的区域都会有高代价。
+        cost_scaling_factor: 5.0                  # 成本衰减系数：5.0。值越大，离开障碍物后代价下降越快，机器人更愿意远离障碍物
+        inflation_radius: 0.55                    # 膨胀半径：0.55 米（机器人半宽 0.32 + 0.23 安全余量）
 
       always_send_full_costmap: true              # 每次向外发布完整的地图，而不是增量更新（略微增加网络带宽，但更稳定）
 
@@ -265,14 +255,14 @@ global_costmap:
           data_type: "LaserScan"
           raytrace_max_range: 3.0
           raytrace_min_range: 0.0
-          obstacle_max_range: 2.5
+          obstacle_max_range: 3.5                 # 标记障碍物的最大有效距离：3.5 米
           obstacle_min_range: 0.0
-          
+
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         enabled: true
-        cost_scaling_factor: 3.0                  # 全局衰减系数 3.0 (比局部大，说明代价下降很快)
-        inflation_radius: 0.50                    # 全局膨胀半径 0.50 米 (大于局部的0.30)。这是一种巧妙的设计：全局规划时尽量让路径远离墙壁走在中间；但局部避障时允许靠墙近一点(0.30m)以穿过狭窄门框。
+        cost_scaling_factor: 5.0                  # 全局衰减系数 5.0
+        inflation_radius: 0.40                    # 全局膨胀半径 0.40 米。全局规划时让路径尽量远离障碍物
         
       always_send_full_costmap: true
 
@@ -297,7 +287,7 @@ planner_server:
     
     GridBased:
       plugin: "nav2_smac_planner/SmacPlanner2D"   # 选用 SmacPlanner2D 算法（比传统的 NavFn A* 更快、支持路径平滑）
-      tolerance: 0.3                              # 到达容差：如果终点被障碍物挡住了（或者离墙太近），允许在离终点 0.1 米的半径内寻找替代目标点
+      tolerance: 0.1                              # 到达容差：如果终点被障碍物挡住了（或者离墙太近），允许在离终点 0.1 米的半径内寻找替代目标点
       downsample_costmap: false                   # 是否对地图进行下采样（分辨率降低以提速）。false 表示保持原精度计算
       downsampling_factor: 1                      # 下采样倍率：1 表示不压缩
       allow_unknown: false                        # 是否允许规划出的路径穿过未建图的区域。false 绝对不允许
@@ -354,8 +344,8 @@ behavior_server:
     simulate_ahead_time: 2.0                      # 自救前，预测未来 2.0 秒的自救轨迹是否会撞击障碍物
     
     # --- 自救模式下的安全性限速 ---
-    max_rotational_vel: 0.2                       # 自救时的最大旋转速度：0.2 rad/s
-    min_rotational_vel: 0.2                       # 自救时的最小旋转速度：0.2 rad/s
+    max_rotational_vel: 0.3                       # 自救时的最大旋转速度：严格限制在 0.3 rad/s，避免乱转撞倒东西
+    min_rotational_vel: 0.2                       # 自救时的最小旋转速度：0.2 rad/s，保证有一定的脱困力度
     rotational_acc_lim: 0.3                       # 自救时的旋转角加速度：非常平缓的 0.3 rad/s^2
 
 # =======================================================================
@@ -385,10 +375,10 @@ velocity_smoother:
     feedback: "OPEN_LOOP"                         # 开环反馈模式（不依赖实际编码器测速做闭环修正，只过滤指令）
     
     # 速度与加速度的绝对红线：格式为 [X轴线速度, Y轴线速度, Theta角速度]
-    max_velocity: [0.5, 0.0, 0.2]                 # 指令上限：最高前进 0.5m/s, 不能平移, 最高旋转 0.2rad/s
+    max_velocity: [0.2, 0.0, 0.2]                 # 指令上限：最高前进 0.2m/s, 不能平移, 最高旋转 0.2rad/s
     min_velocity: [0.0, 0.0, -0.2]                # 指令下限：不允许倒车(0), 最高反向旋转 0.2rad/s
-    max_accel: [0.2, 0.0, 0.2]                    # 最大加速度限制
-    max_decel: [-0.2, 0.0, -0.2]                  # 最大减速度限制
+    max_accel: [0.2, 0.0, 0.2]                    # 最大加速度限制：极慢的加速起步
+    max_decel: [-0.2, 0.0, -0.2]                  # 最大减速度限制：平缓的刹车
     
     odom_topic: "odom"                            # 里程计话题，用于获取当前真实速度
     odom_duration: 0.1                            # 里程计超时判断时长

@@ -8,3 +8,8 @@ __pycache__/
 .claude/
 
 # ROS2 bags (large files)
+
+# Navigation online data
+nav_online_high/
+nav_online_low/
+nav_online_mid/
