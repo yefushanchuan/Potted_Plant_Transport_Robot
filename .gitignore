@@ -15,6 +15,3 @@ nav_online_low/
 nav_online_mid/
 
 # Navigation ground truth data
-nav_gt_high/
-nav_gt_low/
-nav_gt_mid/
