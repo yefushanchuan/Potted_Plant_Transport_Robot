@@ -11,6 +11,7 @@ bt_navigator:
     odom_topic: odom                              # 接收里程计数据的话题名称
     bt_loop_duration: 20                          # 行为树主循环的执行周期（单位：毫秒）。20ms = 50Hz 的控制频率
     default_server_timeout: 20                    # 调用其他Action服务器（如规划器、控制器）时的默认超时时间（单位：毫秒）
+    transform_tolerance: 0.5                      # TF 容忍时间：0.5 秒（默认 0.1 太小，容易 TF extrapolation）
 
     default_nav_to_pose_bt_xml: "robot_nav/config/navigation/navigate_to_pose.xml" # 默认单点导航行为树的物理文件路径
 
@@ -75,7 +76,7 @@ controller_server:
     min_y_velocity_threshold: 0.0                 # Y轴线速度死区（差速车没有Y轴移动）
     min_theta_velocity_threshold: 0.001           # 角速度死区：低于 0.001 rad/s 当做 0 处理
     failure_tolerance: 1.0                        # 容忍度：如果控制器超过 1.0 秒算不出结果，就向上级报错
-    progress_checker_plugins: ["progress_checker"]# 注册防卡死进度检查器插件名称
+    progress_checker_plugin: ["progress_checker"] # 注册防卡死进度检查器插件名称（Humble 用单数形式）
     goal_checker_plugins: ["goal_checker"]        # 注册目标到达检查器插件名称
     controller_plugins: ["FollowPath"]            # 注册局部规划算法插件的名称
 
@@ -105,6 +106,7 @@ controller_server:
       max_angular_accel: 0.5                      # 原地旋转阶段的最大角加速度：1.5 rad/s^2
       simulate_ahead_time: 1.0                    # 碰撞检测：模拟预测未来 1.0 秒内的旋转会不会碰到障碍物
       rotate_to_goal_heading: false               # 到达 XY 终点后，是否要用此插件单独原地旋转对准终点朝向（设为 false 则由 DWB 完成）
+      transform_tolerance: 0.5                    # DWB 控制器的 TF 容忍时间：0.5 秒（默认 0.1 太小）
       # -----------------------------------------------------------
 
       # ---------- DWB 算法的核心参数 ----------
@@ -317,6 +319,7 @@ planner_server:
 smoother_server:
   ros__parameters:
     use_sim_time: false
+    transform_tolerance: 0.5                      # TF 容忍时间：0.5 秒（默认 0.1 太小）
     smoother_plugins: ["simple_smoother"]         # 注册平滑插件
     simple_smoother:
       plugin: "nav2_smoother::SimpleSmoother"     # 使用默认的简单平滑器
