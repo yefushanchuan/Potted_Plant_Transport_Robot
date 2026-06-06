@@ -75,7 +75,7 @@ controller_server:
     min_x_velocity_threshold: 0.001               # X轴线速度死区：指令低于 0.001 m/s 时直接当做 0 处理
     min_y_velocity_threshold: 0.0                 # Y轴线速度死区（差速车没有Y轴移动）
     min_theta_velocity_threshold: 0.001           # 角速度死区：低于 0.001 rad/s 当做 0 处理
-    failure_tolerance: 1.0                        # 容忍度：如果控制器超过 1.0 秒算不出结果，就向上级报错
+    failure_tolerance: 3.0                        # 容忍度：如果控制器超过 3.0 秒算不出结果，就向上级报错
     progress_checker_plugin: ["progress_checker"] # 注册防卡死进度检查器插件名称（Humble 用单数形式）
     goal_checker_plugins: ["goal_checker"]        # 注册目标到达检查器插件名称
     controller_plugins: ["FollowPath"]            # 注册局部规划算法插件的名称
