@@ -852,13 +852,14 @@ public:
         q.setRPY(pose.orient(0), pose.orient(1), pose.orient(2));
         map_to_base_tf.setRotation(q);
 
-        rclcpp::Time stamp = getTime(time);
+        rclcpp::Time stamp_lookup = getTime(time);       // 传感器时间，用于 odometry 查询
+        rclcpp::Time stamp_output = nh_->now();           // 当前时间，用于 TF 发布
 
         if (!enable_map_odom_tf_) {
             geometry_msgs::msg::TransformStamped transformStamped;
             transformStamped.header.frame_id    = frame_id;
             transformStamped.child_frame_id     = child_frame;
-            transformStamped.header.stamp       = stamp;
+            transformStamped.header.stamp       = stamp_output;
             transformStamped.transform.translation.x = pose.pos(0);
             transformStamped.transform.translation.y = pose.pos(1);
             transformStamped.transform.translation.z = pose.pos(2);
@@ -871,7 +872,7 @@ public:
         } else {
             try {
                 geometry_msgs::msg::TransformStamped odom_to_base_msg = 
-                    tf_buffer_->lookupTransform(odom_frame_, base_frame_, stamp, 
+                    tf_buffer_->lookupTransform(odom_frame_, base_frame_, stamp_lookup, 
                                                 rclcpp::Duration::from_seconds(0.1));
                 
                 tf2::Transform odom_to_base_tf;
@@ -882,7 +883,7 @@ public:
                 has_last_map_to_odom_tf_ = true;
                 
                 geometry_msgs::msg::TransformStamped map_to_odom_stamped;
-                map_to_odom_stamped.header.stamp       = stamp;
+                map_to_odom_stamped.header.stamp       = stamp_output;
                 map_to_odom_stamped.header.frame_id    = map_frame_;
                 map_to_odom_stamped.child_frame_id     = odom_frame_;
                 map_to_odom_stamped.transform          = tf2::toMsg(map_to_odom_tf);
@@ -899,7 +900,7 @@ public:
 
                 if (has_last_map_to_odom_tf_) {
                     geometry_msgs::msg::TransformStamped map_to_odom_stamped;
-                    map_to_odom_stamped.header.stamp       = stamp;
+                    map_to_odom_stamped.header.stamp       = stamp_output;
                     map_to_odom_stamped.header.frame_id    = map_frame_;
                     map_to_odom_stamped.child_frame_id     = odom_frame_;
                     map_to_odom_stamped.transform          = tf2::toMsg(last_map_to_odom_tf_);
