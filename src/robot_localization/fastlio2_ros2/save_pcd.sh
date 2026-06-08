@@ -49,7 +49,7 @@ mkdir -p "${out_dir}"
 echo "Requesting Map Save to: ${out_dir} ..."
 
 # 调用 ROS 2 服务并捕获输出
-RESPONSE=$(ros2 service call /pgo/save_maps interface/srv/SaveMaps "{file_path: '${out_dir}', save_patches: false}")
+RESPONSE=$(ros2 service call /pgo/save_maps interface/srv/SaveMaps "{file_path: '${out_dir}', save_patches: true}")
 
 # 打印出服务返回的信息
 echo "$RESPONSE"
