@@ -1,0 +1,96 @@
+###############cloud preprocess############
+lidar_type: "livox"        #雷达类型: "livox" 或 "rs16"
+filter_leaf_size: 0.6      #输入定位系统的点云体素滤波体素大小
+min_range: 0.6             #建图盲区blind用的就是0.6，相当于球面过滤的半径0.6米
+max_range: 30.0
+N_SCANS: 4
+
+limit_angle_min: -180.0
+limit_angle_max: 180.0
+
+#surf_threshold: 0.1
+
+lidar_topic: "/livox/lidar"        #激光雷达话题
+
+pub_cloud_topic: "/deskew_cloud"              #去畸变点云话题
+
+###############cloud preprocess############
+
+###################location################
+use_reloc: true                               #是否使用重定位
+imu_scale: 9.81                               #IMU加速度计比例因子
+reloc_threshold: 0.80                         #重定位阈值，fitness低于此值触发重定位
+map_filtr_leaf_size: 0.3                      #定位线程使用的全局地图滤波体素大小，使用配p2picp算法不能太大，不然拟合平面内找不到邻域点（p2picp 0.3,ndt 0.5）
+enable_undistort: true                        #是否启用点云去畸变功能（使用IMU进行运动补偿）
+
+map_frame    : "map"                          #发布定位系统tf发布所需的坐标系
+odom_frame   : "odom"                         #里程计坐标系（用于 Nav2 导航）
+base_frame   : "base_footprint"               #改为 base_footprint 以匹配 URDF 的根坐标系
+lidar_frame  : "front_laser_link"               #激光雷达坐标系
+imu_frame    : "imu_link"                         #IMU坐标系
+
+# TF 发布模式：
+#   enable_map_odom_tf: true  -> 发布 map→odom TF（需要 diff_drive_controller 发布 odom→base_footprint）
+# enable_map_odom_tf: false # -> 直接发布 map→base_footprint TF（不使用里程计）
+enable_map_odom_tf: true                       #启用 map→odom TF 发布（用于 Nav2 导航）
+
+# 发布前位姿重估（仅用于发布链路，抑制定位侧 map->odom 抖动）
+pose_refine_enable: true
+pose_refine_force_accept_reloc: true           # 重定位成功后允许一次大跳变直接接入
+pose_refine_gate_xy_m: 0.25
+pose_refine_gate_yaw_rad: 0.35
+pose_refine_k_xy_move: 0.25
+pose_refine_k_yaw_move: 0.20
+pose_refine_k_xy_static: 0.05
+pose_refine_k_yaw_static: 0.04
+pose_refine_static_v_th: 0.03
+pose_refine_static_w_th: 0.05
+pose_refine_tf_lookup_timeout_sec: 0.08
+
+wait_for_initial_pose: true                   #开机不自己跟踪，等待外部节点注入初始位姿
+
+init_x: 0.0                                   #定位系统输入的初始化位姿
+init_y: 0.0
+init_z: 0.0
+init_roll: 0.0
+init_pitch: 0.0
+init_yaw: 0.0
+
+map_filename: ""                               #点云地图名称(使用绝对路径)
+map_pub_topic: "/pcd_map"                      #发布全局pcd点云地图话题数据
+
+imu_topic: "/imu"                              #IMU话题
+cmd_topic: "/loc_cmd"                          #定位指令话题
+init_pose_topic: "/icp_pose"
+reloc_pose_topic: "/relocalization_pose"      #全局重定位位姿话题（新节点 dual_descriptor）
+call_pub_topic: "/initialpose"                 #求救发布话题
+pose_pub_topic: "/agv_pose"                    #发布定位位姿话题数据,这里的位姿是基于base_link的位姿（注意不是基于laser_link的位姿）
+loc_status_topic: "/localization_status"       #发布定位状态话题数据，0：正常定位，1：表示迷失 / 正在重定位
+
+#p2pl_icp location
+plane_threshold: 0.3     #0.4 构建的平面点与当前位姿邻域点的阈值，说白了就是判断当前点是否在平面内
+opt_correspondences_threshold_normal: 0.6       #正常跟踪对应距离(平方)，0.77m
+opt_correspondences_threshold_relocation: 1.0   #重定位对应距离(平方)，1.00m，无IMU需更大范围
+opt_max_iteration: 2 #匹配迭代次数
+thread_num: 4
+
+#ndt location
+ndt_max_iteration: 3 #最大迭代次数
+ndt_voxel_size: 0.5 #体素大小 #0.5 好像1.0最优
+ndt_min_effective_pts: 10 #最近邻点数阈值
+ndt_min_pts_in_voxel: 3 #每个栅格中最小点数 default：3
+ndt_eps: 0.01 #收敛判定条件  #0.01
+ndt_res_outlier_th: 20.0 #异常值拒绝阈值
+ndt_remove_centroid: false #是否计算两个点云中心并移除中心？
+ndt_nearby_type: 0 #临近栅格模式 0： 只有本栅格 | 1：附近六个栅格
+ndt_thread_num: 4
+map_grid_resoltion: 30.0
+
+
+###################location################
+
+###################测试参数################
+force_lost_offset_x: -0.2   #force_lost 命令的 X 偏移量(米)，地图XY与实际相反
+force_lost_offset_y: 3.0    #force_lost 命令的 Y 偏移量(米)，沿走廊方向偏移3m
+force_lost_offset_yaw: 30.0 #force_lost 命令的 yaw 偏移量(度)，需超出重定位yaw搜索范围(±20°)
+###################测试参数################
