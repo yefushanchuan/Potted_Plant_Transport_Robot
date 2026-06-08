@@ -88,6 +88,7 @@ public:
     rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr                            imu_sub_;
     rclcpp::Subscription<std_msgs::msg::String>::SharedPtr                            cmd_sub_;
     rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr    init_pose_sub_;
+    rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr    reloc_pose_sub_;
 
     // tf 广播器和监听器
     std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
@@ -158,6 +159,9 @@ public:
     double imu_scale_          = 0.0;
     int    reloc_fail_count_   = 0;      // 连续低于阈值的帧数
     static constexpr int RELOC_HELP_DELAY = 10; // 连续多少帧才呼叫副节点
+
+    bool   wait_for_initial_pose_ = false;   // 是否等待外部注入初始位姿再开始处理
+    bool   has_received_initial_pose_ = false; // 是否已收到外部初始位姿
 
     double force_lost_offset_x_ = 0.5;
     double force_lost_offset_y_ = 0.3;
@@ -315,6 +319,10 @@ public:
                     pose_refine_gate_xy_m_, pose_refine_gate_yaw_rad_,
                     pose_refine_k_xy_move_, pose_refine_k_yaw_move_, 
                     pose_refine_k_xy_static_, pose_refine_k_yaw_static_);
+
+        wait_for_initial_pose_ = config["wait_for_initial_pose"] ?
+                                 config["wait_for_initial_pose"].as<bool>() : false;
+        RCLCPP_INFO(nh_->get_logger(), "[InitPose] wait_for_initial_pose=%d", wait_for_initial_pose_);
 
         // ========== 新的 TF 外参逻辑 ==========
         lidar_frame_ = config["lidar_frame"] ? config["lidar_frame"].as<std::string>() : "livox_frame";
@@ -482,6 +490,12 @@ public:
         init_pose_sub_ = nh_->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
             init_pose_topic, 1, std::bind(&location::initpose_cb, this, std::placeholders::_1));
         RCLCPP_INFO(nh_->get_logger(), "监听外部高精度位姿话题: %s", init_pose_topic.c_str());
+
+        std::string reloc_pose_topic = config["reloc_pose_topic"] ?
+                                       config["reloc_pose_topic"].as<std::string>() : "/relocalization_pose";
+        reloc_pose_sub_ = nh_->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
+            reloc_pose_topic, 1, std::bind(&location::initpose_cb, this, std::placeholders::_1));
+        RCLCPP_INFO(nh_->get_logger(), "监听全局重定位位姿话题: %s", reloc_pose_topic.c_str());
 
         std::string map_pub_topic_ = config["map_pub_topic"].as<std::string>();
         pc_map_pub_ = nh_->create_publisher<sensor_msgs::msg::PointCloud2>(
@@ -1106,6 +1120,7 @@ public:
         target_global_pose_.vel << 0.0, 0.0, 0.0;
         
         has_new_global_pose_ = true;
+        has_received_initial_pose_ = true;
     }
 
     // 状态命令反馈
@@ -1327,7 +1342,20 @@ public:
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
                 continue;
             }
-            
+
+            if (wait_for_initial_pose_ && !has_received_initial_pose_) {
+                {
+                    std::lock_guard<std::mutex> imu_lock(m_state_data.imu_mutex);
+                    m_state_data.imu_buffer.clear();
+                }
+                {
+                    std::lock_guard<std::mutex> lidar_lock(m_state_data.lidar_mutex);
+                    m_state_data.lidar_buffer.clear();
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                continue;
+            }
+
             {
                 std::unique_lock<std::mutex> lock(process_mutex_);
                 

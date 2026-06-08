@@ -47,7 +47,11 @@ ament_target_dependencies(dual_descriptor_node
   pcl_conversions
 )
 
-install(TARGETS dual_descriptor_node
+# 关键帧离线提取工具（仅 PCL + Eigen，不依赖 ROS）
+add_executable(kf_extract tools/kf_extract.cpp)
+target_link_libraries(kf_extract ${PCL_LIBRARIES} Eigen3::Eigen)
+
+install(TARGETS dual_descriptor_node kf_extract
   DESTINATION lib/${PROJECT_NAME}
 )
 

@@ -24,13 +24,15 @@
     sc_bev_z_min: 0.1         # SC 投影 z 下界（只排除地面，保留高度信息）
 
     # ── 搜索参数 ──
-    num_candidates: 3         # 每个描述子搜索的候选数
+    top_k: 10                 # 全量余弦扫描后取 top-K 进 ICP
+    polar_cc_search_bins: 18  # Polar 互相关窗口半径 (总窗口 37 bins = 37°)
+    sc_weight: 1.0            # SC 列对齐分数权重 (sim = sc_w×sc_score + fft_w×fft_sim)
+    fft_weight: 1.0           # FFT 余弦分数权重
 
     # ── 服务参数 ──
-    trigger_service_name: "/relocalization_trigger"  # 触发服务名称
+    trigger_service_name: "/relocalization_trigger"
 
     # ── ICP 参数 ──
     icp_resolutions: [1.0, 0.5, 0.2]  # 多分辨率（从粗到精）
     icp_iterations: 5                  # 每层迭代次数
-    icp_max_corr_dist: 1.0             # 最大对应距离
     icp_fitness_threshold: 0.5         # fitness 阈值（小于该值才接受）
