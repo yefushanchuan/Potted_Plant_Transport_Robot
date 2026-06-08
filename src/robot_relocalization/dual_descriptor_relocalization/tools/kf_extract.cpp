@@ -290,12 +290,19 @@ int main(int argc, char **argv) {
     std::ofstream meta_f(meta_path, std::ios::binary);
 
     uint32_t count = keyframes.size();
+    int32_t sc_ring_out = 20, sc_sector_out = 60;
+    float sc_max_radius_out = static_cast<float>(crop_radius);
+
+    uint32_t magic = 0x44445343;  // "DDSC"
+    meta_f.write(reinterpret_cast<const char *>(&magic), sizeof(magic));
     meta_f.write(reinterpret_cast<const char *>(&count), sizeof(count));
     meta_f.write(reinterpret_cast<const char *>(&ring_bins), sizeof(ring_bins));
+    meta_f.write(reinterpret_cast<const char *>(&sc_ring_out), sizeof(sc_ring_out));
+    meta_f.write(reinterpret_cast<const char *>(&sc_sector_out), sizeof(sc_sector_out));
+    meta_f.write(reinterpret_cast<const char *>(&sc_max_radius_out), sizeof(sc_max_radius_out));
 
     for (size_t i = 0; i < keyframes.size(); i++) {
         const auto &kf = keyframes[i];
-        // 位姿
         meta_f.write(reinterpret_cast<const char *>(&kf.x), sizeof(double));
         meta_f.write(reinterpret_cast<const char *>(&kf.y), sizeof(double));
         meta_f.write(reinterpret_cast<const char *>(&kf.z), sizeof(double));
@@ -303,43 +310,14 @@ int main(int argc, char **argv) {
         meta_f.write(reinterpret_cast<const char *>(&kf.qx), sizeof(double));
         meta_f.write(reinterpret_cast<const char *>(&kf.qy), sizeof(double));
         meta_f.write(reinterpret_cast<const char *>(&kf.qz), sizeof(double));
-        // 环特征
-        meta_f.write(reinterpret_cast<const char *>(kf.ring.data()),
-                     ring_bins * sizeof(float));
-    }
-    meta_f.close();
-
-    // 保存 V2 元数据 (dual_descriptor_relocalization 使用)
-    std::string v2_path = output_dir + "/keyframes_v2.bin";
-    std::ofstream v2_f(v2_path, std::ios::binary);
-
-    uint32_t magic = 0x44445343;  // "DDSC"
-    int32_t sc_ring_out = 20, sc_sector_out = 60;
-    float sc_max_radius_out = static_cast<float>(crop_radius);
-    v2_f.write(reinterpret_cast<const char *>(&magic), sizeof(magic));
-    v2_f.write(reinterpret_cast<const char *>(&count), sizeof(count));
-    v2_f.write(reinterpret_cast<const char *>(&ring_bins), sizeof(ring_bins));
-    v2_f.write(reinterpret_cast<const char *>(&sc_ring_out), sizeof(sc_ring_out));
-    v2_f.write(reinterpret_cast<const char *>(&sc_sector_out), sizeof(sc_sector_out));
-    v2_f.write(reinterpret_cast<const char *>(&sc_max_radius_out), sizeof(sc_max_radius_out));
-
-    for (size_t i = 0; i < keyframes.size(); i++) {
-        const auto &kf = keyframes[i];
-        v2_f.write(reinterpret_cast<const char *>(&kf.x), sizeof(double));
-        v2_f.write(reinterpret_cast<const char *>(&kf.y), sizeof(double));
-        v2_f.write(reinterpret_cast<const char *>(&kf.z), sizeof(double));
-        v2_f.write(reinterpret_cast<const char *>(&kf.qw), sizeof(double));
-        v2_f.write(reinterpret_cast<const char *>(&kf.qx), sizeof(double));
-        v2_f.write(reinterpret_cast<const char *>(&kf.qy), sizeof(double));
-        v2_f.write(reinterpret_cast<const char *>(&kf.qz), sizeof(double));
-        v2_f.write(reinterpret_cast<const char *>(kf.polar_fft_mag.data()),
+        meta_f.write(reinterpret_cast<const char *>(kf.polar_fft_mag.data()),
                    (ring_bins / 2) * sizeof(float));
-        v2_f.write(reinterpret_cast<const char *>(kf.polar_raw.data()),
+        meta_f.write(reinterpret_cast<const char *>(kf.polar_raw.data()),
                    ring_bins * sizeof(float));
-        v2_f.write(reinterpret_cast<const char *>(kf.sc_matrix.data()),
+        meta_f.write(reinterpret_cast<const char *>(kf.sc_matrix.data()),
                    sc_ring_out * sc_sector_out * sizeof(float));
     }
-    v2_f.close();
+    meta_f.close();
 
     // 保存点云
     for (size_t i = 0; i < keyframes.size(); i++) {
@@ -360,8 +338,7 @@ int main(int argc, char **argv) {
     poses_f.close();
 
     std::cout << "\n关键帧数据库已保存到: " << output_dir << "\n"
-              << "  keyframes.bin       V1元数据（位姿+环特征, polar_icp 使用）\n"
-              << "  keyframes_v2.bin    V2元数据（位姿+SC+FFT, dual_descriptor 使用）\n"
+              << "  keyframes.bin       元数据（位姿+SC+FFT）\n"
               << "  keyframe_poses.txt  位姿文本\n"
               << "  clouds/*.pcd        各关键帧点云\n";
 
