@@ -127,7 +127,7 @@ void DualDescriptorNode::loadParameters() {
 void DualDescriptorNode::loadKeyframeDatabase() {
     if (keyframe_db_path_.empty()) {
         RCLCPP_ERROR(this->get_logger(), "keyframe_db path is empty!");
-        return;
+        throw std::runtime_error("keyframe_db path is empty!");
     }
 
     namespace fs = std::filesystem;
@@ -136,13 +136,13 @@ void DualDescriptorNode::loadKeyframeDatabase() {
 
     if (!fs::exists(v2_path)) {
         RCLCPP_ERROR(this->get_logger(), "keyframes_v2.bin not found: %s", v2_path.c_str());
-        return;
+        throw std::runtime_error("keyframes_v2.bin not found: " + v2_path);
     }
 
     std::ifstream f(v2_path, std::ios::binary);
     if (!f.is_open()) {
         RCLCPP_ERROR(this->get_logger(), "Cannot open %s", v2_path.c_str());
-        return;
+        throw std::runtime_error("Cannot open: " + v2_path);
     }
 
     uint32_t magic = 0, count = 0;
@@ -151,7 +151,7 @@ void DualDescriptorNode::loadKeyframeDatabase() {
     f.read(reinterpret_cast<char*>(&magic), sizeof(magic));
     if (magic != 0x44445343) {
         RCLCPP_ERROR(this->get_logger(), "Invalid magic: 0x%X", magic);
-        return;
+        throw std::runtime_error("Invalid keyframe database format");
     }
     f.read(reinterpret_cast<char*>(&count), sizeof(count));
     f.read(reinterpret_cast<char*>(&file_ring_bins), sizeof(file_ring_bins));
