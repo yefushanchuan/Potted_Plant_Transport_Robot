@@ -25,10 +25,12 @@ DualDescriptorNode::DualDescriptorNode(const rclcpp::NodeOptions& options)
     tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
     // 定时获取静态 TF
-    rclcpp::TimerBase::SharedPtr init_tf_timer;
-    init_tf_timer = this->create_wall_timer(
+    init_tf_timer_ = this->create_wall_timer(
         std::chrono::milliseconds(500),
-        [this, init_tf_timer]() {
+        [this]() {
+            RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                                 "Trying to get TF: %s -> %s",
+                                 base_frame_id_.c_str(), laser_frame_id_.c_str());
             try {
                 auto tf = tf_buffer_->lookupTransform(
                     base_frame_id_, laser_frame_id_, tf2::TimePointZero);
@@ -45,10 +47,18 @@ DualDescriptorNode::DualDescriptorNode(const rclcpp::NodeOptions& options)
                 has_sensor_tf_ = true;
                 RCLCPP_INFO(this->get_logger(), "Got static TF: %s -> %s",
                             base_frame_id_.c_str(), laser_frame_id_.c_str());
-                init_tf_timer->cancel();
+                init_tf_timer_->cancel();
             } catch (tf2::TransformException& ex) {
+                // 打印详细的 TF 错误信息
                 RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
-                                     "Waiting for static TF: %s", ex.what());
+                                     "TF lookup failed: %s -> %s: %s",
+                                     base_frame_id_.c_str(), laser_frame_id_.c_str(), ex.what());
+                // 检查 TF buffer 中有哪些 frames
+                std::vector<std::string> frames = tf_buffer_->getAllFrameNames();
+                std::string all_frames;
+                for (const auto& f : frames) all_frames += f + " ";
+                RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                                     "Available frames: [%s]", all_frames.c_str());
             }
         });
 
@@ -105,7 +115,6 @@ void DualDescriptorNode::loadParameters() {
 
     // 搜索参数
     top_k_ = this->declare_parameter("top_k", 10);
-    polar_cc_search_bins_ = this->declare_parameter("polar_cc_search_bins", 18);
     sc_weight_ = this->declare_parameter("sc_weight", 1.0f);
     fft_weight_ = this->declare_parameter("fft_weight", 1.0f);
 
@@ -130,19 +139,27 @@ void DualDescriptorNode::loadKeyframeDatabase() {
         throw std::runtime_error("keyframe_db path is empty!");
     }
 
-    namespace fs = std::filesystem;
-    std::string v2_path = keyframe_db_path_ + "/keyframes_v2.bin";
-    std::string clouds_dir = keyframe_db_path_ + "/clouds";
-
-    if (!fs::exists(v2_path)) {
-        RCLCPP_ERROR(this->get_logger(), "keyframes_v2.bin not found: %s", v2_path.c_str());
-        throw std::runtime_error("keyframes_v2.bin not found: " + v2_path);
+    // 展开 ~ 为 home 目录
+    if (keyframe_db_path_.size() > 0 && keyframe_db_path_[0] == '~') {
+        const char* home = std::getenv("HOME");
+        if (home) {
+            keyframe_db_path_ = std::string(home) + keyframe_db_path_.substr(1);
+        }
     }
 
-    std::ifstream f(v2_path, std::ios::binary);
+    namespace fs = std::filesystem;
+    std::string bin_path = keyframe_db_path_ + "/keyframes.bin";
+    std::string clouds_dir = keyframe_db_path_ + "/clouds";
+
+    if (!fs::exists(bin_path)) {
+        RCLCPP_ERROR(this->get_logger(), "keyframes.bin not found: %s", bin_path.c_str());
+        throw std::runtime_error("keyframes.bin not found: " + bin_path);
+    }
+
+    std::ifstream f(bin_path, std::ios::binary);
     if (!f.is_open()) {
-        RCLCPP_ERROR(this->get_logger(), "Cannot open %s", v2_path.c_str());
-        throw std::runtime_error("Cannot open: " + v2_path);
+        RCLCPP_ERROR(this->get_logger(), "Cannot open %s", bin_path.c_str());
+        throw std::runtime_error("Cannot open: " + bin_path);
     }
 
     uint32_t magic = 0, count = 0;
@@ -159,7 +176,7 @@ void DualDescriptorNode::loadKeyframeDatabase() {
     f.read(reinterpret_cast<char*>(&file_sc_sector), sizeof(file_sc_sector));
     f.read(reinterpret_cast<char*>(&file_sc_max_radius), sizeof(file_sc_max_radius));
 
-    RCLCPP_INFO(this->get_logger(), "V2: %u keyframes, ring=%d sc=[%dx%d] sc_radius=%.1f",
+    RCLCPP_INFO(this->get_logger(), "DB loaded: %u keyframes, ring=%d sc=[%dx%d] sc_radius=%.1f",
                 count, file_ring_bins, file_sc_ring, file_sc_sector, file_sc_max_radius);
 
     if (file_ring_bins != polar_bins_) {
@@ -198,11 +215,6 @@ void DualDescriptorNode::loadKeyframeDatabase() {
         kf.polar_fft_mag.resize(fft_size);
         f.read(reinterpret_cast<char*>(kf.polar_fft_mag.data()),
                fft_size * sizeof(float));
-
-        // Polar 原始 ring (离线, 互相关用)
-        kf.polar_raw.resize(polar_bins_);
-        f.read(reinterpret_cast<char*>(kf.polar_raw.data()),
-               polar_bins_ * sizeof(float));
 
         // SC 完整矩阵 (离线, 列对齐用)
         int sc_flat_size = file_sc_ring * file_sc_sector;
@@ -273,10 +285,10 @@ SCMatrix DualDescriptorNode::extractSCMatrix(const CloudT::Ptr& cloud) const {
         if (rho > sc_max_radius_) continue;
 
         float theta = std::atan2(pt.y, pt.x);
-        float theta_deg = (theta * 180.0f / M_PI + 180.0f);  // [0, 360)
+        if (theta < 0) theta += 2.0f * M_PI;  // [0, 2π)
 
         int ring_idx = std::min(sc_num_ring_ - 1, static_cast<int>(rho / sc_max_radius_ * sc_num_ring_));
-        int sector_idx = std::min(sc_num_sector_ - 1, static_cast<int>(theta_deg / 360.0f * sc_num_sector_));
+        int sector_idx = std::min(sc_num_sector_ - 1, static_cast<int>(theta / (2.0f * M_PI) * sc_num_sector_));
 
         if (pt.z > sc.matrix(ring_idx, sector_idx)) {
             sc.matrix(ring_idx, sector_idx) = pt.z;  // 保留最大高度
@@ -313,46 +325,6 @@ int DualDescriptorNode::scColumnAlign(const Eigen::MatrixXf& src,
 }
 
 // ══════════════════════════════════════════════════════════════
-//  PolarRing 互相关求精 yaw
-// ══════════════════════════════════════════════════════════════
-
-int DualDescriptorNode::polarCrossCorrYaw(const std::vector<float>& src,
-                                           const std::vector<float>& tgt,
-                                           int coarse_bin, int window_bins,
-                                           float& best_corr) const {
-    best_corr = -1e9f;
-    int best_s = 0;
-    int start = coarse_bin - window_bins;
-    int end   = coarse_bin + window_bins;
-    for (int s = start; s <= end; s++) {
-        float corr = 0.0f;
-        int shift = (s % polar_bins_ + polar_bins_) % polar_bins_;
-        for (int j = 0; j < polar_bins_; j++) {
-            corr += src[j] * tgt[(j + shift) % polar_bins_];
-        }
-        if (corr > best_corr) { best_corr = corr; best_s = s; }
-    }
-    return ((best_s % polar_bins_) + polar_bins_) % polar_bins_;
-}
-
-// ══════════════════════════════════════════════════════════════
-//  BEV 质心 (平移估计)
-// ══════════════════════════════════════════════════════════════
-
-Eigen::Vector2f DualDescriptorNode::bevCentroid(const CloudT::Ptr& cloud,
-                                                  float zmin, float zmax) const {
-    Eigen::Vector2f sum(0, 0);
-    int cnt = 0;
-    for (const auto& pt : cloud->points) {
-        if (pt.z >= zmin && pt.z <= zmax) {
-            sum += Eigen::Vector2f(pt.x, pt.y);
-            cnt++;
-        }
-    }
-    return cnt > 0 ? sum / cnt : Eigen::Vector2f(0, 0);
-}
-
-// ══════════════════════════════════════════════════════════════
 //  FFT 幅度提取 (在线)
 // ══════════════════════════════════════════════════════════════
 
@@ -380,45 +352,49 @@ float DualDescriptorNode::icpRefine(const CloudT::Ptr& source, const CloudT::Ptr
                                      const Eigen::Matrix4f& init_guess) const {
     if (source->empty() || target->empty()) return 1e6f;
 
-    // 多分辨率 ICP
-    Eigen::Matrix4f T = init_guess;
+        // 多分辨率 ICP
+        Eigen::Matrix4f T = init_guess;
 
-    for (size_t res_idx = 0; res_idx < icp_resolutions_.size(); res_idx++) {
-        float resolution = icp_resolutions_[res_idx];
+        // 每级对应不同 correspondence 距离
+        std::vector<float> max_corr_dists = {5.0f, 2.0f, 1.0f};
 
-        // 体素降采样
-        pcl::VoxelGrid<PointT> voxel;
-        voxel.setLeafSize(resolution, resolution, resolution);
+        for (size_t res_idx = 0; res_idx < icp_resolutions_.size(); res_idx++) {
+            float resolution = icp_resolutions_[res_idx];
+            float max_corr = max_corr_dists[std::min(res_idx, max_corr_dists.size() - 1)];
 
-        CloudT::Ptr src_filtered(new CloudT);
-        CloudT::Ptr tgt_filtered(new CloudT);
-        voxel.setInputCloud(source);
-        voxel.filter(*src_filtered);
-        voxel.setInputCloud(target);
-        voxel.filter(*tgt_filtered);
+            // 体素降采样
+            pcl::VoxelGrid<PointT> voxel;
+            voxel.setLeafSize(resolution, resolution, resolution);
 
-        if (src_filtered->empty() || tgt_filtered->empty()) continue;
+            CloudT::Ptr src_filtered(new CloudT);
+            CloudT::Ptr tgt_filtered(new CloudT);
+            voxel.setInputCloud(source);
+            voxel.filter(*src_filtered);
+            voxel.setInputCloud(target);
+            voxel.filter(*tgt_filtered);
 
-        // ICP
-        pcl::IterativeClosestPoint<PointT, PointT> icp;
-        icp.setInputSource(src_filtered);
-        icp.setInputTarget(tgt_filtered);
-        icp.setMaxCorrespondenceDistance(resolution * 2.0f);
-        icp.setMaximumIterations(icp_iterations_);
-        icp.setTransformationEpsilon(1e-6);
-        icp.setEuclideanFitnessEpsilon(1e-6);
+            if (src_filtered->empty() || tgt_filtered->empty()) continue;
 
-        CloudT aligned;
-        icp.align(aligned, T);
+            // ICP
+            pcl::IterativeClosestPoint<PointT, PointT> icp;
+            icp.setInputSource(src_filtered);
+            icp.setInputTarget(tgt_filtered);
+            icp.setMaxCorrespondenceDistance(max_corr);
+            icp.setMaximumIterations(icp_iterations_);
+            icp.setTransformationEpsilon(1e-6);
+            icp.setEuclideanFitnessEpsilon(1e-6);
 
-        if (icp.hasConverged()) {
-            T = icp.getFinalTransformation();
-            RCLCPP_DEBUG(this->get_logger(), "ICP res=%.2f converged, fitness=%.4f",
-                         resolution, icp.getFitnessScore());
-        } else {
-            RCLCPP_DEBUG(this->get_logger(), "ICP res=%.2f NOT converged", resolution);
+            CloudT aligned;
+            icp.align(aligned, T);
+
+            if (icp.hasConverged()) {
+                T = icp.getFinalTransformation();
+                RCLCPP_DEBUG(this->get_logger(), "ICP res=%.2f corr=%.1f converged, fitness=%.4f",
+                             resolution, max_corr, icp.getFitnessScore());
+            } else {
+                RCLCPP_DEBUG(this->get_logger(), "ICP res=%.2f corr=%.1f NOT converged", resolution, max_corr);
+            }
         }
-    }
 
     result = T;
     float fitness = 0.0f;
@@ -498,6 +474,7 @@ void DualDescriptorNode::pointcloudCallback(const sensor_msgs::msg::PointCloud2:
 
         Candidate c;
         c.keyframe_id = i;
+        c.fft_sim = fft_sim;
         c.combined_sim = sc_weight_ * sc_score + fft_weight_ * fft_sim;
         c.sc_best_shift = best_shift;
         c.sc_align_score = sc_score;
@@ -507,6 +484,26 @@ void DualDescriptorNode::pointcloudCallback(const sensor_msgs::msg::PointCloud2:
     if (candidates.empty()) {
         RCLCPP_WARN(this->get_logger(), "No valid keyframes");
         return;
+    }
+
+    // ── DEBUG: 打印所有关键帧的得分和位置 ──
+    RCLCPP_INFO(this->get_logger(), "===== ALL KEYFRAME SCORES (%zu total) =====", candidates.size());
+    for (size_t i = 0; i < keyframes_.size(); i++) {
+        if (!keyframes_[i].cloud || keyframes_[i].cloud->empty()) continue;
+        // 找到对应候选
+        float sc = 0, fft = 0, csim = 0;
+        int shift = 0;
+        for (auto& cnd : candidates) {
+            if (cnd.keyframe_id == static_cast<int>(i)) {
+                sc = cnd.sc_align_score; fft = cnd.fft_sim; csim = cnd.combined_sim; shift = cnd.sc_best_shift;
+                break;
+            }
+        }
+        RCLCPP_INFO(this->get_logger(), "  kf_%d pos=(%7.2f,%7.2f) yaw=%6.1f° sc=%.4f fft=%.4f combined=%.4f shift=%d",
+                     static_cast<int>(i),
+                     keyframes_[i].pose(0,3), keyframes_[i].pose(1,3),
+                     std::atan2(keyframes_[i].pose(1,0), keyframes_[i].pose(0,0)) * 180.0f / M_PI,
+                     sc, fft, csim, shift);
     }
 
     // 按 combined_sim 降序排序
@@ -519,20 +516,22 @@ void DualDescriptorNode::pointcloudCallback(const sensor_msgs::msg::PointCloud2:
         candidates.resize(top_k_);
     }
 
-    RCLCPP_DEBUG(this->get_logger(), "=== Relocalization start: %zu keyframes, top-%d candidates ===",
-                 keyframes_.size(), static_cast<int>(candidates.size()));
+    RCLCPP_INFO(this->get_logger(), "===== TOP-%d CANDIDATES =====", static_cast<int>(candidates.size()));
     for (size_t i = 0; i < candidates.size(); i++) {
-        RCLCPP_DEBUG(this->get_logger(), "  [%zu] kf=%d combined_sim=%.4f sc_score=%.4f sc_shift=%d",
-                     i, candidates[i].keyframe_id, candidates[i].combined_sim,
-                     candidates[i].sc_align_score, candidates[i].sc_best_shift);
+        const auto& kf = keyframes_[candidates[i].keyframe_id];
+        RCLCPP_INFO(this->get_logger(), "  [%zu] kf=%d pos=(%7.2f,%7.2f) sc_score=%.4f combined=%.4f shift=%d",
+                     i, candidates[i].keyframe_id,
+                     kf.pose(0,3), kf.pose(1,3),
+                     candidates[i].sc_align_score, candidates[i].combined_sim,
+                     candidates[i].sc_best_shift);
     }
 
     // ── 逐候选验证 ──
-    float best_fitness = 1e6f;
+    // 按 combined_sim 降序找第一个 fitness 低于阈值的候选
+    bool found = false;
     Eigen::Matrix4f best_pose = Eigen::Matrix4f::Identity();
     int best_kf_id = -1;
-
-    int bins_per_sector = polar_bins_ / sc_num_sector_;  // 360/60 = 6
+    float best_fitness = 1e6f;
 
     for (auto& c : candidates) {
         int kf_id = c.keyframe_id;
@@ -541,70 +540,82 @@ void DualDescriptorNode::pointcloudCallback(const sensor_msgs::msg::PointCloud2:
         const auto& kf = keyframes_[kf_id];
         if (!kf.cloud || kf.cloud->empty()) continue;
 
-        RCLCPP_DEBUG(this->get_logger(), "--- Candidate kf=%d sim=%.4f ---", kf_id, c.combined_sim);
+        RCLCPP_INFO(this->get_logger(), "--- Verifying kf=%d pos=(%.2f,%.2f) sim=%.4f ---",
+                     kf_id, kf.pose(0,3), kf.pose(1,3), c.combined_sim);
 
         // 1. SC 列对齐 → 粗 yaw (复用扫描时已算好的 best_shift)
         float yaw_coarse_deg = c.sc_best_shift * (360.0f / sc_num_sector_);
-        RCLCPP_DEBUG(this->get_logger(), "  SC align: shift=%d/60 yaw=%.1f° score=%.4f",
+        RCLCPP_INFO(this->get_logger(), "  SC: shift=%d/60 coarse_yaw=%.1f° score=%.4f",
                      c.sc_best_shift, yaw_coarse_deg, c.sc_align_score);
 
-        // 2. PolarRing 互相关 → 精 yaw (在 SC 给的窗口内搜)
-        int coarse_bin = c.sc_best_shift * bins_per_sector;
-        float polar_corr;
-        int best_shift = polarCrossCorrYaw(src_polar.max_rho, kf.polar_raw,
-                                            coarse_bin, polar_cc_search_bins_, polar_corr);
-        float yaw_fine_rad = best_shift * (2.0f * M_PI / polar_bins_);
-        float yaw_fine_deg = best_shift * (360.0f / polar_bins_);
-        RCLCPP_DEBUG(this->get_logger(), "  Polar CC: coarse_bin=%d best=%d yaw=%.1f° corr=%.4f",
-                     coarse_bin, best_shift, yaw_fine_deg, polar_corr);
+        // 2. 使用 SC 粗 yaw 作为初始角度
+        float yaw_fine_rad = yaw_coarse_deg * M_PI / 180.0f;
 
-        // 3. BEV 质心 → 平移
+        // 3. 平移初值：直接用关键帧位姿，让 ICP 修正
         Eigen::Matrix4f rot_mat = Eigen::Matrix4f::Identity();
         rot_mat.block<3,3>(0,0) = Eigen::AngleAxisf(yaw_fine_rad,
             Eigen::Vector3f::UnitZ()).toRotationMatrix();
 
-        CloudT::Ptr src_rotated(new CloudT);
-        pcl::transformPointCloud(*source, *src_rotated, rot_mat);
+        float dx = kf.pose(0,3);
+        float dy = kf.pose(1,3);
+        RCLCPP_INFO(this->get_logger(), "  Init pos: using kf_pos=(%.2f,%.2f) directly", dx, dy);
 
-        Eigen::Vector2f src_cent = bevCentroid(src_rotated, polar_bev_z_min_, polar_bev_z_max_);
-        Eigen::Vector2f tgt_cent = bevCentroid(kf.cloud, polar_bev_z_min_, polar_bev_z_max_);
-        float dx = tgt_cent.x() - src_cent.x();
-        float dy = tgt_cent.y() - src_cent.y();
-        RCLCPP_DEBUG(this->get_logger(), "  BEV centroid: dx=%.2f dy=%.2f src=(%.1f,%.1f) tgt=(%.1f,%.1f)",
-                     dx, dy, src_cent.x(), src_cent.y(), tgt_cent.x(), tgt_cent.y());
+        // 4. 多初值 ICP 搜索（绕关键帧 ±3m，首位候选做 5×5 网格）
+        Eigen::Matrix4f best_local_pose = Eigen::Matrix4f::Identity();
+        float best_local_fitness = 1e6f;
 
-        // 4. 构造 ICP 初值
-        Eigen::Matrix4f init_guess = Eigen::Matrix4f::Identity();
-        init_guess.block<3,3>(0,0) = rot_mat.block<3,3>(0,0);
-        init_guess(0,3) = dx;
-        init_guess(1,3) = dy;
-        RCLCPP_DEBUG(this->get_logger(), "  Init guess: yaw=%.1f° pos=(%.2f,%.2f)",
-                     yaw_fine_deg, dx, dy);
+        bool is_first = (&c == &candidates[0]);
+        const int grid_half = is_first ? 2 : 0;
+        const float grid_step = 1.5f;
 
-        // 5. ICP 精配准
-        Eigen::Matrix4f icp_pose;
-        float fitness = icpRefine(source, kf.cloud, icp_pose, init_guess);
-        c.icp_fitness = fitness;
+        for (int gi = -grid_half; gi <= grid_half; gi++) {
+            for (int gj = -grid_half; gj <= grid_half; gj++) {
+                float gx = dx + gi * grid_step;
+                float gy = dy + gj * grid_step;
 
-        RCLCPP_DEBUG(this->get_logger(), "  ICP: fitness=%.4f",
-                     fitness);
+                Eigen::Matrix4f init_guess = Eigen::Matrix4f::Identity();
+                init_guess.block<3,3>(0,0) = rot_mat.block<3,3>(0,0);
+                init_guess(0,3) = gx;
+                init_guess(1,3) = gy;
 
-        if (fitness < best_fitness) {
-            best_fitness = fitness;
-            best_pose = icp_pose;
-            best_kf_id = kf_id;
+                Eigen::Matrix4f icp_pose;
+                float fitness = icpRefine(source, kf.cloud, icp_pose, init_guess);
+                if (fitness < best_local_fitness) {
+                    best_local_fitness = fitness;
+                    best_local_pose = icp_pose;
+                }
+            }
+        }
+
+        c.icp_fitness = best_local_fitness;
+        c.icp_pose = best_local_pose;
+
+        RCLCPP_INFO(this->get_logger(), "  ICP: %s best_fitness=%.4f pos=(%.2f,%.2f)",
+                     is_first ? "grid5x5" : "single", best_local_fitness,
+                     best_local_pose(0,3), best_local_pose(1,3));
+
+        if (best_local_fitness < icp_fitness_threshold_) {
+            // 首次命中：combined_sim 最高且 fitness 合格的候选即当选
+            if (!found) {
+                found = true;
+                best_fitness = best_local_fitness;
+                best_pose = best_local_pose;
+                best_kf_id = kf_id;
+                RCLCPP_WARN(this->get_logger(), "  >>> ACCEPTED (first with fitness < %.2f)", icp_fitness_threshold_);
+                break;
+            }
         }
     }
 
     // ── 阈值判决 ──
-    if (best_fitness > icp_fitness_threshold_) {
-        RCLCPP_WARN(this->get_logger(), "Reloc FAILED: best_fitness=%.4f > thresh=%.4f, retry next frame",
-                    best_fitness, icp_fitness_threshold_);
+    if (!found) {
+        RCLCPP_WARN(this->get_logger(), "Reloc FAILED: no candidate met fitness < %.2f, retry next frame",
+                    icp_fitness_threshold_);
         return;
     }
 
     float best_yaw_deg = std::atan2(best_pose(1,0), best_pose(0,0)) * 180.0f / M_PI;
-    RCLCPP_INFO(this->get_logger(),
+    RCLCPP_WARN(this->get_logger(),
                 "Reloc SUCCESS: kf=%d fitness=%.4f yaw=%.1f° pos=(%.2f,%.2f,%.2f)",
                 best_kf_id, best_fitness, best_yaw_deg,
                 best_pose(0,3), best_pose(1,3), best_pose(2,3));

@@ -24,7 +24,6 @@
 #include <string>
 #include <vector>
 
-#include <pcl/common/transforms.h>
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/io/pcd_io.h>
 #include <pcl/point_cloud.h>
@@ -37,8 +36,7 @@ struct Keyframe {
     double qw, qx, qy, qz;
     std::vector<float> ring;           // 极坐标环特征 (360维)
     std::vector<float> polar_fft_mag;  // PolarRing FFT 幅度 (180维, 旋转不变)
-    std::vector<float> polar_raw;      // 原始 ring (360维, 互相关用)
-    std::vector<float> sc_matrix;      // 完整 SC 矩阵 (1200=20×60, row-major)
+    std::vector<float> sc_matrix;      // 完整 SC 矩阵 (20×120=2400, row-major)
     pcl::PointCloud<pcl::PointXYZI>::Ptr cloud;
 };
 
@@ -224,59 +222,68 @@ int main(int argc, char **argv) {
             continue;
         }
 
-        // 计算环特征
-        auto ring = extractPolarRing(local, ring_bins, z_min, z_max);
-
-        // 计算完整 SC 矩阵 (20×60, row-major, 用于列对齐)
-        int sc_num_ring = 20, sc_num_sector = 60;
-        std::vector<float> sc_matrix(sc_num_ring * sc_num_sector, -1000.0f);
+        // 计算环特征（需要关键帧相对坐标，而非地图绝对坐标）
         {
-            float sc_max_radius = crop_radius;
-            float sc_z_min = -10.0f;
-            for (const auto &pt : local->points) {
-                float rho = std::sqrt((pt.x - px) * (pt.x - px) + (pt.y - py) * (pt.y - py));
-                if (rho > sc_max_radius || pt.z < sc_z_min) continue;
-                float theta = std::atan2(pt.y - py, pt.x - px);
-                if (theta < 0) theta += 2.0f * M_PI;
-                int ring_idx = std::min(sc_num_ring - 1,
-                    static_cast<int>(rho / sc_max_radius * sc_num_ring));
-                int sector_idx = std::min(sc_num_sector - 1,
-                    static_cast<int>(theta / (2.0f * M_PI) * sc_num_sector));
-                int idx = ring_idx * sc_num_sector + sector_idx;
-                if (pt.z > sc_matrix[idx]) sc_matrix[idx] = pt.z;
+            pcl::PointCloud<pcl::PointXYZI>::Ptr local_shifted(new pcl::PointCloud<pcl::PointXYZI>);
+            for (const auto &pt : *local) {
+                pcl::PointXYZI sp = pt;
+                sp.x -= static_cast<float>(px);
+                sp.y -= static_cast<float>(py);
+                sp.z -= static_cast<float>(pz);
+                local_shifted->push_back(sp);
             }
-            for (float &v : sc_matrix) { if (v < -999.0f) v = 0.0f; }
-        }
+            auto ring = extractPolarRing(local_shifted, ring_bins, z_min, z_max);
 
-        // 计算 PolarRing FFT 幅度 (旋转不变特征)
-        int fft_mag_size = ring_bins / 2;
-        std::vector<float> polar_fft_mag(fft_mag_size);
-        {
-            for (int k = 0; k < fft_mag_size; k++) {
-                float real = 0.0f, imag = 0.0f;
-                for (int n = 0; n < ring_bins; n++) {
-                    float angle = -2.0f * M_PI * k * n / ring_bins;
-                    real += ring[n] * std::cos(angle);
-                    imag += ring[n] * std::sin(angle);
+            // 计算 PolarRing FFT 幅度 (旋转不变特征)
+            int fft_mag_size = ring_bins / 2;
+            std::vector<float> polar_fft_mag(fft_mag_size);
+            {
+                for (int k = 0; k < fft_mag_size; k++) {
+                    float real = 0.0f, imag = 0.0f;
+                    for (int n = 0; n < ring_bins; n++) {
+                        float angle = -2.0f * M_PI * k * n / ring_bins;
+                        real += ring[n] * std::cos(angle);
+                        imag += ring[n] * std::sin(angle);
+                    }
+                    polar_fft_mag[k] = std::sqrt(real * real + imag * imag) / ring_bins;
                 }
-                polar_fft_mag[k] = std::sqrt(real * real + imag * imag) / ring_bins;
             }
-        }
 
-        Keyframe kf;
-        kf.x = px;
-        kf.y = py;
-        kf.z = pz;
-        kf.qw = pose.qw;
-        kf.qx = pose.qx;
-        kf.qy = pose.qy;
-        kf.qz = pose.qz;
-        kf.ring = ring;
-        kf.polar_fft_mag = polar_fft_mag;
-        kf.polar_raw = ring;
-        kf.sc_matrix = sc_matrix;
-        kf.cloud = local;
-        keyframes.push_back(kf);
+        // 计算完整 SC 矩阵 (20×120, row-major, 用于列对齐)
+        int sc_num_ring = 20, sc_num_sector = 120;
+            std::vector<float> sc_matrix(sc_num_ring * sc_num_sector, -1000.0f);
+            {
+                float sc_max_radius = crop_radius;
+                float sc_z_min = 0.1f;  // SC 特有: 排除地面保留高度，与在线 sc_bev_z_min_ 一致
+                for (const auto &pt : local_shifted->points) {
+                    float rho = std::sqrt(pt.x * pt.x + pt.y * pt.y);
+                    if (rho > sc_max_radius || pt.z < sc_z_min) continue;
+                    float theta = std::atan2(pt.y, pt.x);
+                    if (theta < 0) theta += 2.0f * M_PI;
+                    int ring_idx = std::min(sc_num_ring - 1,
+                        static_cast<int>(rho / sc_max_radius * sc_num_ring));
+                    int sector_idx = std::min(sc_num_sector - 1,
+                        static_cast<int>(theta / (2.0f * M_PI) * sc_num_sector));
+                    int idx = ring_idx * sc_num_sector + sector_idx;
+                    if (pt.z > sc_matrix[idx]) sc_matrix[idx] = pt.z;
+                }
+                for (float &v : sc_matrix) { if (v < -999.0f) v = 0.0f; }
+            }
+
+            Keyframe kf;
+            kf.x = px;
+            kf.y = py;
+            kf.z = pz;
+            kf.qw = pose.qw;
+            kf.qx = pose.qx;
+            kf.qy = pose.qy;
+            kf.qz = pose.qz;
+            kf.ring = ring;
+            kf.polar_fft_mag = polar_fft_mag;
+            kf.sc_matrix = sc_matrix;
+            kf.cloud = local;  // 存地图坐标用于 ICP
+            keyframes.push_back(kf);
+        }
     }
 
     std::cout << "选中 " << keyframes.size() << " 个关键帧\n";
@@ -290,7 +297,7 @@ int main(int argc, char **argv) {
     std::ofstream meta_f(meta_path, std::ios::binary);
 
     uint32_t count = keyframes.size();
-    int32_t sc_ring_out = 20, sc_sector_out = 60;
+    int32_t sc_ring_out = 20, sc_sector_out = 120;
     float sc_max_radius_out = static_cast<float>(crop_radius);
 
     uint32_t magic = 0x44445343;  // "DDSC"
@@ -312,8 +319,6 @@ int main(int argc, char **argv) {
         meta_f.write(reinterpret_cast<const char *>(&kf.qz), sizeof(double));
         meta_f.write(reinterpret_cast<const char *>(kf.polar_fft_mag.data()),
                    (ring_bins / 2) * sizeof(float));
-        meta_f.write(reinterpret_cast<const char *>(kf.polar_raw.data()),
-                   ring_bins * sizeof(float));
         meta_f.write(reinterpret_cast<const char *>(kf.sc_matrix.data()),
                    sc_ring_out * sc_sector_out * sizeof(float));
     }

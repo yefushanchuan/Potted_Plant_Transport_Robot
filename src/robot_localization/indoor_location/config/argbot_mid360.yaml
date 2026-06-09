@@ -47,7 +47,7 @@ pose_refine_static_v_th: 0.03
 pose_refine_static_w_th: 0.05
 pose_refine_tf_lookup_timeout_sec: 0.08
 
-wait_for_initial_pose: true                   #开机不自己跟踪，等待外部节点注入初始位姿
+wait_for_initial_pose: false                   #开机不自己跟踪，等待外部节点注入初始位姿
 
 init_x: 0.0                                   #定位系统输入的初始化位姿
 init_y: 0.0

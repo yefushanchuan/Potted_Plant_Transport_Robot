@@ -25,7 +25,6 @@
 
     # ── 搜索参数 ──
     top_k: 10                 # 全量余弦扫描后取 top-K 进 ICP
-    polar_cc_search_bins: 18  # Polar 互相关窗口半径 (总窗口 37 bins = 37°)
     sc_weight: 1.0            # SC 列对齐分数权重 (sim = sc_w×sc_score + fft_w×fft_sim)
     fft_weight: 1.0           # FFT 余弦分数权重
 
@@ -34,5 +33,5 @@
 
     # ── ICP 参数 ──
     icp_resolutions: [1.0, 0.5, 0.2]  # 多分辨率（从粗到精）
-    icp_iterations: 5                  # 每层迭代次数
+    icp_iterations: 15                  # 每层迭代次数
     icp_fitness_threshold: 0.5         # fitness 阈值（小于该值才接受）

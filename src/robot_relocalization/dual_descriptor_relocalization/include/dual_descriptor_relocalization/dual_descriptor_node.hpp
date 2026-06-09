@@ -44,13 +44,13 @@ struct Keyframe {
     Eigen::Matrix4f pose = Eigen::Matrix4f::Identity();
     CloudT::Ptr cloud;
     std::vector<float> polar_fft_mag;   // 180维, FFT 幅度 → 余弦扫描
-    std::vector<float> polar_raw;       // 360维, 原始 ring → 互相关求精 yaw
-    std::vector<float> sc_matrix;       // 1200维, 完整 SC (20×60 row-major) → 列对齐
+    std::vector<float> sc_matrix;       // 120×20 = 2400维, SC (20×120 row-major) → 列对齐
 };
 
 struct Candidate {
     int keyframe_id = -1;
     float combined_sim = 0.0f;
+    float fft_sim = 0.0f;        // FFT 余弦相似度
     int sc_best_shift = 0;       // SC 列对齐最佳移位数
     float sc_align_score = 0.0f; // SC 列对齐分数 (归一化到 [0,1])
     float icp_fitness = 1e6f;
@@ -72,16 +72,10 @@ private:
     void extractFFTMagnitude(const std::vector<float>& ring,
                              std::vector<float>& mag) const;
 
-    // yaw / 平移估计
+    // yaw 估计 (SC 列对齐)
     int scColumnAlign(const Eigen::MatrixXf& src,
                       const std::vector<float>& tgt_mat,
                       float& best_dist) const;
-    int polarCrossCorrYaw(const std::vector<float>& src,
-                           const std::vector<float>& tgt,
-                           int coarse_bin, int window_bins,
-                           float& best_corr) const;
-    Eigen::Vector2f bevCentroid(const CloudT::Ptr& cloud,
-                                float zmin, float zmax) const;
 
     // ICP 精配准
     float icpRefine(const CloudT::Ptr& source, const CloudT::Ptr& target,
@@ -119,7 +113,6 @@ private:
     float sc_bev_z_min_;
 
     int top_k_;
-    int polar_cc_search_bins_;
     float sc_weight_;
     float fft_weight_;
 
@@ -135,6 +128,7 @@ private:
     // TF
     std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
+    rclcpp::TimerBase::SharedPtr init_tf_timer_;
     Eigen::Matrix4f base_to_sensor_T_ = Eigen::Matrix4f::Identity();
     bool has_sensor_tf_ = false;
 
