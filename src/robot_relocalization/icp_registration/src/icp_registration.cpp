@@ -189,7 +189,7 @@ void IcpNode::pointcloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr 
                                   initial_pose_msg_.orientation.y,
                                   initial_pose_msg_.orientation.z);
         Eigen::Matrix4d guess_map_to_base = Eigen::Matrix4d::Identity();
-        guess_map_to_base.block<3, 3>(0, 0) = q_init.toRotationMatrix();
+        guess_map_to_base.block<3, 3>(0, 0) = q_init.normalized().toRotationMatrix();
         guess_map_to_base.block<3, 1>(0, 3) = pos;
 
         // 传入深拷贝/安全的点云
@@ -224,7 +224,7 @@ void IcpNode::pointcloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr 
                                             odom_to_base_msg.transform.rotation.y,
                                             odom_to_base_msg.transform.rotation.z);
                     Eigen::Matrix4d odom_to_base = Eigen::Matrix4d::Identity();
-                    odom_to_base.block<3, 3>(0, 0) = q_ob.toRotationMatrix();
+                    odom_to_base.block<3, 3>(0, 0) = q_ob.normalized().toRotationMatrix();
                     odom_to_base.block<3, 1>(0, 3) = t_ob;
 
                     Eigen::Matrix4d map_to_odom = map_to_base * odom_to_base.inverse();
@@ -270,7 +270,7 @@ void IcpNode::initialPoseCallback(
                          msg->pose.pose.orientation.y,
                          msg->pose.pose.orientation.z);
     Eigen::Matrix4d guess_map_to_base = Eigen::Matrix4d::Identity();
-    guess_map_to_base.block<3, 3>(0, 0) = q.toRotationMatrix();
+    guess_map_to_base.block<3, 3>(0, 0) = q.normalized().toRotationMatrix();
     guess_map_to_base.block<3, 1>(0, 3) = pos;
 
     Eigen::Matrix4d map_to_base = multiAlignSync(cloud_in_, guess_map_to_base);
@@ -313,7 +313,7 @@ void IcpNode::initialPoseCallback(
                                     odom_to_base_msg.transform.rotation.y,
                                     odom_to_base_msg.transform.rotation.z);
             Eigen::Matrix4d odom_to_base = Eigen::Matrix4d::Identity();
-            odom_to_base.block<3, 3>(0, 0) = q_ob.toRotationMatrix();
+            odom_to_base.block<3, 3>(0, 0) = q_ob.normalized().toRotationMatrix();
             odom_to_base.block<3, 1>(0, 3) = t_ob;
 
             Eigen::Matrix4d map_to_odom = map_to_base * odom_to_base.inverse();
@@ -488,7 +488,7 @@ void IcpNode::getStaticTf() {
                           transform.transform.translation.z);
 
         base_to_sensor_T_ = Eigen::Matrix4f::Identity();
-        base_to_sensor_T_.block<3, 3>(0, 0) = q.toRotationMatrix();
+        base_to_sensor_T_.block<3, 3>(0, 0) = q.normalized().toRotationMatrix();
         base_to_sensor_T_.block<3, 1>(0, 3) = t;
 
         has_sensor_tf_ = true;  // 标志位置为 true

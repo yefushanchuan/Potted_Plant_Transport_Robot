@@ -390,7 +390,7 @@ public:
                                            lidar_tf.transform.rotation.x, 
                                            lidar_tf.transform.rotation.y, 
                                            lidar_tf.transform.rotation.z);
-                Eigen::Matrix3f lidar_rot = lidar_q.toRotationMatrix();
+                Eigen::Matrix3f lidar_rot = lidar_q.normalized().toRotationMatrix();
 
                 // 2. 获取 IMU 到 Base 的静态 TF
                 auto imu_tf = tf_buffer_->lookupTransform(base_frame_, imu_frame_, tf2::TimePointZero);
@@ -402,7 +402,7 @@ public:
                                          imu_tf.transform.rotation.x, 
                                          imu_tf.transform.rotation.y, 
                                          imu_tf.transform.rotation.z);
-                Eigen::Matrix3f imu_rot = imu_q.toRotationMatrix();
+                Eigen::Matrix3f imu_rot = imu_q.normalized().toRotationMatrix();
 
                 // 3. 将真实外参覆写给处理器
                 if (lidar_type_ == "livox") {
