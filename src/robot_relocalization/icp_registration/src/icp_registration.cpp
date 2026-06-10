@@ -224,7 +224,7 @@ void IcpNode::pointcloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr 
                                             odom_to_base_msg.transform.rotation.y,
                                             odom_to_base_msg.transform.rotation.z);
                     Eigen::Matrix4d odom_to_base = Eigen::Matrix4d::Identity();
-                    odom_to_base.block<3, 3>(0, 0) = q_ob.toRotationMatrix();
+                    odom_to_base.block<3, 3>(0, 0) = q_ob.normalized().toRotationMatrix();
                     odom_to_base.block<3, 1>(0, 3) = t_ob;
 
                     Eigen::Matrix4d map_to_odom = map_to_base * odom_to_base.inverse();
@@ -313,7 +313,7 @@ void IcpNode::initialPoseCallback(
                                     odom_to_base_msg.transform.rotation.y,
                                     odom_to_base_msg.transform.rotation.z);
             Eigen::Matrix4d odom_to_base = Eigen::Matrix4d::Identity();
-            odom_to_base.block<3, 3>(0, 0) = q_ob.toRotationMatrix();
+            odom_to_base.block<3, 3>(0, 0) = q_ob.normalized().toRotationMatrix();
             odom_to_base.block<3, 1>(0, 3) = t_ob;
 
             Eigen::Matrix4d map_to_odom = map_to_base * odom_to_base.inverse();

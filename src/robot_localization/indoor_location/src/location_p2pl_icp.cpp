@@ -394,7 +394,7 @@ public:
                                          imu_tf.transform.rotation.x, 
                                          imu_tf.transform.rotation.y, 
                                          imu_tf.transform.rotation.z);
-                Eigen::Matrix3f imu_rot = imu_q.toRotationMatrix();
+                Eigen::Matrix3f imu_rot = imu_q.normalized().toRotationMatrix();
 
                 // 3. 将真实外参覆写给处理器
                 if (lidar_type_ == "livox") {
