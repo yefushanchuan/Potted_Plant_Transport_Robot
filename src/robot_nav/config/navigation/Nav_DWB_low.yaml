@@ -89,8 +89,8 @@ controller_server:
     # --- 终点到达检查器 (Goal Checker) ---
     goal_checker:
       plugin: "nav2_controller::SimpleGoalChecker"     # 使用简单的距离/角度阈值判断
-      xy_goal_tolerance: 0.15                     # 终点 XY 坐标误差允许值：15 厘米以内就算到达
-      yaw_goal_tolerance: 0.04                    # 终点车头朝向误差允许值：0.04 弧度（约2.3度）以内就算到达
+      xy_goal_tolerance: 0.20                     # 终点 XY 坐标误差允许值：20 厘米以内就算到达
+      yaw_goal_tolerance: 0.10                    # 终点车头朝向误差允许值：0.10 弧度（约5.7度）以内就算到达
       stateful: true                              # 是否保存内部状态（保持 true 即可）
 
     # --- 核心控制器逻辑配置 ---
@@ -99,13 +99,13 @@ controller_server:
       primary_controller: "dwb_core::DWBLocalPlanner"                 # 真正的底层规划算法：DWB（动态窗口法）
 
       # ---------- RotationShim (旋转垫片) 针对差速车的特殊参数 ----------
-      angular_dist_threshold: 0.785               # 开始旋转的阈值：当路线角度偏离车头 > 0.785弧度(45度)时，强制停车并原地旋转
+      angular_dist_threshold: 6.28                # 关闭路径中段的原地旋转（2π=永远不会触发），仅在到达目标后旋转对齐
       angular_disengage_threshold: 0.3925         # 结束旋转的阈值：当角度偏差缩小到 0.3925弧度(22.5度)内时，退出纯旋转，开始边转边走
-      forward_sampling_distance: 0.35             # 往前看多远：取前方 0.35 米处的路径点来计算角度偏差
-      rotate_to_heading_angular_vel: 0.2          # 原地旋转阶段的角速度：0.2 rad/s
-      max_angular_accel: 0.5                      # 原地旋转阶段的最大角加速度：1.5 rad/s^2
+      forward_sampling_distance: 0.8              # 往前看多远：取前方 0.8 米处的路径点来计算角度偏差（提前检测转弯，避免贴墙后才转向）
+      rotate_to_heading_angular_vel: 0.5          # 原地旋转阶段的角速度：0.5 rad/s（降低，防止过冲）
+      max_angular_accel: 1.0                      # 原地旋转阶段的最大角加速度：1.0 rad/s^2（提高减速能力，防止过冲）
       simulate_ahead_time: 1.0                    # 碰撞检测：模拟预测未来 1.0 秒内的旋转会不会碰到障碍物
-      rotate_to_goal_heading: false               # 到达 XY 终点后，是否要用此插件单独原地旋转对准终点朝向（设为 false 则由 DWB 完成）
+      rotate_to_goal_heading: true                # 到达 XY 终点后，用 RotationShim 原地旋转对准终点朝向
       transform_tolerance: 0.5                    # DWB 控制器的 TF 容忍时间：0.5 秒（默认 0.1 太小）
       # -----------------------------------------------------------
 
@@ -125,22 +125,22 @@ controller_server:
         - PreferForward                           # 评委8：是否是向前开的轨迹（惩罚倒车）
 
       # --- 速度限制 ---
-      min_vel_x: 0.0                              # 最小X向速度：0.0 表示绝对不允许倒车
+      min_vel_x: -0.30                             # 最小X向速度：-0.30 表示允许倒车（最大倒车速度 0.30m/s）
       min_vel_y: 0.0                              # 最小Y向速度：差速车不能横移，必须为 0
-      max_vel_x: 0.50                             # 最大前进速度：0.5 米/秒
+      max_vel_x: 0.80                             # 最大前进速度：0.8 米/秒
       max_vel_y: 0.0                              # 最大Y向速度：0
-      max_vel_theta: 0.2                          # 最大旋转角速度：0.2 rad/s
-      min_vel_theta: -0.2                         # 最大反向旋转角速度：-0.2 rad/s
+      max_vel_theta: 0.6                          # 最大旋转角速度：0.6 rad/s
+      min_vel_theta: -0.6                         # 最大反向旋转角速度：-0.6 rad/s
       min_speed_xy: 0.0                           # 机器人最小的绝对线速度限制
-      max_speed_xy: 0.6                           # 机器人最大的绝对线速度合量（大于 max_vel_x 作为硬上限）
+      max_speed_xy: 0.8                           # 机器人最大的绝对线速度合量
 
       # --- 加速度与减速度限制 ---
-      acc_lim_x: 0.2                              # X轴最大加速度：0.2 m/s^2
+      acc_lim_x: 0.6                              # X轴最大加速度：0.6 m/s^2
       acc_lim_y: 0.0                              # Y轴加速度：0
-      acc_lim_theta: 1.0                          # 旋转角加速度：1.0 rad/s^2
-      decel_lim_x: -0.3                           # X轴最大减速度(刹车)：-0.3 m/s^2
+      acc_lim_theta: 0.6                          # 旋转角加速度：0.6 rad/s^2
+      decel_lim_x: -0.8                           # X轴最大减速度(刹车)：-0.8 m/s^2
       decel_lim_y: 0.0                            # Y轴减速度：0
-      decel_lim_theta: -1.5                       # 旋转角减速度：-1.5 rad/s^2
+      decel_lim_theta: -0.8                       # 旋转角减速度：-0.8 rad/s^2
 
       # --- 轨迹采样配置 (决定 DWB 每次模拟多少条轨迹) ---
       vx_samples: 20                              # 在 X 轴速度范围内切分出 20 个速度值来测试
@@ -149,28 +149,28 @@ controller_server:
       sim_time: 1.0                               # 模拟预测未来 1.0 秒的运动轨迹
       linear_granularity: 0.05                    # 轨迹上两个相邻点之间的距离间隔 (5厘米)
       angular_granularity: 0.025                  # 轨迹上相邻点的角度间隔 (约1.4度)
-      xy_goal_tolerance: 0.14                     # DWB 内部判断到达终点的阈值 (与 goal_checker 保持一致)
+      xy_goal_tolerance: 0.20                     # DWB 内部判断到达终点的阈值 (与 goal_checker 保持一致)
       trans_stopped_velocity: 0.04                # 如果线速度低于 0.04 m/s，DWB 就认为底盘已经停稳了
       short_circuit_trajectory_evaluation: true   # 优化项：如果发现某条轨迹必然碰撞(得分为0)，直接丢弃，不再计算其他评委的分数
       stateful: true                              # 保持 DWB 内部状态
 
       # --- 评委权重配置 (scale 值越大，机器人越看重这个指标) ---
-      BaseObstacle.scale: 50.0                    # 避障权重：30.0。保证不会撞墙。
-      PathAlign.scale: 50.0                       # 贴合路径朝向的权重：高达 60.0。强制机器人车头必须顺着路径方向。
-      PathAlign.forward_point_distance: 0.5       # 计算 PathAlign 时，参考前方 0.5 米处的路径点
-      PathDist.scale: 10.0                        # 距离路径远近的权重：10.0。约束车不能偏离规划的线太远。
-      GoalAlign.scale: 25.0                       # 局部目标朝向权重：25.0。
-      GoalAlign.forward_point_distance: 0.24      # 计算 GoalAlign 时参考前方 0.24 米处。
-      GoalDist.scale: 20.0                        # 接近局部目标的权重：20.0。
-      RotateToGoal.scale: 45.0                    # 到达终点时原地旋转对准最终朝向的权重：45.0。
+      BaseObstacle.scale: 50.0                    # 避障权重：50.0。保证不会撞墙。
+      PathAlign.scale: 15.0                       # 贴合路径朝向的权重：15.0
+      PathAlign.forward_point_distance: 0.3       # 计算 PathAlign 时，参考前方 0.3 米处的路径点
+      PathDist.scale: 10.0                        # 距离路径远近的权重：10.0
+      GoalAlign.scale: 25.0                       # 局部目标朝向权重：25.0
+      GoalAlign.forward_point_distance: 0.5       # 计算 GoalAlign 时参考前方 0.5 米处
+      GoalDist.scale: 30.0                        # 接近局部目标的权重：30.0
+      RotateToGoal.scale: 20.0                    # 到达终点时原地旋转对准最终朝向的权重：20.0。
       RotateToGoal.slowing_factor: 6.0            # 接近目标时减速的剧烈程度系数。
       RotateToGoal.lookahead_time: 1.0            # 旋转预测的前瞻时间。
       Oscillation.scale: 1.0                      # 防止摇摆的权重：1.0。
       Oscillation.oscillation_reset_dist: 0.2     # 如果机器人直线移动超过 0.2 米，则重置摇摆标志位。
       Oscillation.oscillation_reset_angle: 0.2    # 如果机器人旋转超过 0.2 弧度，重置摇摆标志位。
       Oscillation.oscillation_reset_time: 2.0     # 经过 2.0 秒后，自动重置摇摆标志位。
-      PreferForward.scale: 0.5                    # 鼓励向前的权重。
-      PreferForward.penalty: 0.01                 # 对倒车轨迹扣除的固定分数惩罚。
+      PreferForward.scale: 1.0                    # 鼓励向前的权重：1.0
+      PreferForward.penalty: 1.0                  # 对倒车轨迹扣除的固定分数惩罚：1.0（提高，让倒车成为最后手段）
 
       # --- 局部路径的处理 ---
       include_last_point: true                    # 保证截取的局部路径包含最后一个目标点
@@ -198,7 +198,7 @@ local_costmap:
       height: 4                                   # 局部地图高：4 米
       resolution: 0.03                            # 地图精度：每像素代表现实中 0.03 米 (3 厘米)
       # footprint: 机器人的实际外框尺寸。这里定义了一个长方形
-      footprint: "[ [0.10, 0.32], [0.10, -0.32], [-0.58, -0.32], [-0.58, 0.32] ]"
+      footprint: "[ [0.10, 0.37], [0.10, -0.37], [-0.68, -0.37], [-0.68, 0.37] ]"
       plugins: ["static_layer","obstacle_layer","inflation_layer"] # 启用的代价地图图层
 
       # 图层1：静态地图层 (引入全局的已知墙壁环境)
@@ -228,8 +228,8 @@ local_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         enabled: true
-        cost_scaling_factor: 2.5                  # 成本衰减系数。2.5 表示离开障碍物后，代价值下降得相对缓慢
-        inflation_radius: 0.40                    # 膨胀半径：0.40 米。任何距离障碍物小于 0.40 米的区域都会有高代价。
+        cost_scaling_factor: 2.0                  # 成本衰减系数。2.0 表示离开障碍物后，代价值下降得相对缓慢
+        inflation_radius: 0.50                    # 膨胀半径：0.50 米。任何距离障碍物小于 0.50 米的区域都会有高代价。
 
       always_send_full_costmap: true              # 每次向外发布完整的地图，而不是增量更新（略微增加网络带宽，但更稳定）
 
@@ -246,7 +246,7 @@ global_costmap:
       robot_base_frame: base_footprint            # 机器人坐标系
       transform_tolerance: 0.5                    # TF转换超时容忍度：0.5 秒
       use_sim_time: false
-      footprint: "[ [0.10, 0.32], [0.10, -0.32], [-0.58, -0.32], [-0.58, 0.32] ]" # 机器人轮廓，同局部地图
+      footprint: "[ [0.10, 0.37], [0.10, -0.37], [-0.68, -0.37], [-0.68, 0.37] ]" # 机器人轮廓，同局部地图
       resolution: 0.03                            # 精度同样是 3 厘米/像素
       track_unknown_space: false                  # 未知区域处理：false 代表建图时没扫到的黑色未知区域是不允许通过的
       plugins: ["static_layer","obstacle_layer","inflation_layer"] # 全局地图同样使用这三个图层
@@ -273,8 +273,8 @@ global_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         enabled: true
-        cost_scaling_factor: 3.0                  # 全局衰减系数 3.0 (比局部大，说明代价下降很快)
-        inflation_radius: 0.50                    # 全局膨胀半径 0.50 米 (大于局部的0.30)。这是一种巧妙的设计：全局规划时尽量让路径远离墙壁走在中间；但局部避障时允许靠墙近一点(0.30m)以穿过狭窄门框。
+        cost_scaling_factor: 3.0                  # 全局衰减系数 3.0
+        inflation_radius: 0.80                    # 全局膨胀半径 0.80 米（覆盖机器人最大对角距离 0.77m，防止窄过道规划掉头）
         
       always_send_full_costmap: true
 
@@ -383,15 +383,15 @@ waypoint_follower:
 velocity_smoother:
   ros__parameters:
     use_sim_time: false
-    smoothing_frequency: 40.0                     # 高频拦截过滤频率：40 Hz (高于控制器的 10 Hz)
+    smoothing_frequency: 20.0                     # 平滑频率：20 Hz（降低，让速度变化曲线更圆滑，减少顿挫感）
     scale_velocities: false                       # 是否按比例缩放超过限制的速度 (false 表示直接砍头截断)
     feedback: "OPEN_LOOP"                         # 开环反馈模式（不依赖实际编码器测速做闭环修正，只过滤指令）
     
     # 速度与加速度的绝对红线：格式为 [X轴线速度, Y轴线速度, Theta角速度]
-    max_velocity: [0.5, 0.0, 0.2]                 # 指令上限：最高前进 0.5m/s, 不能平移, 最高旋转 0.2rad/s
-    min_velocity: [0.0, 0.0, -0.2]                # 指令下限：不允许倒车(0), 最高反向旋转 0.2rad/s
-    max_accel: [0.2, 0.0, 0.2]                    # 最大加速度限制
-    max_decel: [-0.2, 0.0, -0.2]                  # 最大减速度限制
+    max_velocity: [0.8, 0.0, 0.6]                 # 指令上限：最高前进 0.8m/s, 不能平移, 最高旋转 0.6rad/s
+    min_velocity: [-0.3, 0.0, -0.6]               # 指令下限：允许倒车(-0.3m/s), 最高反向旋转 0.6rad/s
+    max_accel: [0.6, 0.0, 0.6]                    # 最大加速度限制：线加速度0.6，角加速度0.6
+    max_decel: [-0.8, 0.0, -0.8]                  # 最大减速度限制：线减速度0.8，角减速度0.8
     
     odom_topic: "odom"                            # 里程计话题，用于获取当前真实速度
     odom_duration: 0.1                            # 里程计超时判断时长
