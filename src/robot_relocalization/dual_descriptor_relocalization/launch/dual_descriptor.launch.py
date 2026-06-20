@@ -86,6 +86,7 @@ def _launch_setup(context):
                 "eskf_cfg_file": eskf_cfg_path,
                 "use_sim_time": use_sim_time,
                 "map_filename": resolved_map_file,
+                "wait_for_initial_pose": True,
             }],
             arguments=['--ros-args', '--log-level', LaunchConfiguration('log_level')],
         ),

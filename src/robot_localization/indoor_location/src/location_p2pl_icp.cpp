@@ -322,6 +322,9 @@ public:
 
         wait_for_initial_pose_ = config["wait_for_initial_pose"] ?
                                  config["wait_for_initial_pose"].as<bool>() : false;
+        // ROS 参数覆盖 YAML 值（launch 可传入）
+        nh_->declare_parameter("wait_for_initial_pose", wait_for_initial_pose_);
+        nh_->get_parameter("wait_for_initial_pose", wait_for_initial_pose_);
         RCLCPP_INFO(nh_->get_logger(), "[InitPose] wait_for_initial_pose=%d", wait_for_initial_pose_);
 
         // ========== 新的 TF 外参逻辑 ==========
