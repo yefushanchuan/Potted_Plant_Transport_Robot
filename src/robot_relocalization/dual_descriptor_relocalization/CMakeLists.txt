@@ -16,6 +16,7 @@ find_package(tf2_geometry_msgs REQUIRED)
 find_package(PCL REQUIRED COMPONENTS common io filters registration)
 find_package(pcl_conversions REQUIRED)
 find_package(Eigen3 REQUIRED)
+find_package(OpenMP REQUIRED)
 
 include_directories(
   include
@@ -34,6 +35,7 @@ add_executable(dual_descriptor_node
 target_link_libraries(dual_descriptor_node
   ${PCL_LIBRARIES}
   Eigen3::Eigen
+  OpenMP::OpenMP_CXX
 )
 
 ament_target_dependencies(dual_descriptor_node

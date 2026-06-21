@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <numeric>
 #include <cmath>
+#include <omp.h>
 
 #include <pcl/kdtree/kdtree_flann.h>
 
@@ -155,7 +156,7 @@ void DualDescriptorNode::loadKeyframeDatabase() {
     uint32_t magic = 0, count = 0;
     int32_t file_ring_bins = 0, file_sc_ring = 0, file_sc_sector = 0;
     float file_sc_max_radius = 0.0f;
-    float file_polar_bev_z_min = 0.2f, file_polar_bev_z_max = 3.0f, file_sc_bev_z_min = 0.1f;
+    float file_polar_bev_z_min = 0.2f, file_polar_bev_z_max = 2.0f, file_sc_bev_z_min = 0.1f;
     f.read(reinterpret_cast<char*>(&magic), sizeof(magic));
     if (magic != 0x44445343) {
         RCLCPP_ERROR(this->get_logger(), "Invalid magic: 0x%X", magic);
@@ -309,8 +310,9 @@ SCMatrix DualDescriptorNode::extractSCMatrix(const CloudT::Ptr& cloud) const {
 int DualDescriptorNode::scColumnAlign(const Eigen::MatrixXf& src,
                                        const std::vector<float>& tgt_mat,
                                        float& best_dist) const {
-    int best_k = 0;
-    best_dist = 1e9f;
+    std::vector<float> dists(sc_num_sector_, 0.0f);
+
+    #pragma omp parallel for schedule(static)
     for (int k = 0; k < sc_num_sector_; k++) {
         float dist = 0.0f;
         for (int r = 0; r < sc_num_ring_; r++) {
@@ -320,7 +322,16 @@ int DualDescriptorNode::scColumnAlign(const Eigen::MatrixXf& src,
                 dist += std::abs(sv - tv);
             }
         }
-        if (dist < best_dist) { best_dist = dist; best_k = k; }
+        dists[k] = dist;
+    }
+
+    int best_k = 0;
+    best_dist = dists[0];
+    for (int k = 1; k < sc_num_sector_; k++) {
+        if (dists[k] < best_dist) {
+            best_dist = dists[k];
+            best_k = k;
+        }
     }
     return best_k;
 }
