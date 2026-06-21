@@ -9,11 +9,11 @@
 //
 // 选项:
 //   --origin x y z        重定义原点（位姿同步平移）
-//   --distance 3.0        关键帧间距阈值(米)，默认3
+//   --distance 0.1        关键帧间距阈值(米)，默认0.1
 //   --radius 25.0         SC 矩阵最大半径(米)，默认25
 //   --bins 360            极坐标环 bin 数，默认360
 //   --z_min 0.2           BEV z 下界，默认0.2
-//   --z_max 2.0           BEV z 上界，默认2.0
+//   --z_max 3.0           BEV z 上界，默认3.0
 //   --leaf 0.1            体素滤波叶子大小(米)，默认0.1
 
 #include <algorithm>
@@ -127,11 +127,11 @@ void printUsage() {
               << "  输出到 <pcd_dir> 下\n\n"
               << "选项:\n"
               << "  --origin x y z      重定义原点（位姿同步平移）\n"
-              << "  --distance 3.0      关键帧间距阈值(米)\n"
+              << "  --distance 0.1      关键帧间距阈值(米)\n"
               << "  --radius 25.0       SC 矩阵最大半径(米)\n"
               << "  --bins 360          极坐标环 bin 数\n"
               << "  --z_min 0.2         BEV z 下界\n"
-              << "  --z_max 2.0         BEV z 上界\n"
+              << "  --z_max 3.0         BEV z 上界\n"
               << "  --leaf 0.1          体素滤波叶子大小(米)\n"
               << "  --sc_ring 20        SC 径向环数\n"
               << "  --sc_sector 120     SC 扇区数\n"
@@ -149,10 +149,10 @@ int main(int argc, char **argv) {
     // 默认参数
     double origin_x = 0, origin_y = 0, origin_z = 0;
     bool use_origin = false;
-    double min_distance = 3.0;
+    double min_distance = 0.1;
     double sc_radius = 25.0;
     int ring_bins = 360;
-    float z_min = 0.2f, z_max = 2.0f;
+    float z_min = 0.2f, z_max = 3.0f;
     float leaf_size = 0.1f;
     int sc_num_ring = 20;
     int sc_num_sector = 120;
