@@ -105,6 +105,8 @@ void DualDescriptorNode::loadParameters() {
     top_k_ = this->declare_parameter("top_k", 10);
     sc_weight_ = this->declare_parameter("sc_weight", 1.0f);
     fft_weight_ = this->declare_parameter("fft_weight", 1.0f);
+    yaw_method_ = this->declare_parameter("yaw_method", std::string("sc"));
+    polar_search_half_ = this->declare_parameter("polar_search_half", 10);
 
     // 服务参数
     trigger_service_name_ = this->declare_parameter("trigger_service_name", "/relocalization_trigger");
@@ -203,6 +205,11 @@ void DualDescriptorNode::loadKeyframeDatabase() {
         kf.pose(0, 3) = static_cast<float>(dx);
         kf.pose(1, 3) = static_cast<float>(dy);
         kf.pose(2, 3) = static_cast<float>(dz);
+
+        // Polar Ring 原始环 (离线, yaw 精搜用)
+        kf.polar_ring.resize(polar_bins_);
+        f.read(reinterpret_cast<char*>(kf.polar_ring.data()),
+               polar_bins_ * sizeof(float));
 
         // Polar FFT 幅度 (离线)
         int fft_size = polar_bins_ / 2;
@@ -312,6 +319,32 @@ int DualDescriptorNode::scColumnAlign(const Eigen::MatrixXf& src,
                 float tv = tgt_mat[r * sc_num_sector_ + (c + k) % sc_num_sector_];
                 dist += std::abs(sv - tv);
             }
+        }
+        if (dist < best_dist) { best_dist = dist; best_k = k; }
+    }
+    return best_k;
+}
+
+// ══════════════════════════════════════════════════════════════
+//  PolarRing 精搜 yaw (在指定范围内循环移位)
+// ══════════════════════════════════════════════════════════════
+
+int DualDescriptorNode::polarRingFineAlign(const std::vector<float>& src_ring,
+                                            const std::vector<float>& tgt_ring,
+                                            int center_bin, int search_half,
+                                            float& best_dist) const {
+    int N = static_cast<int>(src_ring.size());
+    if (N == 0 || tgt_ring.size() != static_cast<size_t>(N)) {
+        best_dist = 1e9f;
+        return center_bin;
+    }
+    int best_k = center_bin;
+    best_dist = 1e9f;
+    for (int offset = -search_half; offset <= search_half; offset++) {
+        int k = (center_bin + offset + N) % N;
+        float dist = 0.0f;
+        for (int n = 0; n < N; n++) {
+            dist += std::abs(src_ring[n] - tgt_ring[(n + k) % N]);
         }
         if (dist < best_dist) { best_dist = dist; best_k = k; }
     }
@@ -472,6 +505,17 @@ void DualDescriptorNode::pointcloudCallback(const sensor_msgs::msg::PointCloud2:
         c.combined_sim = sc_weight_ * sc_score + fft_weight_ * fft_sim;
         c.sc_best_shift = best_shift;
         c.sc_align_score = sc_score;
+
+        // yaw 估计：根据 yaw_method 选择 SC 或 PolarRing
+        if (yaw_method_ == "polar_ring") {
+            float polar_dist;
+            int fine_shift = polarRingFineAlign(src_polar.max_rho, kf.polar_ring,
+                                                0, polar_search_half_, polar_dist);
+            c.fine_yaw_deg = fine_shift * (360.0f / polar_bins_);
+        } else {
+            c.fine_yaw_deg = best_shift * (360.0f / sc_num_sector_);
+        }
+
         candidates.push_back(c);
     }
 
@@ -513,11 +557,11 @@ void DualDescriptorNode::pointcloudCallback(const sensor_msgs::msg::PointCloud2:
     RCLCPP_INFO(this->get_logger(), "===== TOP-%d CANDIDATES =====", static_cast<int>(candidates.size()));
     for (size_t i = 0; i < candidates.size(); i++) {
         const auto& kf = keyframes_[candidates[i].keyframe_id];
-        RCLCPP_INFO(this->get_logger(), "  [%zu] kf=%d pos=(%7.2f,%7.2f) sc_score=%.4f combined=%.4f shift=%d",
+        RCLCPP_INFO(this->get_logger(), "  [%zu] kf=%d pos=(%7.2f,%7.2f) sc_score=%.4f combined=%.4f yaw=%.1f°",
                      i, candidates[i].keyframe_id,
                      kf.pose(0,3), kf.pose(1,3),
                      candidates[i].sc_align_score, candidates[i].combined_sim,
-                     candidates[i].sc_best_shift);
+                     candidates[i].fine_yaw_deg);
     }
 
     // ── 逐候选验证 ──
@@ -537,13 +581,13 @@ void DualDescriptorNode::pointcloudCallback(const sensor_msgs::msg::PointCloud2:
         RCLCPP_INFO(this->get_logger(), "--- Verifying kf=%d pos=(%.2f,%.2f) sim=%.4f ---",
                      kf_id, kf.pose(0,3), kf.pose(1,3), c.combined_sim);
 
-        // 1. SC 列对齐 → 粗 yaw (复用扫描时已算好的 best_shift)
-        float yaw_coarse_deg = c.sc_best_shift * (360.0f / sc_num_sector_);
-        RCLCPP_INFO(this->get_logger(), "  SC: shift=%d/60 coarse_yaw=%.1f° score=%.4f",
-                     c.sc_best_shift, yaw_coarse_deg, c.sc_align_score);
+        // 1. 使用候选的 yaw（由 yaw_method 决定：SC 或 PolarRing）
+        RCLCPP_INFO(this->get_logger(), "  yaw: method=%s yaw=%.1f° sc_shift=%d/60 sc_score=%.4f",
+                     yaw_method_.c_str(), c.fine_yaw_deg,
+                     c.sc_best_shift, c.sc_align_score);
 
-        // 2. 使用 SC 粗 yaw 作为初始角度
-        float yaw_fine_rad = yaw_coarse_deg * M_PI / 180.0f;
+        // 2. 使用 fine_yaw 作为初始角度
+        float yaw_fine_rad = c.fine_yaw_deg * M_PI / 180.0f;
 
         // 3. 平移初值：直接用关键帧位姿，让 ICP 修正
         Eigen::Matrix4f rot_mat = Eigen::Matrix4f::Identity();

@@ -371,6 +371,8 @@ int main(int argc, char **argv) {
             meta_f.write(reinterpret_cast<const char *>(&kf.qx), sizeof(double));
             meta_f.write(reinterpret_cast<const char *>(&kf.qy), sizeof(double));
             meta_f.write(reinterpret_cast<const char *>(&kf.qz), sizeof(double));
+            meta_f.write(reinterpret_cast<const char *>(kf.polar_ring.data()),
+                       ring_bins * sizeof(float));
             meta_f.write(reinterpret_cast<const char *>(kf.polar_fft_mag.data()),
                        (ring_bins / 2) * sizeof(float));
             meta_f.write(reinterpret_cast<const char *>(kf.sc_matrix.data()),

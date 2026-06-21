@@ -16,6 +16,8 @@
     top_k: 10                 # 全量余弦扫描后取 top-K 进 ICP
     sc_weight: 1.0            # SC 列对齐分数权重 (sim = sc_w×sc_score + fft_w×fft_sim)
     fft_weight: 1.0           # FFT 余弦分数权重
+    yaw_method: "sc"          # yaw 估计方法: "sc" 或 "polar_ring"
+    polar_search_half: 10     # PolarRing 精搜范围（±N bin，仅 yaw_method=polar_ring 时生效）
 
     # ── 服务参数 ──
     trigger_service_name: "/relocalization_trigger"

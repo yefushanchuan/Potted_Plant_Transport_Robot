@@ -43,6 +43,7 @@ struct Keyframe {
     int id;
     Eigen::Matrix4f pose = Eigen::Matrix4f::Identity();
     CloudT::Ptr cloud;
+    std::vector<float> polar_ring;      // 360维, 原始极坐标环（用于 yaw 精搜）
     std::vector<float> polar_fft_mag;   // 180维, FFT 幅度 → 余弦扫描
     std::vector<float> sc_matrix;       // 120×20 = 2400维, SC (20×120 row-major) → 列对齐
 };
@@ -53,6 +54,7 @@ struct Candidate {
     float fft_sim = 0.0f;        // FFT 余弦相似度
     int sc_best_shift = 0;       // SC 列对齐最佳移位数
     float sc_align_score = 0.0f; // SC 列对齐分数 (归一化到 [0,1])
+    float fine_yaw_deg = 0.0f;  // 最终 yaw 角（度），由 yaw_method 决定
     float icp_fitness = 1e6f;
     Eigen::Matrix4f icp_pose = Eigen::Matrix4f::Identity();
 };
@@ -72,10 +74,14 @@ private:
     void extractFFTMagnitude(const std::vector<float>& ring,
                              std::vector<float>& mag) const;
 
-    // yaw 估计 (SC 列对齐)
+    // yaw 估计
     int scColumnAlign(const Eigen::MatrixXf& src,
                       const std::vector<float>& tgt_mat,
                       float& best_dist) const;
+    int polarRingFineAlign(const std::vector<float>& src_ring,
+                           const std::vector<float>& tgt_ring,
+                           int center_bin, int search_half,
+                           float& best_dist) const;
 
     // ICP 精配准
     float icpRefine(const CloudT::Ptr& source, const CloudT::Ptr& target,
@@ -115,6 +121,8 @@ private:
     int top_k_;
     float sc_weight_;
     float fft_weight_;
+    std::string yaw_method_;
+    int polar_search_half_;
 
     std::string trigger_service_name_;
 
