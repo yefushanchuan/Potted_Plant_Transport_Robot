@@ -155,7 +155,7 @@ void DualDescriptorNode::loadKeyframeDatabase() {
     uint32_t magic = 0, count = 0;
     int32_t file_ring_bins = 0, file_sc_ring = 0, file_sc_sector = 0;
     float file_sc_max_radius = 0.0f;
-    float file_polar_bev_z_min = 0.2f, file_polar_bev_z_max = 2.0f, file_sc_bev_z_min = 0.1f;
+    float file_polar_bev_z_min = 0.2f, file_polar_bev_z_max = 3.0f, file_sc_bev_z_min = 0.1f;
     f.read(reinterpret_cast<char*>(&magic), sizeof(magic));
     if (magic != 0x44445343) {
         RCLCPP_ERROR(this->get_logger(), "Invalid magic: 0x%X", magic);
