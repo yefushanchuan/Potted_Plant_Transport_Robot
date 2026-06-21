@@ -1,6 +1,6 @@
 /**:
   ros__parameters:
-    # ── 关键帧数据库 ──
+    # ── 关键帧数据库（路径由 launch 传入） ──
     keyframe_db: ""
 
     # ── 话题 ──
@@ -11,17 +11,6 @@
     map_frame_id: "map"
     base_frame_id: "base_footprint"
     laser_frame_id: "front_laser_link"
-
-    # ── 极坐标环参数 ──
-    polar_bins: 360           # 角度 bin 数（1°分辨率）
-    polar_bev_z_min: 0.2      # BEV 投影 z 下界（排除地面）
-    polar_bev_z_max: 2.0      # BEV 投影 z 上界（排除天花板）
-
-    # ── SC 矩阵参数 ──
-    sc_num_ring: 20           # 径向环数
-    sc_num_sector: 60         # 角度扇区数（6°分辨率）
-    sc_max_radius: 80.0       # 最大半径（米）
-    sc_bev_z_min: 0.1         # SC 投影 z 下界（只排除地面，保留高度信息）
 
     # ── 搜索参数 ──
     top_k: 10                 # 全量余弦扫描后取 top-K 进 ICP

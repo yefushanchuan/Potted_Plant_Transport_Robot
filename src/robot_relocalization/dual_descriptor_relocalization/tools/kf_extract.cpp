@@ -132,7 +132,10 @@ void printUsage() {
               << "  --bins 360          极坐标环 bin 数\n"
               << "  --z_min 0.2         BEV z 下界\n"
               << "  --z_max 2.0         BEV z 上界\n"
-              << "  --leaf 0.1          体素滤波叶子大小(米)\n";
+              << "  --leaf 0.1          体素滤波叶子大小(米)\n"
+              << "  --sc_ring 20        SC 径向环数\n"
+              << "  --sc_sector 120     SC 扇区数\n"
+              << "  --sc_z_min 0.1      SC 高度过滤下界\n";
 }
 
 int main(int argc, char **argv) {
@@ -151,6 +154,9 @@ int main(int argc, char **argv) {
     int ring_bins = 360;
     float z_min = 0.2f, z_max = 2.0f;
     float leaf_size = 0.1f;
+    int sc_num_ring = 20;
+    int sc_num_sector = 120;
+    float sc_z_min = 0.1f;
 
     for (int i = 2; i < argc; i++) {
         std::string arg = argv[i];
@@ -171,6 +177,12 @@ int main(int argc, char **argv) {
             z_max = std::stof(argv[++i]);
         } else if (arg == "--leaf" && i + 1 < argc) {
             leaf_size = std::stof(argv[++i]);
+        } else if (arg == "--sc_ring" && i + 1 < argc) {
+            sc_num_ring = std::stoi(argv[++i]);
+        } else if (arg == "--sc_sector" && i + 1 < argc) {
+            sc_num_sector = std::stoi(argv[++i]);
+        } else if (arg == "--sc_z_min" && i + 1 < argc) {
+            sc_z_min = std::stof(argv[++i]);
         } else {
             std::cerr << "未知参数: " << arg << "\n";
             printUsage();
@@ -285,12 +297,10 @@ int main(int argc, char **argv) {
             polar_fft_mag[k] = std::sqrt(real * real + imag * imag) / ring_bins;
         }
 
-        // SC 矩阵 (20×120, row-major)
-        int sc_num_ring = 20, sc_num_sector = 120;
+        // SC 矩阵 (sc_num_ring×sc_num_sector, row-major)
         std::vector<float> sc_matrix(sc_num_ring * sc_num_sector, -1000.0f);
         {
             float sc_max_radius = static_cast<float>(sc_radius);
-            float sc_z_min = 0.1f;
             for (const auto &pt : local->points) {
                 float rho = std::sqrt(pt.x * pt.x + pt.y * pt.y);
                 if (rho > sc_max_radius || pt.z < sc_z_min) continue;
@@ -337,7 +347,8 @@ int main(int argc, char **argv) {
     {
         std::ofstream meta_f(bin_path, std::ios::binary);
         uint32_t count = keyframes.size();
-        int32_t sc_ring_out = 20, sc_sector_out = 120;
+        int32_t sc_ring_out = sc_num_ring;
+        int32_t sc_sector_out = sc_num_sector;
         float sc_max_radius_out = static_cast<float>(sc_radius);
         uint32_t magic = 0x44445343;
 
@@ -347,6 +358,9 @@ int main(int argc, char **argv) {
         meta_f.write(reinterpret_cast<const char *>(&sc_ring_out), sizeof(sc_ring_out));
         meta_f.write(reinterpret_cast<const char *>(&sc_sector_out), sizeof(sc_sector_out));
         meta_f.write(reinterpret_cast<const char *>(&sc_max_radius_out), sizeof(sc_max_radius_out));
+        meta_f.write(reinterpret_cast<const char *>(&z_min), sizeof(float));
+        meta_f.write(reinterpret_cast<const char *>(&z_max), sizeof(float));
+        meta_f.write(reinterpret_cast<const char *>(&sc_z_min), sizeof(float));
 
         for (size_t i = 0; i < keyframes.size(); i++) {
             const auto &kf = keyframes[i];

@@ -78,9 +78,8 @@ DualDescriptorNode::DualDescriptorNode(const rclcpp::NodeOptions& options)
     wakeUp();
 
     RCLCPP_INFO(this->get_logger(), "DualDescriptorNode initialized (active, power-on search) | "
-                "keyframes=%zu polar_bins=%d sc=[%dx%d] sc_radius=%.1f trigger_service=%s",
-                keyframes_.size(), polar_bins_, sc_num_ring_, sc_num_sector_, sc_max_radius_,
-                trigger_service_name_.c_str());
+                "keyframes=%zu trigger_service=%s",
+                keyframes_.size(), trigger_service_name_.c_str());
 }
 
 DualDescriptorNode::~DualDescriptorNode() {}
@@ -102,17 +101,6 @@ void DualDescriptorNode::loadParameters() {
     base_frame_id_ = this->declare_parameter("base_frame_id", std::string("base_footprint"));
     laser_frame_id_ = this->declare_parameter("laser_frame_id", std::string("front_laser_link"));
 
-    // 极坐标环参数
-    polar_bins_ = this->declare_parameter("polar_bins", 360);
-    polar_bev_z_min_ = this->declare_parameter("polar_bev_z_min", 0.2);
-    polar_bev_z_max_ = this->declare_parameter("polar_bev_z_max", 2.0);
-
-    // SC 矩阵参数
-    sc_num_ring_ = this->declare_parameter("sc_num_ring", 20);
-    sc_num_sector_ = this->declare_parameter("sc_num_sector", 60);
-    sc_max_radius_ = this->declare_parameter("sc_max_radius", 80.0f);
-    sc_bev_z_min_ = this->declare_parameter("sc_bev_z_min", 0.1f);
-
     // 搜索参数
     top_k_ = this->declare_parameter("top_k", 10);
     sc_weight_ = this->declare_parameter("sc_weight", 1.0f);
@@ -123,7 +111,7 @@ void DualDescriptorNode::loadParameters() {
 
     // ICP 参数
     icp_resolutions_ = this->declare_parameter("icp_resolutions", std::vector<double>{1.0, 0.5, 0.2});
-    icp_iterations_ = this->declare_parameter("icp_iterations", 5);
+    icp_iterations_ = this->declare_parameter("icp_iterations", 15);
     icp_fitness_threshold_ = this->declare_parameter("icp_fitness_threshold", 0.5f);
 
     RCLCPP_DEBUG(this->get_logger(), "Parameters loaded");
@@ -165,6 +153,7 @@ void DualDescriptorNode::loadKeyframeDatabase() {
     uint32_t magic = 0, count = 0;
     int32_t file_ring_bins = 0, file_sc_ring = 0, file_sc_sector = 0;
     float file_sc_max_radius = 0.0f;
+    float file_polar_bev_z_min = 0.2f, file_polar_bev_z_max = 2.0f, file_sc_bev_z_min = 0.1f;
     f.read(reinterpret_cast<char*>(&magic), sizeof(magic));
     if (magic != 0x44445343) {
         RCLCPP_ERROR(this->get_logger(), "Invalid magic: 0x%X", magic);
@@ -175,18 +164,23 @@ void DualDescriptorNode::loadKeyframeDatabase() {
     f.read(reinterpret_cast<char*>(&file_sc_ring), sizeof(file_sc_ring));
     f.read(reinterpret_cast<char*>(&file_sc_sector), sizeof(file_sc_sector));
     f.read(reinterpret_cast<char*>(&file_sc_max_radius), sizeof(file_sc_max_radius));
+    f.read(reinterpret_cast<char*>(&file_polar_bev_z_min), sizeof(float));
+    f.read(reinterpret_cast<char*>(&file_polar_bev_z_max), sizeof(float));
+    f.read(reinterpret_cast<char*>(&file_sc_bev_z_min), sizeof(float));
 
-    RCLCPP_INFO(this->get_logger(), "DB loaded: %u keyframes, ring=%d sc=[%dx%d] sc_radius=%.1f",
-                count, file_ring_bins, file_sc_ring, file_sc_sector, file_sc_max_radius);
-
-    if (file_ring_bins != polar_bins_) {
-        RCLCPP_WARN(this->get_logger(), "ring_bins mismatch: file=%d config=%d",
-                     file_ring_bins, polar_bins_);
-        polar_bins_ = file_ring_bins;
-    }
+    polar_bins_ = file_ring_bins;
     sc_num_ring_ = file_sc_ring;
     sc_num_sector_ = file_sc_sector;
     sc_max_radius_ = file_sc_max_radius;
+    polar_bev_z_min_ = file_polar_bev_z_min;
+    polar_bev_z_max_ = file_polar_bev_z_max;
+    sc_bev_z_min_ = file_sc_bev_z_min;
+
+    RCLCPP_INFO(this->get_logger(),
+                "Feature params from DB: keyframes=%u polar_bins=%d sc=[%dx%d] sc_radius=%.1f "
+                "polar_z=[%.2f,%.2f] sc_z_min=%.2f",
+                count, polar_bins_, sc_num_ring_, sc_num_sector_, sc_max_radius_,
+                polar_bev_z_min_, polar_bev_z_max_, sc_bev_z_min_);
 
     keyframes_.resize(count);
     for (uint32_t i = 0; i < count; i++) {
