@@ -234,7 +234,6 @@ public:
 
     location(rclcpp::Node::SharedPtr nh) : nh_(nh) {
         YAML::Node config;
-        nh_ = nh;
         
         tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(nh_);
         tf_buffer_      = std::make_shared<tf2_ros::Buffer>(nh_->get_clock());
