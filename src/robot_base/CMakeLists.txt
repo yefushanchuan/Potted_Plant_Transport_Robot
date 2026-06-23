@@ -117,6 +117,7 @@ install(
     PROGRAMS
         scripts/angular_calibration.py
         scripts/linear_calibration.py
+        scripts/dual_imu_calib.py
     DESTINATION lib/${PROJECT_NAME}
 )
 
