@@ -464,7 +464,7 @@ public:
 
         cloud_sub_ = nh_->create_subscription<sensor_msgs::msg::PointCloud2>(
             lidar_topic, rclcpp::QoS(rclcpp::KeepLast(1)),
-            std::bind(&location::robosense_cb, this, std::placeholders::_1));
+            std::bind(&location::Lidar_cb, this, std::placeholders::_1));
         
         std::string cmd_topic = config["cmd_topic"].as<std::string>();
         cmd_sub_ = nh_->create_subscription<std_msgs::msg::String>(
@@ -982,7 +982,7 @@ public:
     }
 
     // 激光点云回调
-    void robosense_cb(const sensor_msgs::msg::PointCloud2::SharedPtr cloud_msg) {
+    void Lidar_cb(const sensor_msgs::msg::PointCloud2::SharedPtr cloud_msg) {
         if (!has_extrinsics_) return;
 
         double msg_timestamp = getSec(cloud_msg->header);
