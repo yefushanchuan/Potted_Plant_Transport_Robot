@@ -55,6 +55,8 @@ public:
 //3维的点云与地图匹配
 class scan2map3d{
 public:
+  // Read-only correspondence query for the augmented filter. No ICP pose update.
+  bool matchPlane(const Eigen::Vector3d& world, Eigen::Vector3d& normal, double& offset) const;
   float plane_threshold_;
   float correspondences_threshold_normal_;
   float correspondences_threshold_reloc_;

@@ -22,6 +22,7 @@ add_definitions(-DMP_PROC_NUM=4) #多线程数量
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
+find_package(agrobot_time_sync REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(tf2 REQUIRED)
@@ -47,11 +48,13 @@ set(SRC_LIST src/map_builder/commons.cpp
              src/map_builder/ikd_Tree.cpp
              src/map_builder/lidar_processor.cpp
              src/map_builder/map_builder.cpp
+             src/map_builder/online_mapping.cpp
              src/utils.cpp)
 
 add_executable(fastlio2_node src/lio_node.cpp ${SRC_LIST})
 ament_target_dependencies(fastlio2_node rclcpp std_msgs tf2 tf2_ros nav_msgs sensor_msgs  pcl_conversions geometry_msgs)
 target_link_libraries(fastlio2_node
+  agrobot_time_sync::agrobot_time_sync
   yaml-cpp
   ${PCL_LIBRARIES}
   Sophus::Sophus

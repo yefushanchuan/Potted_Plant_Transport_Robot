@@ -71,3 +71,26 @@ imu_log_interval: 100            # IMU日志输出间隔（预积分次数）
 lidar_log_interval: 15           # LiDAR日志输出间隔（帧数）
 system_log_interval: 25          # 系统日志输出间隔（帧数）
 feature_log_interval: 10         # 特征日志输出间隔（帧数）
+
+# Online mode: HIPNUC ROS-header timestamps, SI acceleration, fixed URDF extrinsics.
+# online_time_offset:=false retains the original /livox/imu 21-state path.
+online_time_offset: true
+online_imu_topic: /imu
+imu_accel_scale: 1.0
+online_use_tf_extrinsics: true
+online_imu_frame: imu_link
+online_lidar_frame: front_laser_link
+online_init_duration: 1.0
+lidar_lines: 4
+time_offset:
+  initial_td: 0.0
+  initial_td_std: 0.02
+  td_noise: 0.0005
+  max_abs_td: 0.1
+  max_td_step: 0.005
+  max_imu_gap: 0.05
+  max_scan_duration: 0.25
+  max_points: 1200
+  iterations: 4
+  min_fitness: 0.6
+  max_rms: 0.2

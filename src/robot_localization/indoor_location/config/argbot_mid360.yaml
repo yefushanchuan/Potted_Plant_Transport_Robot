@@ -23,6 +23,37 @@ reloc_threshold: 0.80                         #重定位阈值，fitness低于�
 map_filtr_leaf_size: 0.3                      #定位线程使用的全局地图滤波体素大小，使用配p2picp算法不能太大，不然拟合平面内找不到邻域点（p2picp 0.3,ndt 0.5）
 enable_undistort: true                        #是否启用点云去畸变功能（使用IMU进行运动补偿）
 
+# Augmented 19-state IEKF. HIPNUC ROS headers are used unchanged.
+# Disable to restore the original ICP-pose + 18-state ESKF tracking path.
+online_time_offset: true
+time_offset:
+  initial_td: 0.0              # seconds; t_imu_ros = t_lidar + td
+  initial_td_std: 0.02         # seconds
+  td_noise: 0.0005             # seconds / sqrt(second), random walk
+  max_abs_td: 0.1              # bounded residual offset, not arbitrary clock epochs
+  max_td_step: 0.005           # max accepted change per scan; also IMU cache margin
+  max_imu_gap: 0.05
+  max_scan_duration: 0.25
+  accel_noise: 0.15            # m/s^2 / sqrt(Hz), continuous noise density
+  gyro_noise: 0.01             # rad/s / sqrt(Hz)
+  accel_bias_noise: 0.001
+  gyro_bias_noise: 0.0001
+  point_std: 0.08              # effective point-to-plane measurement std, m
+  huber: 0.15
+  max_residual: 0.5
+  min_fitness: 0.6
+  max_rms: 0.2
+  min_points: 30
+  max_points: 1200
+  iterations: 4
+  excitation_window: 1.0
+  min_excitation_span: 0.5
+  min_gyro_std: 0.03
+  min_accel_std: 0.15
+  min_td_information: 1.0      # time information after eliminating instantaneous pose
+  min_rotation_eigenvalue: 0.1
+  min_translation_eigenvalue: 0.1
+
 map_frame    : "map"                          #发布定位系统tf发布所需的坐标系
 odom_frame   : "odom"                         #里程计坐标系（用于 Nav2 导航）
 base_frame   : "base_footprint"               #改为 base_footprint 以匹配 URDF 的根坐标系

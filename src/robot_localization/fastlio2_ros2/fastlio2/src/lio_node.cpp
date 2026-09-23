@@ -8,6 +8,10 @@
 #include <thread>             // 线程支持
 #include <condition_variable> // 条件变量，用于线程间同步
 #include <atomic>             // 原子操作，用于线程安全的标志位
+#include <std_msgs/msg/string.hpp>
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/transform_listener.h>
+#include <sstream>
 #include <csignal>            // 信号处理
 
 // ROS2核心库和消息类型
@@ -87,6 +91,11 @@ public:
         // 加载配置参数
         loadParameters();
 
+        if (m_builder_config.online_time_offset && online_use_tf_) {
+            tf_buffer_ = std::make_shared<tf2_ros::Buffer>(get_clock());
+            tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
+        } else extrinsics_ready_.store(true);
+        time_pub_ = create_publisher<std_msgs::msg::String>("time_offset",10);
         // 根据雷达类型创建对应的订阅器
         if (m_node_config.lidar_type == "livox")
         {
@@ -104,7 +113,7 @@ public:
         }
 
         // 创建IMU数据订阅器
-        m_imu_sub = this->create_subscription<sensor_msgs::msg::Imu>(m_node_config.imu_topic, 200, std::bind(&LIONode::imuCB, this, std::placeholders::_1));
+        m_imu_sub = this->create_subscription<sensor_msgs::msg::Imu>(m_node_config.imu_topic, m_builder_config.online_time_offset ? rclcpp::SensorDataQoS().keep_last(200) : rclcpp::QoS(200), std::bind(&LIONode::imuCB, this, std::placeholders::_1));
 
         // 创建发布器
         m_body_cloud_pub = this->create_publisher<sensor_msgs::msg::PointCloud2>("body_cloud", 10);   // 机体坐标系点云
@@ -236,6 +245,35 @@ public:
         m_builder_config.system_log_interval = config["system_log_interval"].as<int>();
         m_builder_config.feature_log_interval = config["feature_log_interval"].as<int>();
 
+        m_builder_config.online_time_offset=declare_parameter<bool>("online_time_offset",config["online_time_offset"].as<bool>(false));
+        if (m_builder_config.online_time_offset) {
+            if (m_node_config.lidar_type!="livox" || m_builder_config.esti_il)
+                throw std::invalid_argument("online time offset requires timed Livox PointCloud2 and fixed extrinsics");
+            m_node_config.imu_topic=declare_parameter<std::string>("imu_topic",config["online_imu_topic"].as<std::string>(m_node_config.imu_topic));
+            online_use_tf_=config["online_use_tf_extrinsics"].as<bool>(false);
+            imu_frame_=config["online_imu_frame"].as<std::string>("imu_link");
+            lidar_frame_=config["online_lidar_frame"].as<std::string>("front_laser_link");
+            m_builder_config.imu_accel_scale=config["imu_accel_scale"].as<double>(1.0);
+            m_builder_config.lidar_lines=config["lidar_lines"].as<int>(4);
+            m_builder_config.online_init_duration=config["online_init_duration"].as<double>(1.0);
+            auto& o=m_builder_config.time_options;
+            auto t=config["time_offset"];
+#define TIME_OPTION(field) if(t && t[#field]) o.field=t[#field].as<decltype(o.field)>();
+            TIME_OPTION(initial_td) TIME_OPTION(initial_td_std) TIME_OPTION(td_noise)
+            TIME_OPTION(max_abs_td) TIME_OPTION(max_td_step) TIME_OPTION(max_imu_gap) TIME_OPTION(max_scan_duration)
+            TIME_OPTION(accel_noise) TIME_OPTION(gyro_noise) TIME_OPTION(accel_bias_noise) TIME_OPTION(gyro_bias_noise)
+            TIME_OPTION(point_std) TIME_OPTION(huber) TIME_OPTION(max_residual) TIME_OPTION(min_fitness) TIME_OPTION(max_rms)
+            TIME_OPTION(min_rotation_eigenvalue) TIME_OPTION(min_translation_eigenvalue)
+            TIME_OPTION(excitation_window) TIME_OPTION(min_excitation_span) TIME_OPTION(min_gyro_std) TIME_OPTION(min_accel_std)
+            TIME_OPTION(min_td_information) TIME_OPTION(min_points) TIME_OPTION(max_points) TIME_OPTION(iterations)
+#undef TIME_OPTION
+            o.validate();
+            if (!(m_builder_config.imu_accel_scale>0) || !std::isfinite(m_builder_config.imu_accel_scale) ||
+                m_builder_config.lidar_filter_num<1 || m_builder_config.lidar_lines<1 ||
+                m_builder_config.map_resolution<=0 || m_builder_config.online_init_duration<=0)
+                throw std::invalid_argument("Invalid online sensor/map configuration");
+            RCLCPP_INFO(get_logger(),"Online td: t_imu_ros=t_lidar+td; IMU=%s, acceleration scale=%.6f",m_node_config.imu_topic.c_str(),m_builder_config.imu_accel_scale);
+        }
         // 打印加载的参数
         RCLCPP_INFO(this->get_logger(), "  Loaded parameters:");
         RCLCPP_INFO(this->get_logger(), "  lidar_filter_num: %d", m_builder_config.lidar_filter_num);
@@ -290,6 +328,7 @@ public:
     // IMU数据回调函数：接收并处理IMU消息（仅数据收集，不阻塞）
     void imuCB(const sensor_msgs::msg::Imu::SharedPtr msg)
     {
+        if (m_builder_config.online_time_offset) { onlineImu(msg); return; }
         // 获取IMU消息的时间戳（转换为秒）
         double timestamp = Utils::getSec(msg->header);
         
@@ -397,6 +436,7 @@ public:
     // Livox激光雷达专用回调函数：处理Livox格式的点云数据（仅数据收集）
     void livoxCB(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
     {
+        if (m_builder_config.online_time_offset) { onlineLidar(msg); return; }
         // 获取时间戳
         double timestamp = Utils::getSec(msg->header);
         double sys_time = this->get_clock()->now().seconds();
@@ -437,6 +477,8 @@ public:
     // 同步IMU和激光雷达数据包，确保时间对齐
     bool syncPackage()
     {
+        if (m_builder_config.online_time_offset) return syncOnline();
+        std::scoped_lock lock(m_state_data.imu_mutex,m_state_data.lidar_mutex);
         // 如果 IMU 缓冲区或激光雷达缓冲区为空，则无法同步数据包
         if (m_state_data.imu_buffer.empty() || m_state_data.lidar_buffer.empty())
             return false;
@@ -447,6 +489,7 @@ public:
             // 取出当前帧雷达点云
             m_package.cloud = m_state_data.lidar_buffer.front().second;
 
+            if (m_package.cloud->empty()) { m_state_data.lidar_buffer.pop_front(); return false; }
             // 按照点的曲率（curvature）排序
             std::sort(m_package.cloud->points.begin(), m_package.cloud->points.end(), [](PointType &p1, PointType &p2)
                       { return p1.curvature < p2.curvature; });
@@ -482,6 +525,105 @@ public:
 
         // 数据包同步成功
         return true;
+    }
+
+    bool fixedExtrinsics() {
+        if (extrinsics_ready_.load()) return true;
+        try {
+            auto assign=[&](const std::string& frame,M3D& R,V3D& p) {
+                auto tf=tf_buffer_->lookupTransform(m_node_config.body_frame,frame,tf2::TimePointZero);
+                const auto& q=tf.transform.rotation; const auto& t=tf.transform.translation;
+                R=Eigen::Quaterniond(q.w,q.x,q.y,q.z).normalized().toRotationMatrix(); p={t.x,t.y,t.z};
+            };
+            assign(imu_frame_,m_builder_config.imu_to_baselink_r_il,m_builder_config.imu_to_baselink_t_il);
+            assign(lidar_frame_,m_builder_config.laser_to_baselink_r_il,m_builder_config.laser_to_baselink_t_il);
+            extrinsics_ready_.store(true); return true;
+        } catch (const tf2::TransformException& e) {
+            RCLCPP_WARN_THROTTLE(get_logger(),*get_clock(),2000,"Waiting for fixed sensor extrinsics: %s",e.what()); return false;
+        }
+    }
+    void clearOnlineQueues() { // both sensor mutexes held
+        m_state_data.imu_buffer.clear(); m_state_data.lidar_buffer.clear();
+        m_state_data.last_imu_time=-1; m_state_data.last_lidar_time=-1;
+        last_gyro_time_=-1; reset_pending_.store(true);
+    }
+    void onlineImu(const sensor_msgs::msg::Imu::SharedPtr msg) {
+        if (!extrinsics_ready_.load()) return;
+        double t=Utils::getSec(msg->header);
+        V3D a(msg->linear_acceleration.x,msg->linear_acceleration.y,msg->linear_acceleration.z);
+        V3D w(msg->angular_velocity.x,msg->angular_velocity.y,msg->angular_velocity.z);
+        if (!a.allFinite() || !w.allFinite() || !std::isfinite(t)) return;
+        a=m_builder_config.imu_to_baselink_r_il*a*m_builder_config.imu_accel_scale;
+        w=m_builder_config.imu_to_baselink_r_il*w;
+        std::scoped_lock lock(m_state_data.imu_mutex,m_state_data.lidar_mutex);
+        if (t<m_state_data.last_imu_time) clearOnlineQueues();
+        if (t==m_state_data.last_imu_time) return;
+        V3D alpha=V3D::Zero();
+        if (last_gyro_time_>=0 && t-last_gyro_time_<=m_builder_config.time_options.max_imu_gap)
+            alpha=(w-last_gyro_)/(t-last_gyro_time_);
+        const V3D lever=m_builder_config.imu_to_baselink_t_il;
+        a-=w.cross(w.cross(lever))+alpha.cross(lever);
+        last_gyro_=w; last_gyro_time_=t;
+        m_state_data.imu_buffer.emplace_back(a,w,t); m_state_data.last_imu_time=t;
+        while (m_state_data.imu_buffer.size()>2 && t-m_state_data.imu_buffer[1].time>2.0) m_state_data.imu_buffer.pop_front();
+        m_process_cv.notify_one();
+    }
+    void onlineLidar(const sensor_msgs::msg::PointCloud2::SharedPtr msg) {
+        if (!extrinsics_ready_.load()) return;
+        // Driver contract: absolute nanoseconds FLOAT64 timestamp per point.
+        bool timed=false;
+        for (const auto& f:msg->fields) if (f.name=="timestamp" && f.datatype==sensor_msgs::msg::PointField::FLOAT64) timed=true;
+        if (!timed) { RCLCPP_ERROR_THROTTLE(get_logger(),*get_clock(),2000,"Online Livox requires FLOAT64 timestamp (absolute ns)"); return; }
+        double t=Utils::getSec(msg->header);
+        auto cloud=Utils::livox2PCL(*msg,m_builder_config.lidar_filter_num,m_builder_config.lidar_min_range,
+            m_builder_config.lidar_max_range,m_builder_config.lidar_z_min,m_builder_config.lidar_z_max,
+            m_builder_config.laser_to_baselink_r_il,m_builder_config.laser_to_baselink_t_il,true,m_builder_config.lidar_lines);
+        if (cloud->empty()) return;
+        std::sort(cloud->begin(),cloud->end(),[](const PointType& a,const PointType& b){ return a.curvature<b.curvature; });
+        std::scoped_lock lock(m_state_data.imu_mutex,m_state_data.lidar_mutex);
+        if (t<m_state_data.last_lidar_time) clearOnlineQueues();
+        if (t==m_state_data.last_lidar_time) return;
+        m_state_data.lidar_buffer.emplace_back(t,cloud); m_state_data.last_lidar_time=t;
+        while(m_state_data.lidar_buffer.size()>10) m_state_data.lidar_buffer.pop_front();
+        m_process_cv.notify_one();
+    }
+    bool syncOnline() {
+        if (!fixedExtrinsics()) return false;
+        std::scoped_lock lock(m_state_data.imu_mutex,m_state_data.lidar_mutex);
+        if (reset_pending_.exchange(false)) {
+            m_kf=std::make_shared<IESKF>(); m_builder=std::make_shared<MapBuilder>(m_builder_config,m_kf);
+            m_state_data.path.poses.clear(); m_package=SyncPackage();
+            std_msgs::msg::String d; d.data="{\"reason\":\"clock_rollback_reset_map\",\"accepted\":false}"; time_pub_->publish(d);
+        }
+        auto& clouds=m_state_data.lidar_buffer; auto& imus=m_state_data.imu_buffer;
+        if (clouds.empty() || imus.size()<2) return false;
+        double start=clouds.front().first, end=start+clouds.front().second->back().curvature*0.001;
+        const auto& o=m_builder_config.time_options;
+        double td=m_builder->timeInitialized()?m_builder->timeOffset():o.initial_td;
+        double begin=start+td-o.max_td_step, finish=end+td+o.max_td_step;
+        if (m_builder->timeInitialized()) begin=std::min(begin,m_builder->anchorTime());
+        if (imus.back().time<finish) return false;
+        if (imus.front().time>begin) {
+            clouds.pop_front();
+            std_msgs::msg::String d; d.data="{\"reason\":\"imu_buffer_coverage\",\"accepted\":false}"; time_pub_->publish(d);
+            return false;
+        }
+        m_package.cloud=clouds.front().second; m_package.cloud_start_time=start; m_package.cloud_end_time=end;
+        m_package.imus.clear();
+        size_t first=0; while(first+1<imus.size() && imus[first+1].time<begin) ++first;
+        for (size_t i=first;i<imus.size();++i) { m_package.imus.push_back(imus[i]); if (imus[i].time>=finish) break; }
+        clouds.pop_front(); return true;
+    }
+    void publishTimeReport(double duration_ms) {
+        const auto& r=m_builder->timeReport();
+        std::ostringstream s; s<<std::setprecision(17)
+            <<"{\"lidar_time_sec\":"<<m_package.cloud_end_time<<",\"td_ms\":"<<r.td*1000
+            <<",\"td_std_ms\":"<<r.td_std*1000<<",\"accepted\":"<<(r.accepted?"true":"false")
+            <<",\"td_updated\":"<<(r.td_updated?"true":"false")<<",\"td_limited\":"<<(r.td_limited?"true":"false")
+            <<",\"reason\":\""<<r.reason<<"\",\"rms_m\":"<<r.rms<<",\"fitness\":"<<r.fitness
+            <<",\"matches\":"<<r.matches<<",\"map_points\":"<<m_builder->lidar_processor()->mapSize()
+            <<",\"map_inserted\":"<<(m_builder->outputReady()?"true":"false")<<",\"processing_ms\":"<<duration_ms<<"}";
+        std_msgs::msg::String d; d.data=s.str(); time_pub_->publish(d);
     }
 
     // 发布点云数据到指定话题
@@ -564,6 +706,7 @@ public:
 
         // 将当前位姿添加到轨迹路径中
         m_state_data.path.poses.push_back(pose);
+        m_state_data.path.header.stamp=pose.header.stamp;
 
         // 发布完整轨迹路径
         path_pub->publish(m_state_data.path);
@@ -659,6 +802,12 @@ public:
                             data_delay, data_delay * 1000.0, build_time_ms, m_package.imus.size());
             }
 
+            if (m_builder_config.online_time_offset) {
+                if (reset_pending_.load()) continue;
+                publishTimeReport(build_time_ms);
+                if (!m_builder->outputReady()) continue;
+            }
+            const double output_time=m_package.cloud_end_time+m_builder->timeOffset();
             // === 步骤3: 发布结果 ===
             // 只有在建图状态下才发布结果
             if (m_builder->status() != BuilderStatus::MAPPING)
@@ -666,31 +815,38 @@ public:
 
             // 广播TF变换（世界坐标系到机体坐标系）
             broadCastTF(m_tf_broadcaster, m_node_config.world_frame, m_node_config.body_frame,
-                        m_package.cloud_end_time);
+                        output_time);
 
             // 发布里程计信息
             publishOdometry(m_odom_pub, m_node_config.world_frame, m_node_config.body_frame,
-                            m_package.cloud_end_time);
+                            output_time);
 
             // 将点云变换到机体坐标系并发布
             CloudType::Ptr body_cloud = m_builder->lidar_processor()->transformCloud(
                 m_package.cloud, m_kf->x().r_il, m_kf->x().t_il);
             publishCloud(m_body_cloud_pub, body_cloud, m_node_config.body_frame,
-                         m_package.cloud_end_time);
+                         output_time);
 
             // 将点云变换到世界坐标系并发布
             CloudType::Ptr world_cloud = m_builder->lidar_processor()->transformCloud(
                 m_package.cloud, m_builder->lidar_processor()->r_wl(),
                 m_builder->lidar_processor()->t_wl());
             publishCloud(m_world_cloud_pub, world_cloud, m_node_config.world_frame,
-                         m_package.cloud_end_time);
+                         output_time);
 
             // 发布轨迹路径
-            publishPath(m_path_pub, m_node_config.world_frame, m_package.cloud_end_time);
+            publishPath(m_path_pub, m_node_config.world_frame, output_time);
         }
     }
 
 private:
+    bool online_use_tf_=false;
+    std::string imu_frame_,lidar_frame_;
+    std::atomic<bool> extrinsics_ready_{false},reset_pending_{false};
+    V3D last_gyro_=V3D::Zero(); double last_gyro_time_=-1;
+    std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
+    std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr time_pub_;
     // ROS2订阅器和发布器
     std::shared_ptr<void> m_lidar_sub;                                // 激光雷达数据订阅器（泛型指针）
     rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr m_imu_sub; // IMU数据订阅器

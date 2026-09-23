@@ -41,6 +41,7 @@ public:
     std::string base_frame_;
 
     double last_scan_duration_sec_ = 0.0; // 最近一次扫描的时间跨度(秒)
+    bool preserve_point_times_ = false; // Online td: keep an actual point per voxel.
 
 
     Eigen::Matrix3f base2link_rot;

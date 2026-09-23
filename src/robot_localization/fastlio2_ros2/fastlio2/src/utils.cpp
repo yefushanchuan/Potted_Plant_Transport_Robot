@@ -40,7 +40,7 @@ POINT_CLOUD_REGISTER_POINT_STRUCT(livox_ros::Point,
  - z_min: Z轴最小高度（低于此值的点会被过滤）
  - z_max: Z轴最大高度（超过此值的点会被过滤）*/
 pcl::PointCloud<pcl::PointXYZINormal>::Ptr Utils::livox2PCL(const sensor_msgs::msg::PointCloud2 &msg,
-                                                            int filter_num, double min_range, double max_range, double z_min, double z_max, Eigen::Matrix3d R, Eigen::Vector3d t)
+                                                            int filter_num, double min_range, double max_range, double z_min, double z_max, Eigen::Matrix3d R, Eigen::Vector3d t, bool header_time_origin, int lines)
 {
     // 创建一个 PCL 点云对象（带强度和曲率信息）
     pcl::PointCloud<pcl::PointXYZINormal>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZINormal>);
@@ -53,13 +53,14 @@ pcl::PointCloud<pcl::PointXYZINormal>::Ptr Utils::livox2PCL(const sensor_msgs::m
     int point_num = input_cloud.size();
 
     // 预分配内存，加快 push_back 速度
+    if (filter_num < 1 || point_num == 0) return cloud;
     cloud->reserve(point_num / filter_num + 1);
 
     // 遍历点云，按 filter_num 进行下采样
     for (int i = 0; i < point_num; i += filter_num)
     {
         // 且只保留 tag 符合 0x10 或 0x00 的点（过滤异常或特殊点,只保留 line < 4 的点（前四线，Mid360 有多线激光）
-        if ((input_cloud.points[i].line < 4) && ((input_cloud.points[i].tag & 0x30) == 0x10 || (input_cloud.points[i].tag & 0x30) == 0x00))
+        if ((input_cloud.points[i].line < lines) && ((input_cloud.points[i].tag & 0x30) == 0x10 || (input_cloud.points[i].tag & 0x30) == 0x00))
         {
 
             float x = input_cloud.points[i].x; // 获取点坐标
@@ -67,10 +68,14 @@ pcl::PointCloud<pcl::PointXYZINormal>::Ptr Utils::livox2PCL(const sensor_msgs::m
             float z = input_cloud.points[i].z;
 
             // 构造 PCL 点
-            pcl::PointXYZINormal p_new;
+            pcl::PointXYZINormal p_new{};
 
             // 计算相对时间（转换为纳秒）
-            double rel_time = (input_cloud.points[i].timestamp - input_cloud.points[0].timestamp) * 1e-6; // 原始livox的时间是纳秒为单位的
+            const double origin_ns = header_time_origin ? double(msg.header.stamp.sec)*1e9+msg.header.stamp.nanosec : input_cloud.points[0].timestamp;
+            double rel_time = (input_cloud.points[i].timestamp - origin_ns) * 1e-6;
+            if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z) ||
+                !std::isfinite(rel_time) || (header_time_origin && (rel_time < -0.001 || rel_time > 250.0))) continue;
+            if (header_time_origin) rel_time=std::max(0.0,rel_time); // 原始livox的时间是纳秒为单位的
             p_new.curvature = rel_time;                                                                   // 使用秒为单位的相对时间
             p_new.intensity = input_cloud.points[i].intensity;                                            // 点的反射强度
 

@@ -2,6 +2,8 @@
 #include <pcl_conversions/pcl_conversions.h>
 // 引入 Eigen 核心库，以支持点乘加运算
 #include <Eigen/Dense> 
+#include <set>
+#include <tuple>
 
 cloud_process_livox::cloud_process_livox(double leaf_size){
     down_size_filter_.setLeafSize(leaf_size, leaf_size, leaf_size);
@@ -15,6 +17,7 @@ pcl::PointCloud<pcl::PointXYZINormal>::Ptr cloud_process_livox::livox_cloud_hand
 
     pcl::PointCloud<livox_ros::Point>::Ptr livox_cloud(new pcl::PointCloud<livox_ros::Point>);
     pcl::fromROSMsg(*msg, *livox_cloud);
+    if (livox_cloud->empty()) return pl_full;
     
     last_scan_duration_sec_ = 0.0;
     if (!livox_cloud->points.empty())
@@ -25,11 +28,16 @@ pcl::PointCloud<pcl::PointXYZINormal>::Ptr cloud_process_livox::livox_cloud_hand
     }
 
     // 提前记录本帧基准时间，防止如果第0个点被滤除导致时间轴跳动
-    uint64_t base_timestamp = livox_cloud->points[0].timestamp;
+    // This repository's Livox PointCloud2 uses absolute nanoseconds per point.
+    // Cropping may remove the first point; the header still retains scan origin.
+    const double header_ns = double(msg->header.stamp.sec)*1e9 + msg->header.stamp.nanosec;
+    const double base_timestamp = preserve_point_times_ ? header_ns : livox_cloud->points[0].timestamp;
 
     for(size_t i = 0; i < livox_cloud->points.size(); i++)
     {
         const auto& pt = livox_cloud->points[i];
+        if (!std::isfinite(pt.x)||!std::isfinite(pt.y)||!std::isfinite(pt.z)||!std::isfinite(pt.timestamp)) continue;
+        if (preserve_point_times_ && (pt.timestamp < base_timestamp || pt.timestamp-base_timestamp > 1e9)) continue;
 
         // 1. 检查线束和标签过滤条件
         if((pt.line < N_SCANS_) && ((pt.tag & 0x30) == 0x10 || (pt.tag & 0x30) == 0x00))
@@ -71,6 +79,19 @@ pcl::PointCloud<pcl::PointXYZINormal>::Ptr cloud_process_livox::livox_cloud_hand
     // 体素滤波降采样（保留时间戳信息）
     pcl::PointCloud<pcl::PointXYZINormal>::Ptr res_cloud(new pcl::PointCloud<pcl::PointXYZINormal>);
     res_cloud->clear();
+
+    if (preserve_point_times_) {
+        // A centroid of points captured at different times is not a timed measurement.
+        const auto leaf = down_size_filter_.getLeafSize();
+        std::set<std::tuple<int,int,int>> occupied;
+        for (const auto& p : *pl_full) {
+            auto key = std::make_tuple(int(std::floor(p.x/leaf.x())),
+                                      int(std::floor(p.y/leaf.y())),
+                                      int(std::floor(p.z/leaf.z())));
+            if (occupied.insert(key).second) res_cloud->push_back(p);
+        }
+        return res_cloud;
+    }
 
     down_size_filter_.setInputCloud(pl_full);
     down_size_filter_.filter(*res_cloud);

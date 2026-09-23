@@ -1,4 +1,5 @@
 import launch
+from launch_ros.parameter_descriptions import ParameterValue
 import launch_ros.actions
 from launch.actions import DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription, SetLaunchConfiguration
 from launch.conditions import IfCondition
@@ -23,6 +24,7 @@ def generate_launch_description():
 
     return launch.LaunchDescription(
         [
+            DeclareLaunchArgument("online_time_offset", default_value="true", description="Estimate LiDAR-IMU time offset online"),
             DeclareLaunchArgument(
                 "use_sim_time",
                 default_value="false",
@@ -61,6 +63,7 @@ def generate_launch_description():
                 ],
                 parameters=[{
                     "config_path": config_path,
+                    "online_time_offset": ParameterValue(LaunchConfiguration("online_time_offset"), value_type=bool),
                      "use_sim_time": use_sim_time
                 }]
             ),

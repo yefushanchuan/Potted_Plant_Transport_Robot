@@ -26,7 +26,7 @@ public:
         double z_min,
         double z_max,
         Eigen::Matrix3d R,
-        Eigen::Vector3d t);
+        Eigen::Vector3d t, bool header_time_origin = false, int lines = 4);
 
     // 将 double 类型的秒数转换为 ROS2 的 builtin_interfaces::msg::Time 格式
     static builtin_interfaces::msg::Time getTime(const double& sec);

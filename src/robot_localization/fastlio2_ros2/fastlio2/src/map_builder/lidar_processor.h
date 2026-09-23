@@ -30,6 +30,9 @@ public:
     // 构造函数：需要系统配置 config 和 IESKF 状态估计器
     LidarProcessor(Config &config, std::shared_ptr<IESKF> kf);
 
+    bool matchTimedPlane(const V3D& world, agrobot_time::Plane& plane);
+    void insertTimedCloud(const CloudType::Ptr& body);
+    int mapSize() { return m_ikdtree->validnum(); }
     void trimCloudMap();   // 裁剪局部地图（防止地图无限膨胀）
 
     void incrCloudMap();   // 增量式更新局部地图（加入新的扫描数据）

@@ -23,6 +23,11 @@ public:
     // 处理同步后的传感器数据包（IMU + LiDAR）
     void process(SyncPackage &package);
 
+    bool outputReady() const { return !m_config.online_time_offset || output_ready_; }
+    double timeOffset() const { return time_filter_ ? time_filter_->state().td : 0; }
+    bool timeInitialized() const { return time_filter_ && time_filter_->initialized(); }
+    double anchorTime() const { return time_filter_->state().time; }
+    const agrobot_time::Report& timeReport() const { return time_report_; }
     // 获取当前建图器状态（IMU_INIT / MAP_INIT / MAPPING）
     BuilderStatus status() { return m_status; }    
 
@@ -30,6 +35,11 @@ public:
     std::shared_ptr<LidarProcessor> lidar_processor(){ return m_lidar_processor; }
 
 private:
+    void processOnline(SyncPackage& package);
+    std::unique_ptr<agrobot_time::TimeOffsetFilter> time_filter_;
+    agrobot_time::Report time_report_;
+    bool output_ready_ = false, online_lost_ = false;
+    std::vector<agrobot_time::Imu> init_imus_;
     Config m_config;                                 // 系统配置参数（滤波参数、地图参数等）
     BuilderStatus m_status;                          // 当前建图状态
     std::shared_ptr<IESKF> m_kf;                     // 迭代扩展卡尔曼滤波器（状态估计核心）

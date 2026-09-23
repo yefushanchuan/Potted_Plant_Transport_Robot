@@ -1,5 +1,6 @@
 #pragma once
 #include <Eigen/Eigen>
+#include <agrobot_time_sync/time_offset_filter.h>
 #include <pcl/point_types.h>
 #include <pcl/point_cloud.h>
 
@@ -29,6 +30,11 @@ float sq_dist(const PointType &p1, const PointType &p2);
 
 struct Config
 {
+    bool online_time_offset = false;
+    agrobot_time::Options time_options;
+    int lidar_lines = 4;
+    double imu_accel_scale = 1.0;
+    double online_init_duration = 1.0;
     int lidar_filter_num = 0;
     double lidar_min_range = 0.0;
     double lidar_max_range = 0.0;

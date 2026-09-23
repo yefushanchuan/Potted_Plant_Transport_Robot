@@ -1,4 +1,28 @@
 #include "p2pl_icp.h"
+
+bool scan2map3d::matchPlane(const Eigen::Vector3d& world, Eigen::Vector3d& normal, double& offset) const {
+    PointType query;
+    query.x=world.x(); query.y=world.y(); query.z=world.z();
+    std::vector<int> indices;
+    std::vector<float> distances;
+    map_kdtree_->nearestKSearch(query,5,indices,distances);
+    if(indices.size()<5||distances.back()>use_correspondences_threshold_) return false;
+    Eigen::Vector3d center=Eigen::Vector3d::Zero();
+    for(int i:indices) center+=map_cloud_->points[i].getVector3fMap().cast<double>();
+    center/=5.;
+    Eigen::Matrix3d covariance=Eigen::Matrix3d::Zero();
+    for(int i:indices) {
+      Eigen::Vector3d d=map_cloud_->points[i].getVector3fMap().cast<double>()-center;
+      covariance.noalias()+=d*d.transpose();
+    }
+    Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> eigen(covariance);
+    if(eigen.info()!=Eigen::Success||eigen.eigenvalues()(1)<1e-6||
+       eigen.eigenvalues()(0)>0.1*eigen.eigenvalues()(1)) return false;
+    normal=eigen.eigenvectors().col(0); offset=-normal.dot(center);
+    for(int i:indices)
+      if(std::abs(normal.dot(map_cloud_->points[i].getVector3fMap().cast<double>())+offset)>plane_threshold_) return false;
+    return true;
+}
 /*=============================================================================================================================
 
 icp 2 plane: 3 dimension
@@ -262,7 +286,6 @@ bool scan2map3d::LM_optimization(int iter_count, pose_type &act_pose){
 
   return (deltaR < 0.1 && deltaT < 0.03);
 }
-
 
 
 

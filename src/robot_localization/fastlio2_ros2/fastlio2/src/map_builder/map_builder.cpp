@@ -3,6 +3,10 @@
 // MapBuilder 构造函数，接受配置参数 config 和一个共享的 IESKF 滤波器指针
 MapBuilder::MapBuilder(Config &config, std::shared_ptr<IESKF> kf) : m_config(config), m_kf(kf)
 {
+    if (config.online_time_offset) {
+        if (config.esti_il) throw std::invalid_argument("online_time_offset requires fixed extrinsics (esti_il=false)");
+        time_filter_ = std::make_unique<agrobot_time::TimeOffsetFilter>(config.time_options);
+    }
     // 创建 IMU 处理器，并绑定到同一个滤波器
     m_imu_processor = std::make_shared<IMUProcessor>(config, kf);
     // 创建 LiDAR 处理器，并绑定到同一个滤波器
@@ -24,6 +28,7 @@ MapBuilder::MapBuilder(Config &config, std::shared_ptr<IESKF> kf) : m_config(con
 // 主处理函数，输入是同步后的数据包（包含 IMU 和 LiDAR）
 void MapBuilder::process(SyncPackage &package)
 {
+    if (m_config.online_time_offset) { processOnline(package); return; }
     // 如果当前状态是 IMU 初始化
     if (m_status == BuilderStatus::IMU_INIT)
     {

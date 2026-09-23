@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>agrobot_time_sync</name><version>0.1.0</version>
+  <description>Joint inertial and raw timed LiDAR filtering with bounded online time offset.</description>
+  <maintainer email="descfly@users.noreply.github.com">descfly</maintainer>
+  <license>BSD-3-Clause</license>
+  <buildtool_depend>ament_cmake</buildtool_depend><depend>eigen</depend>
+  <test_depend>ament_cmake_gtest</test_depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

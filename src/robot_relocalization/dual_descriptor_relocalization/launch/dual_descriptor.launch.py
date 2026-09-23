@@ -83,6 +83,7 @@ def _launch_setup(context):
             respawn=True,
             parameters=[{
                 "config_file": location_config_path,
+                "online_time_offset": LaunchConfiguration("online_time_offset").perform(context).lower() == "true",
                 "eskf_cfg_file": eskf_cfg_path,
                 "use_sim_time": use_sim_time,
                 "map_filename": resolved_map_file,
@@ -127,6 +128,8 @@ def _launch_setup(context):
 
 def generate_launch_description():
     return LaunchDescription([
+        DeclareLaunchArgument('online_time_offset', default_value='true',
+                              description='Use the 19-state point-to-plane filter with online LiDAR/IMU time offset'),
         DeclareLaunchArgument('use_sim_time', default_value='auto',
                               description="true/false/auto. If 'auto', becomes true when bag_path is set."),
         DeclareLaunchArgument('bag_path', default_value=''),

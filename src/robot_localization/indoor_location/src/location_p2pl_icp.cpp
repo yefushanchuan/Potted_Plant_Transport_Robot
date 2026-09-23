@@ -1,5 +1,6 @@
 #include "p2pl_icp.h"
 #include "eskf.h"
+#include "agrobot_time_sync/time_offset_filter.h"
 #include "cloud_process_livox.h"  // Livox 点云处理类
 #include "cloud_process_rs.h"     // RS16 点云处理类
 #include "utility/utility.h"
@@ -104,6 +105,15 @@ public:
 
     std::unique_ptr<scan2map3d>              localizier3d;
     std::unique_ptr<ErrorStateKalmanFilter>  eskf;
+    bool online_time_offset_ = false;
+    agrobot_time::Options time_options_;
+    std::unique_ptr<agrobot_time::TimeOffsetFilter> time_filter_;
+    bool time_filter_reset_ = true; // processing thread only
+    std::mutex command_mutex_;
+    std::deque<std::string> pending_commands_;
+    std::atomic<bool> time_epoch_reset_{false};
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr time_diagnostics_pub_;
+    agrobot_time::Report time_report_;
 
     // IMU数据结构（与lio_node保持一致）
     struct IMUData {
@@ -161,7 +171,7 @@ public:
     static constexpr int RELOC_HELP_DELAY = 10; // 连续多少帧才呼叫副节点
 
     bool   wait_for_initial_pose_ = false;   // 是否等待外部注入初始位姿再开始处理
-    bool   has_received_initial_pose_ = false; // 是否已收到外部初始位姿
+    std::atomic<bool> has_received_initial_pose_{false}; // 是否已收到外部初始位姿
 
     double force_lost_offset_x_ = 0.5;
     double force_lost_offset_y_ = 0.3;
@@ -254,6 +264,30 @@ public:
             return;
         }
 
+        online_time_offset_ = config["online_time_offset"] ? config["online_time_offset"].as<bool>() : false;
+        online_time_offset_ = nh_->declare_parameter<bool>("online_time_offset", online_time_offset_);
+        const auto tc = config["time_offset"];
+        if (tc) {
+#define LOAD_TIME_OPTION(name) if (tc[#name]) time_options_.name = tc[#name].as<decltype(time_options_.name)>()
+            LOAD_TIME_OPTION(initial_td); LOAD_TIME_OPTION(initial_td_std);
+            LOAD_TIME_OPTION(td_noise); LOAD_TIME_OPTION(max_abs_td); LOAD_TIME_OPTION(max_td_step);
+            LOAD_TIME_OPTION(max_imu_gap); LOAD_TIME_OPTION(max_scan_duration);
+            LOAD_TIME_OPTION(accel_noise); LOAD_TIME_OPTION(gyro_noise);
+            LOAD_TIME_OPTION(accel_bias_noise); LOAD_TIME_OPTION(gyro_bias_noise);
+            LOAD_TIME_OPTION(point_std); LOAD_TIME_OPTION(huber); LOAD_TIME_OPTION(max_residual);
+            LOAD_TIME_OPTION(min_fitness); LOAD_TIME_OPTION(max_rms);
+            LOAD_TIME_OPTION(min_rotation_eigenvalue); LOAD_TIME_OPTION(min_translation_eigenvalue);
+            LOAD_TIME_OPTION(excitation_window); LOAD_TIME_OPTION(min_excitation_span);
+            LOAD_TIME_OPTION(min_gyro_std); LOAD_TIME_OPTION(min_accel_std); LOAD_TIME_OPTION(min_td_information);
+            LOAD_TIME_OPTION(min_points); LOAD_TIME_OPTION(max_points); LOAD_TIME_OPTION(iterations);
+#undef LOAD_TIME_OPTION
+        }
+        time_options_.validate();
+        time_filter_ = std::make_unique<agrobot_time::TimeOffsetFilter>(time_options_);
+        time_diagnostics_pub_ = nh_->create_publisher<std_msgs::msg::String>("/indoor_location/time_offset", 10);
+        RCLCPP_INFO(nh_->get_logger(), "[TimeOffset] online=%d; t_imu_ros=t_lidar+td; initial=%.3f ms",
+                    online_time_offset_, time_options_.initial_td*1000.);
+
         // 是否使用重定位
         use_reloc_ = config["use_reloc"].as<bool>();
         RCLCPP_INFO(nh_->get_logger(), "use_reloc %d", use_reloc_);
@@ -339,10 +373,13 @@ public:
 
         // ========== 根据雷达类型初始化对应的点云处理对象 ==========
         lidar_type_       = config["lidar_type"].as<std::string>();
+        if (online_time_offset_ && lidar_type_ != "livox")
+            throw std::invalid_argument("online_time_offset currently requires Livox per-point timestamps");
         double filter_leaf_size = config["filter_leaf_size"].as<double>();
 
         if (lidar_type_ == "livox") {
             livox_processor_.reset(new cloud_process_livox(filter_leaf_size));
+            livox_processor_->preserve_point_times_ = online_time_offset_;
             livox_processor_->N_SCANS_     = config["N_SCANS"].as<int>();
             livox_processor_->min_range_   = config["min_range"].as<double>();
             livox_processor_->max_range_   = config["max_range"].as<double>();
@@ -869,7 +906,10 @@ public:
         map_to_base_tf.setRotation(q);
 
         rclcpp::Time stamp_lookup = getTime(time);       // 传感器时间，用于 odometry 查询
-        rclcpp::Time stamp_output = nh_->now();           // 当前时间，用于 TF 发布
+        // Direct map->base describes the measured pose at its IMU-reference
+        // time. map->odom retains the existing current-time correction policy.
+        rclcpp::Time stamp_output = (online_time_offset_ && !enable_map_odom_tf_)
+            ? stamp_lookup : nh_->now();
 
         if (!enable_map_odom_tf_) {
             geometry_msgs::msg::TransformStamped transformStamped;
@@ -948,10 +988,13 @@ public:
         std::lock_guard<std::mutex> lock(m_state_data.imu_mutex);
         
         double timestamp = msg_timestamp;
+        if (!std::isfinite(timestamp)) return;
+        if (online_time_offset_ && timestamp == m_state_data.last_imu_time) return;
 
         if (timestamp < m_state_data.last_imu_time) {
             RCLCPP_WARN(nh_->get_logger(), "IMU Message is out of order");
             std::deque<IMUData>().swap(m_state_data.imu_buffer);
+            if (online_time_offset_) time_epoch_reset_.store(true);
         }
 
         Eigen::Vector3d acc(imu_msg->linear_acceleration.x,
@@ -960,6 +1003,7 @@ public:
         Eigen::Vector3d gyro(imu_msg->angular_velocity.x,
                              imu_msg->angular_velocity.y,
                              imu_msg->angular_velocity.z);
+        if (!acc.allFinite() || !gyro.allFinite()) return;
 
         acc  = imu2link_rot_.cast<double>() * acc;
         gyro = imu2link_rot_.cast<double>() * gyro;
@@ -967,18 +1011,32 @@ public:
         Eigen::Vector3d p_imu = imu2base_pose.pos.cast<double>();
         Eigen::Vector3d centripetal_acc = gyro.cross(gyro.cross(p_imu));
         acc = acc - centripetal_acc; // 杆臂补偿
+
+        if (online_time_offset_ && !m_state_data.imu_buffer.empty()) {
+            const auto& previous = m_state_data.imu_buffer.back();
+            const double interval = timestamp-previous.time;
+            if (interval > 1e-5 && interval <= time_options_.max_imu_gap)
+                acc -= ((gyro-previous.gyro)/interval).cross(p_imu);
+        }
         
-        if (acc.z() > 5.0) {
+        if (!online_time_offset_ && acc.z() > 5.0) {
             acc = acc / imu_scale_;
-        } else if (acc.z() < 0) {
+        } else if (!online_time_offset_ && acc.z() < 0) {
             acc   = Eigen::Vector3d(-acc.y(), -acc.x(), -acc.z());
             gyro  = Eigen::Vector3d(-gyro.y(), -gyro.x(), -gyro.z());
         }
 
-        Eigen::Vector3d final_acc = acc * imu_scale_;
+        // sensor_msgs/Imu is SI; online path uses physical acceleration in base axes.
+        Eigen::Vector3d final_acc = online_time_offset_ ? acc : acc * imu_scale_;
 
         m_state_data.imu_buffer.emplace_back(final_acc, gyro, timestamp);
         m_state_data.last_imu_time = timestamp;
+        if (online_time_offset_) {
+            while (m_state_data.imu_buffer.size()>2 &&
+                   timestamp-m_state_data.imu_buffer.front().time>2.0)
+                m_state_data.imu_buffer.pop_front();
+            process_cv_.notify_one();
+        }
     }
 
     // 激光点云回调
@@ -986,6 +1044,7 @@ public:
         if (!has_extrinsics_) return;
 
         double msg_timestamp = getSec(cloud_msg->header);
+        if (!std::isfinite(msg_timestamp)) return;
         double sys_timestamp = nh_->get_clock()->now().seconds();
         double time_diff     = sys_timestamp - msg_timestamp;
         
@@ -1004,6 +1063,7 @@ public:
             RCLCPP_ERROR(nh_->get_logger(), "[LiDAR回调] 未知雷达类型: %s", lidar_type_.c_str());
             return;
         }
+        if (!processed_cloud || processed_cloud->empty()) return;
         
         auto process_end = std::chrono::high_resolution_clock::now();
         double process_time_ms = std::chrono::duration<double, std::milli>(
@@ -1016,10 +1076,18 @@ public:
                 RCLCPP_WARN(nh_->get_logger(), "[LiDAR回调] 消息乱序,清空缓冲");
                 std::deque<std::pair<double, pcl::PointCloud<PointType>::Ptr>>().swap(
                     m_state_data.lidar_buffer);
+                m_state_data.lidar_pushed = false;
+                if (online_time_offset_) time_epoch_reset_.store(true);
             }
             
             m_state_data.lidar_buffer.emplace_back(msg_timestamp, processed_cloud);
             m_state_data.last_lidar_time = msg_timestamp;
+            if (online_time_offset_) {
+                while (m_state_data.lidar_buffer.size()>10) {
+                    m_state_data.lidar_buffer.pop_front();
+                    m_state_data.lidar_pushed = false;
+                }
+            }
             
             RCLCPP_DEBUG(nh_->get_logger(), "[LiDAR回调] 点云处理耗时=%.1fms", process_time_ms);
         }
@@ -1029,11 +1097,25 @@ public:
 
     // 同步IMU和LiDAR数据包
     bool syncPackage() {
+        std::scoped_lock lock(m_state_data.imu_mutex, m_state_data.lidar_mutex);
+        if (online_time_offset_ && time_epoch_reset_.exchange(false)) {
+            m_state_data.imu_buffer.clear(); m_state_data.lidar_buffer.clear();
+            m_state_data.last_imu_time = m_state_data.last_lidar_time = -1;
+            m_state_data.lidar_pushed = false;
+            time_filter_ = std::make_unique<agrobot_time::TimeOffsetFilter>(time_options_);
+            time_filter_reset_ = true;
+            RCLCPP_WARN(nh_->get_logger(), "[TimeOffset] timestamp rollback: cleared queues and calibration");
+            publishTimeReport("timestamp_reset");
+            return false;
+        }
         if (m_state_data.imu_buffer.empty() || m_state_data.lidar_buffer.empty())
             return false;
 
         if (!m_state_data.lidar_pushed) {
             m_package.cloud = m_state_data.lidar_buffer.front().second;
+            if (!m_package.cloud || m_package.cloud->empty()) {
+                m_state_data.lidar_buffer.pop_front(); return false;
+            }
 
             std::sort(m_package.cloud->points.begin(), m_package.cloud->points.end(),
                       [](PointType &p1, PointType &p2) {
@@ -1045,6 +1127,36 @@ public:
                                          m_package.cloud->points.back().curvature / 1000.0;
 
             m_state_data.lidar_pushed = true;
+        }
+
+        if (online_time_offset_) {
+            const double td = time_filter_->initialized() ? time_filter_->state().td : time_options_.initial_td;
+            double begin = m_package.cloud_start_time+td-time_options_.max_td_step;
+            const double end = m_package.cloud_end_time+td+time_options_.max_td_step;
+            if (time_filter_->initialized() && !time_filter_reset_ && !use_reloc_) {
+                if (time_filter_->state().time < m_state_data.imu_buffer.front().time ||
+                    end-time_filter_->state().time>1.0) time_filter_reset_ = true;
+                else begin=std::min(begin,time_filter_->state().time);
+            }
+            const double duration=m_package.cloud_end_time-m_package.cloud_start_time;
+            if (duration<=0 || duration>time_options_.max_scan_duration ||
+                m_state_data.imu_buffer.front().time>begin ||
+                (time_filter_->initialized() && !time_filter_reset_ && !use_reloc_ &&
+                 m_package.cloud_end_time+td<=time_filter_->state().time)) {
+                m_state_data.lidar_buffer.pop_front(); m_state_data.lidar_pushed=false;
+                publishTimeReport("dropped_scan_time_or_coverage"); return false;
+            }
+            if (m_state_data.imu_buffer.back().time<end) return false;
+            m_package.imus.clear();
+            auto it=std::lower_bound(m_state_data.imu_buffer.begin(),m_state_data.imu_buffer.end(),begin,
+                [](const IMUData& a,double t){return a.time<t;});
+            if (it!=m_state_data.imu_buffer.begin()) --it;
+            for (;it!=m_state_data.imu_buffer.end();++it) {
+                m_package.imus.push_back(*it);
+                if (it->time>=end) break;
+            }
+            m_state_data.lidar_buffer.pop_front(); m_state_data.lidar_pushed=false;
+            return true;
         }
 
         if (m_state_data.last_imu_time < m_package.cloud_end_time)
@@ -1131,11 +1243,30 @@ public:
         
         if (msg->data == "shutdown") {
             rclcpp::shutdown();
-        } else if (msg->data == "test_reloc") {
+            return;
+        }
+        std::lock_guard<std::mutex> lock(command_mutex_);
+        if (pending_commands_.size() < 16) pending_commands_.push_back(msg->data);
+        process_cv_.notify_one();
+    }
+
+    // State and covariance resets belong to the processing thread.
+    void processCommands() {
+        std::deque<std::string> commands;
+        {
+            std::lock_guard<std::mutex> lock(command_mutex_);
+            commands.swap(pending_commands_);
+        }
+        for (const auto& command : commands) handleCommand(command);
+    }
+
+    void handleCommand(const std::string& command) {
+        if (command == "test_reloc") {
             RCLCPP_INFO(nh_->get_logger(), "test reloc");
             act_pose.pos(0) = act_pose.pos(0) + 5.0;
             act_pose.pos(1) = 4.0;
-        } else if (msg->data.rfind("force_lost", 0) == 0) {
+            time_filter_reset_ = true;
+        } else if (command.rfind("force_lost", 0) == 0) {
             if (use_reloc_) {
                 RCLCPP_WARN(nh_->get_logger(), "[测试] 当前已在迷失状态，忽略重复 force_lost 命令");
                 return;
@@ -1146,7 +1277,7 @@ public:
             double dyaw = force_lost_offset_yaw_;
 
             // 解析可选参数: "force_lost" 或 "force_lost 1.5 0.3 20"
-            std::istringstream iss(msg->data);
+            std::istringstream iss(command);
             std::string cmd;
             iss >> cmd;  // 跳过 "force_lost"
             if (iss >> dx) { if (!(iss >> dy)) {} }
@@ -1161,7 +1292,87 @@ public:
                           act_pose.orient.cast<double>(),
                           act_pose.vel.cast<double>());
             eskf->reset();
+            time_filter_reset_ = true;
         }
+    }
+
+    void publishTimeReport(const std::string& reason = "") {
+        if (!online_time_offset_ || !time_diagnostics_pub_) return;
+        const double td=time_filter_->initialized()?time_filter_->state().td:time_options_.initial_td;
+        const double sigma=time_filter_->initialized()?std::sqrt(time_filter_->covariance()(18,18)):time_options_.initial_td_std;
+        std::ostringstream out;
+        out << std::setprecision(17) << "{\"lidar_time_sec\":" << m_package.cloud_end_time
+            << ",\"td_ms\":" << td*1000
+            << ",\"td_std_ms\":" << sigma*1000
+            << ",\"accepted\":" << (reason.empty()&&time_report_.accepted?"true":"false")
+            << ",\"td_updated\":" << (reason.empty()&&time_report_.td_updated?"true":"false")
+            << ",\"td_limited\":" << (reason.empty()&&time_report_.td_limited?"true":"false")
+            << ",\"reason\":\"" << (reason.empty()?time_report_.reason:reason)
+            << "\",\"imu_timestamp_source\":\"ros_header\",\"fitness\":" << time_report_.fitness
+            << ",\"rms_m\":" << time_report_.rms << ",\"matches\":" << time_report_.matches
+            << ",\"gyro_std\":" << time_report_.gyro_std << ",\"accel_std\":" << time_report_.accel_std
+            << ",\"td_information\":" << time_report_.td_information << "}";
+        std_msgs::msg::String message; message.data=out.str(); time_diagnostics_pub_->publish(message);
+    }
+
+    bool trackTimedCloud(pcl::PointCloud<PointType>::Ptr& cloud, PerformanceStats& perf) {
+        auto started=std::chrono::steady_clock::now();
+        std::vector<agrobot_time::Imu> imu;
+        for (const auto& s:m_package.imus) imu.push_back({s.time,s.acc,s.gyro});
+        if (time_filter_reset_ || !time_filter_->initialized()) {
+            agrobot_time::State seed;
+            seed.p=act_pose.pos.cast<double>(); seed.v.setZero();
+            seed.R=RPY2Mat(act_pose.orient).cast<double>();
+            const double td=time_filter_->initialized()?time_filter_->state().td:time_options_.initial_td;
+            seed.time=m_package.cloud_end_time+td;
+            time_filter_->reset(seed,false); time_filter_reset_=false;
+            time_report_=agrobot_time::Report(); time_report_.reason="initialized_no_time_update";
+            publishTimeReport(); return false;
+        }
+        const double reference=m_package.cloud_end_time+time_filter_->state().td;
+        if (!time_filter_->predictTo(reference,imu)) {
+            time_filter_reset_=true; publishTimeReport("imu_gap_reset"); return false;
+        }
+        std::vector<agrobot_time::TimedPoint> all,selected;
+        all.reserve(cloud->size());
+        for (const auto& p:*cloud)
+            all.push_back({p.getVector3fMap().cast<double>(),m_package.cloud_start_time+p.curvature*0.001});
+        const size_t count=std::min(all.size(),size_t(time_options_.max_points));
+        selected.reserve(count);
+        for(size_t i=0;i<count;++i) selected.push_back(all[i*all.size()/count]);
+        time_report_=time_filter_->update(selected,imu,[this](const Eigen::Vector3d& world,agrobot_time::Plane& plane){
+            return localizier3d->matchPlane(world,plane.normal,plane.offset);
+        });
+        localizier3d->fitness_=time_report_.fitness;
+        localizier3d->features_.pickup_num=time_report_.matches;
+        perf.cloud_registration_time_ms=std::chrono::duration<double,std::milli>(
+            std::chrono::steady_clock::now()-started).count();
+        if (!time_report_.accepted) {
+            if (time_report_.reason=="poor_match" || time_report_.reason=="poor_final_match" ||
+                time_report_.reason=="pose_update_limit") {
+                use_reloc_=true; localizier3d->setRelocMode(); reloc_fail_count_=0;
+                time_filter_reset_=true;
+            }
+            publishTimeReport(); return false;
+        }
+        agrobot_time::State output;
+        std::vector<Eigen::Vector3d> deskewed;
+        if (!time_filter_->poseAt(m_package.cloud_end_time,imu,output) ||
+            !time_filter_->deskew(all,m_package.cloud_end_time,imu,deskewed)) {
+            publishTimeReport("output_coverage"); return false;
+        }
+        act_pose.pos=output.p.cast<float>();act_pose.vel=output.v.cast<float>();
+        act_pose.orient=RotMtoEuler(output.R.cast<float>());update_q(act_pose);
+        // Keep the original cloud immutable across all IEKF iterations.
+        auto result=std::make_shared<pcl::PointCloud<PointType>>(*cloud);
+        for(size_t i=0;i<result->size();++i) result->points[i].getVector3fMap()=deskewed[i].cast<float>();
+        cloud=result;
+        publishTimeReport();
+        RCLCPP_INFO_THROTTLE(nh_->get_logger(),*nh_->get_clock(),2000,
+            "[TimeOffset] td=%.3f +/- %.3f ms, %s, fitness=%.3f rms=%.3f m",
+            time_report_.td*1000,time_report_.td_std*1000,time_report_.reason.c_str(),
+            time_report_.fitness,time_report_.rms);
+        return true;
     }
 
     void imu_predict(const std::vector<IMUData> &imus, PerformanceStats &perf_stat) {
@@ -1340,6 +1551,7 @@ public:
         int process_count = 0;
 
         while (rclcpp::ok() && !g_b_exit.load()) {
+            processCommands();
             if (!has_extrinsics_) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
                 continue;
@@ -1389,6 +1601,7 @@ public:
                                   act_pose.orient.cast<double>(), 
                                   act_pose.vel.cast<double>());
                     eskf->reset();
+                    time_filter_reset_ = true;
 
                     {
                         std::lock_guard<std::mutex> imu_lock(m_state_data.imu_mutex);
@@ -1458,6 +1671,7 @@ public:
                                   act_pose.orient.cast<double>(),
                                   act_pose.vel.cast<double>());
                     eskf->reset();
+                    time_filter_reset_ = true;
                     auto eskf_end = std::chrono::high_resolution_clock::now();
                     perf_stat.eskf_correct_time_ms =
                         std::chrono::duration<double, std::milli>(eskf_end - eskf_start).count();
@@ -1488,6 +1702,9 @@ public:
                         call_node_a_pub_->publish(help_msg);
                     }
                 }
+            } else if (online_time_offset_) {
+                should_publish = trackTimedCloud(cloud_in, perf_stat);
+                if (should_publish) has_tracked_once_ = true;
             } else {
                 if (!m_package.imus.empty()) {
                     undistortPointCloud(cloud_in, m_package.cloud_start_time,
@@ -1553,14 +1770,18 @@ public:
                     auto pub_start = std::chrono::high_resolution_clock::now();
                     
                     pose_publish_count_++;
+
+                    const double output_time = m_package.cloud_end_time +
+                        (online_time_offset_ ? (time_filter_->initialized()
+                            ? time_filter_->state().td : time_options_.initial_td) : 0.0);
                     
                     pose_type act_pose_pub = act_pose;
-                    refinePoseForPublish(act_pose, m_package.cloud_end_time, act_pose_pub);
+                    refinePoseForPublish(act_pose, output_time, act_pose_pub);
 
-                    publishPose(act_pose_pub, map_frame_, m_package.cloud_end_time);
-                    broadCastTF(act_pose_pub, map_frame_, base_frame_, m_package.cloud_end_time);
+                    publishPose(act_pose_pub, map_frame_, output_time);
+                    broadCastTF(act_pose_pub, map_frame_, base_frame_, output_time);
                     publishCloud(processed_cloud_pub_, cloud_in, base_frame_, 
-                                m_package.cloud_end_time);
+                                output_time);
                     
                     auto pub_end = std::chrono::high_resolution_clock::now();
                     perf_stat.pose_publish_time_ms = 
@@ -1571,7 +1792,7 @@ public:
                                    "[位姿发布] 第%d帧 | 时间戳=%.6f | pos=(%.3f, %.3f, %.3f) | "
                                    "rpy=(%.3f°, %.3f°, %.3f°)",
                                    pose_publish_count_,
-                                   m_package.cloud_end_time,
+                                   output_time,
                                    act_pose_pub.pos(0), act_pose_pub.pos(1), act_pose_pub.pos(2),
                                    act_pose_pub.orient(0) * 57.3, 
                                    act_pose_pub.orient(1) * 57.3, 
@@ -1595,7 +1816,7 @@ public:
             double cloud_to_system_delay = current_system_time - m_package.cloud_end_time;
             
             std_msgs::msg::Int8 status_msg;
-            if (use_reloc_) {
+            if (use_reloc_ || (online_time_offset_ && !should_publish)) {
                 status_msg.data = 1; // 1 表示迷失 / 正在重定位
             } else {
                 status_msg.data = 0; // 0 表示健康 / 正常跟踪
