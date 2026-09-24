@@ -15,6 +15,9 @@
 不对同一帧再次更新。`esti_il=true` 与在线模式组合会明确报错。
 关闭在线开关仍走原 21 维流程；其他型号的原配置默认关闭在线估计。
 
+固定外参的采集、标定和配置方法见 [双 IMU 与底盘标定](imu_chain_calibration.md)。
+该工具输出 sensor-to-body 参数；在线模式使用这些参数或 TF，不使用旧 `r_il/t_il`。
+
 ## 数据和时序
 
 约定 `t_imu_ros = t_lidar + td`。在线模式消费本工程 Livox PointCloud2：
