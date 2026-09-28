@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Dynamic-only rigid dual-IMU calibration; NumPy/SciPy, optional rosbags.
+"""Static-constrained rigid dual-IMU calibration; NumPy/SciPy, optional rosbags.
 
 Convention: p0=R01*p1+t01, same physical event stamp0=stamp1+dt.
 Inputs: timestamp seconds, specific force m/s² (gravity retained), gyro rad/s.
-No static detector, static bias estimate, gravity direction or known extrinsic.
+Default: same-record static gyro prior, dynamic initialization, joint refinement.
+Reference-zero and unconstrained dynamic methods require explicit selection.
 """
 import argparse
 import hashlib
@@ -17,15 +18,21 @@ from scipy.optimize import least_squares, minimize_scalar
 from scipy.signal import savgol_filter
 from scipy.spatial.transform import Rotation
 
-CONFIG = dict(grid_s=.01, integration_s=.16, gyro_smoothing_s=.15,
-              dt_bound_s=.1, max_gap_s=.04, activity_window_s=.4,
+METHODS=('joint_static_soft','joint_fixed_bg','staged','joint_reference_fixed','joint_free')
+STATIC_METHODS=('joint_static_soft','joint_fixed_bg','staged')
+CONFIG = dict(method='joint_static_soft',grid_s=.01, integration_s=.16, gyro_smoothing_s=.15,
+              dt_bound_s=.3, max_gap_s=.04, activity_window_s=.4,
               activity_std_min_rad_s=.03, min_active_s=3.,
               gyro_excitation_min_rad_s=.05, gyro_excitation_ratio_min=.05,
               gyro_sigma=.005, accel_sigma=.05, max_nfev=200,
               max_gyro_rmse_rad_s=.03, max_accel_rmse_m_s2=.25,
               max_gyro_bias_norm_rad_s=.1, max_scaled_condition=1e5,
               repeat_rotation_max_deg=.5, repeat_translation_max_m=.015,
-              repeat_dt_max_s=.003, repeat_gyro_bias_max_rad_s=.02)
+              repeat_dt_max_s=.003, repeat_gyro_bias_max_rad_s=.02,
+              quiet_window_s=1.,quiet_step_s=.1,quiet_min_samples=80,
+              quiet_gyro_std_norm_max=.01,quiet_gyro_mean_norm_max=.03,
+              quiet_accel_std_norm_max=.15,static_prior_floor_rad_s=.001,
+              static_effective_samples=6.)
 SCALES=np.array([.01]*3+[.1]*3+[.01]+[.01]*6+[.1]*3)
 
 def clean_pair(pair):
@@ -77,7 +84,7 @@ def make_grid(pair,cfg):
     variance=np.maximum(0,uniform_filter1d(w*w,size=n,axis=0,mode='nearest')-mean*mean)
     active=np.sqrt(variance.sum(1))>cfg['activity_std_min_rad_s']
     support=int(np.ceil((cfg['integration_s']/2+.03)/step))*2+1
-    # Only varying-motion windows; not even bias/noise priors are taken from stops.
+    # Only varying-motion windows enter the dynamic residual; static priors are separate.
     use=minimum_filter1d((good&active).astype(int),size=support,mode='constant',cval=0).astype(bool)
     return ts,use
 
@@ -114,20 +121,48 @@ def features(pair,ts,R,td,bg0,cfg):
     g1=smooth(s1[:,3:],cfg['gyro_smoothing_s'],step)[h:-h]@R.T
     return A,y,g0-g1
 
-def initialize(pair,ts,use,cfg):
+def static_gyro_prior(pair,cfg):
+    """First qualifying low-motion window in this recording, never another session.
+
+    Gravity includes unknown accelerometer bias, so it is diagnostic only.
+    The effective sample count/floor define an engineering prior, not a CI.
+    """
+    start=max(p[0,0] for p in pair);stop=min(p[-1,0] for p in pair)
+    for offset in np.arange(0,stop-start-cfg['quiet_window_s'],cfg['quiet_step_s']):
+        chunks=[p[(p[:,0]>=start+offset)&(p[:,0]<start+offset+cfg['quiet_window_s'])] for p in pair]
+        if min(map(len,chunks))<cfg['quiet_min_samples']:continue
+        if any(np.max(np.diff(p[:,0]))>cfg['max_gap_s'] for p in chunks):continue
+        gs=np.array([p[:,4:7].std(0) for p in chunks]);bg=np.array([p[:,4:7].mean(0) for p in chunks])
+        ac=np.array([p[:,1:4].std(0) for p in chunks]);am=np.array([p[:,1:4].mean(0) for p in chunks])
+        if (np.any(np.linalg.norm(gs,axis=1)>=cfg['quiet_gyro_std_norm_max']) or
+            np.any(np.linalg.norm(bg,axis=1)>=cfg['quiet_gyro_mean_norm_max']) or
+            np.any(np.linalg.norm(ac,axis=1)>=cfg['quiet_accel_std_norm_max'])):continue
+        sigma=np.maximum(cfg['static_prior_floor_rad_s'],gs/np.sqrt(cfg['static_effective_samples']))
+        return bg,sigma,dict(window_seconds_from_common_start=[float(offset),float(offset+cfg['quiet_window_s'])],
+            samples=[len(p) for p in chunks],gyro_mean_rad_s=bg.tolist(),gyro_std_rad_s=gs.tolist(),
+            prior_sigma_rad_s=sigma.tolist(),accel_mean_m_s2=am.tolist(),accel_std_m_s2=ac.tolist(),
+            specific_force_direction=(am/np.linalg.norm(am,axis=1)[:,None]).tolist(),
+            independently_confirmed_static=False,gravity_used_for_rotation_or_accel_bias=False)
+    raise ValueError('No qualifying static window in this recording; record a stationary interval '
+                     'before/after three-axis motion. No automatic zero-bias or free-bias fallback.')
+
+
+def initialize(pair,ts,use,cfg,bg=None):
     R,td,c,res=align_gyro(pair,ts,use,cfg)
     h=int(round(cfg['integration_s']/(2*cfg['grid_s'])))
-    A,y,_=features(pair,ts,R,td,np.zeros(3),cfg);mask=use[h:-h]
+    bg0=np.zeros(3) if bg is None else bg[0]
+    if bg is not None:c=bg[0]-R@bg[1]
+    A,y,_=features(pair,ts,R,td,bg0,cfg);mask=use[h:-h]
     X=np.concatenate([A,np.broadcast_to(np.eye(3),A.shape)],axis=2)[mask].reshape(-1,6)
     target=y[mask].ravel();p=np.linalg.lstsq(X,target,rcond=None)[0]
     for _ in range(10):
         r=X@p-target;scale=max(1e-6,1.4826*np.median(np.abs(r-np.median(r))))
         weights=np.minimum(1,1.5*scale/np.maximum(np.abs(r),1e-12))
         p=np.linalg.lstsq(X*np.sqrt(weights[:,None]),target*np.sqrt(weights),rcond=None)[0]
-    return R,np.r_[np.zeros(3),p[:3],td,c,np.zeros(3),p[3:]]
+    return R,np.r_[np.zeros(3),p[:3],td,c,bg0,p[3:]]
 
 def pack(R,t,td,c,bg0,bdiff):
-    # c=bg0-R*bg1. Both absolute gyro biases remain free in optimization.
+    # c=bg0-R*bg1. Bias treatment is selected explicitly by the estimator.
     bg1=R.T@(bg0-c)
     return dict(R=R.tolist(),t_m=t.tolist(),td_s=float(td),gyro_bias0_rad_s=bg0.tolist(),
                 gyro_bias1_rad_s=bg1.tolist(),accel_difference_bias_m_s2=bdiff.tolist(),
@@ -135,6 +170,10 @@ def pack(R,t,td,c,bg0,bdiff):
 
 def calibrate(raw_pair,config=None):
     cfg={**CONFIG,**(config or {})};pair=clean_pair(raw_pair)
+    method=cfg['method']
+    if method not in METHODS:raise ValueError(f'Unknown method: {method}')
+    bg=sigma=quiet=None
+    if method in STATIC_METHODS:bg,sigma,quiet=static_gyro_prior(pair,cfg)
     ts,use=make_grid(pair,cfg)
     active_s=float(use.sum()*cfg['grid_s'])
     if active_s<cfg['min_active_s']:raise ValueError(f'Insufficient varying rotation: {active_s:.2f} s; need {cfg["min_active_s"]} s')
@@ -142,45 +181,76 @@ def calibrate(raw_pair,config=None):
     sv=np.linalg.svd(w-w.mean(0),compute_uv=False)/np.sqrt(len(w))
     if sv[-1]<cfg['gyro_excitation_min_rad_s'] or sv[-1]/sv[0]<cfg['gyro_excitation_ratio_min']:
         raise ValueError(f'Insufficient multi-axis excitation: singular values {sv}; record nonparallel rotations')
-    R0,center=initialize(pair,ts,use,cfg)
+    R0,center=initialize(pair,ts,use,cfg,bg)
     h=int(round(cfg['integration_s']/(2*cfg['grid_s'])));mask=use[h:-h]
+    if method in ('joint_fixed_bg','staged'):free=np.r_[0:7,13:16]
+    elif method=='joint_reference_fixed':free=np.r_[0:10,13:16]
+    else:free=np.arange(16)
     def decode(z):
-        x=center+z*SCALES
-        return Rotation.from_rotvec(x[:3]).as_matrix()@R0,x[3:6],x[6],x[7:10],x[10:13],x[13:16]
+        x=center.copy();x[free]+=z*SCALES[free]
+        R=Rotation.from_rotvec(x[:3]).as_matrix()@R0
+        c,b0=x[7:10],x[10:13]
+        if method in ('joint_fixed_bg','staged'):b0=bg[0];c=b0-R@bg[1]
+        return R,x[3:6],x[6],c,b0,x[13:16]
     def blocks(z):
         R,t,td,c,bg0,bdiff=decode(z)
         A,y,g=features(pair,ts,R,td,bg0,cfg)
         return (y-A@t-bdiff)[mask],(g-c)[mask]
     def residual(z):
         a,g=blocks(z)
-        return np.r_[a.ravel()/cfg['accel_sigma'],g.ravel()/cfg['gyro_sigma']]
-    lower=np.full(16,-np.inf);upper=-lower
-    lower[6]=(-cfg['dt_bound_s']-center[6])/SCALES[6]
-    upper[6]=(cfg['dt_bound_s']-center[6])/SCALES[6]
-    opt=least_squares(residual,np.zeros(16),bounds=(lower,upper),jac='3-point',
-                      loss='soft_l1',max_nfev=cfg['max_nfev'],ftol=1e-9,xtol=1e-9,gtol=1e-8)
-    est=pack(*decode(opt.x));a,g=blocks(opt.x)
-    js=np.linalg.svd(opt.jac,compute_uv=False)
+        data=np.r_[a.ravel()/cfg['accel_sigma'],g.ravel()/cfg['gyro_sigma']]
+        # soft-L1 data cost, corrected for overlapping integration windows.
+        robust=data*np.sqrt(2/(np.sqrt(1+data*data)+1))
+        extra=[]
+        if method=='joint_static_soft':
+            R,_,_,c,b0,_=decode(z)
+            extra=((np.array([b0,R.T@(b0-c)])-bg)/sigma).ravel()
+        return np.r_[np.sqrt(cfg['grid_s']/cfg['integration_s'])*robust,extra]
+    z0=np.zeros(len(free));initial=pack(*decode(z0));opt=None
+    if method=='staged':
+        z=z0
+        # Evaluate local conditioning without taking an optimization step.
+        eps=1e-4;basis=np.eye(len(free))*eps
+        jac=np.column_stack([(residual(d)-residual(-d))/(2*eps) for d in basis])
+    else:
+        lower=np.full(len(free),-np.inf);upper=-lower;j=int(np.flatnonzero(free==6)[0])
+        lower[j]=(-cfg['dt_bound_s']-center[6])/SCALES[6]
+        upper[j]=(cfg['dt_bound_s']-center[6])/SCALES[6]
+        opt=least_squares(residual,z0,bounds=(lower,upper),jac='3-point',
+                          max_nfev=cfg['max_nfev'],ftol=1e-9,xtol=1e-9,gtol=1e-8)
+        z=opt.x;jac=opt.jac
+    est=pack(*decode(z));a,g=blocks(z)
+    js=np.linalg.svd(jac,compute_uv=False)
     condition=float(js[0]/max(js[-1],1e-30))
     metrics=dict(accel_rmse_m_s2=float(np.sqrt(np.mean(a*a))),gyro_rmse_rad_s=float(np.sqrt(np.mean(g*g))))
     failures=[]
-    if not opt.success:failures.append('optimizer_not_converged')
+    if opt is not None and not opt.success:failures.append('optimizer_not_converged')
     if abs(est['td_s'])>cfg['dt_bound_s']-.001:failures.append('time_offset_at_search_boundary')
     if condition>cfg['max_scaled_condition']:failures.append('weak_parameter_observability')
     for k in ['accel_rmse_m_s2','gyro_rmse_rad_s']:
         if metrics[k]>cfg['max_'+k]:failures.append('large_'+k)
     if max(np.linalg.norm(est[f'gyro_bias{i}_rad_s']) for i in (0,1))>cfg['max_gyro_bias_norm_rad_s']:
         failures.append('large_fitted_gyro_bias_check_model_and_recording')
-    return dict(schema_version=1,status='fit_passed_needs_independent_validation' if not failures else 'rejected',
-        quality_failures=failures,config=cfg,estimate=est,
-        initialization=pack(*decode(np.zeros(16))),
+    prior_deviation=None
+    if bg is not None:
+        prior_deviation=(np.array([est[f'gyro_bias{i}_rad_s'] for i in (0,1)])-bg)/sigma
+        if np.max(np.abs(prior_deviation))>5:failures.append('gyro_bias_inconsistent_with_static_prior')
+    return dict(schema_version=2,status='fit_passed_needs_independent_validation' if not failures else 'rejected',
+        quality_failures=failures,config=cfg,method=method,estimate=est,
+        initialization=initial,staged_baseline=dict(estimate=initial,training=predict(raw_pair,initial,cfg)),
+        assumptions=dict(reference_gyro_bias_fixed_zero=method=='joint_reference_fixed',
+                         experimental_free_gyro_biases=method=='joint_free'),
         convention='p0=R01*p1+t01; same event timestamp0=timestamp1+dt; t is IMU1 origin expressed in IMU0',
         scope='Rigid relative IMU calibration only; no wheel-axle origin, individual accelerometer biases, scales, or misalignment intrinsics',
-        diagnostics=dict(no_static_information=True,static_priors=False,gravity_direction_input=False,
+        diagnostics=dict(no_static_information=bg is None,static_priors=method=='joint_static_soft',
+            static_info=quiet,static_prior_deviation_sigma=None if prior_deviation is None else prior_deviation.tolist(),
+            gravity_direction_input=False,
             active_s=active_s,samples=int(mask.sum()),gyro_excitation_singular_values_rad_s=sv.tolist(),
             scaled_jacobian_singular_values=js.tolist(),scaled_condition=condition,
-            optimizer_success=bool(opt.success),nfev=opt.nfev,termination=opt.message,
-            optimality=float(opt.optimality),training=metrics))
+            conditioning_includes_static_prior=method=='joint_static_soft',
+            optimizer_success=None if opt is None else bool(opt.success),nfev=0 if opt is None else opt.nfev,
+            termination='staged_only' if opt is None else opt.message,
+            optimality=None if opt is None else float(opt.optimality),training=metrics))
 
 def predict(raw_pair,est,config=None):
     cfg={**CONFIG,**(config or {})};pair=clean_pair(raw_pair);ts,use=make_grid(pair,cfg)
@@ -205,6 +275,7 @@ def validate_pair(train_pair,holdout_pair,train_fit,other=None):
     cfg=train_fit['config']
     if input_hash(train_pair)==input_hash(holdout_pair):raise ValueError('Holdout duplicates training measurements')
     other=calibrate(holdout_pair,cfg) if other is None else other
+    if other['config']!=cfg:raise ValueError('Holdout fit must use the same method and configuration')
     diff=compare(train_fit['estimate'],other['estimate'])
     forward=predict(holdout_pair,train_fit['estimate'],cfg)
     reverse=predict(train_pair,other['estimate'],cfg)
@@ -219,7 +290,14 @@ def validate_pair(train_pair,holdout_pair,train_fit,other=None):
     if abs(diff['td_ms'])/1000>cfg['repeat_dt_max_s']:failures.append('time_offset_not_repeatable_check_clock_session')
     if max(diff['gyro_bias_difference_norm_rad_s'])>cfg['repeat_gyro_bias_max_rad_s']:
         failures.append('individual_gyro_biases_not_repeatable')
-    return dict(independent_fit=other,repeatability=diff,frozen_forward=forward,frozen_reverse=reverse,failures=failures)
+    staged_forward=predict(holdout_pair,train_fit['staged_baseline']['estimate'],cfg)
+    staged_reverse=predict(train_pair,other['staged_baseline']['estimate'],cfg)
+    return dict(independent_fit=other,repeatability=diff,frozen_forward=forward,frozen_reverse=reverse,
+        staged_baseline=dict(frozen_forward=staged_forward,frozen_reverse=staged_reverse,
+            repeatability=compare(train_fit['staged_baseline']['estimate'],other['staged_baseline']['estimate']),
+            selected_minus_staged_accel_rmse=dict(forward=forward['accel_rmse_m_s2']-staged_forward['accel_rmse_m_s2'],
+                reverse=reverse['accel_rmse_m_s2']-staged_reverse['accel_rmse_m_s2']),
+            automatic_method_selection=False),failures=failures)
 
 def compose_mounts(est,mounts):
     """Optional measured transforms, with explicit destination/source frame names."""
@@ -273,7 +351,10 @@ def main():
     ap.add_argument('--imu1',required=True,help='Secondary IMU topic or NPZ key')
     ap.add_argument('--holdout',help='Independent recording, same hardware clock session; parameters remain frozen')
     ap.add_argument('--output',required=True,help='New JSON path; existing files are not overwritten')
-    ap.add_argument('--dt-bound',type=float,default=.1,help='Symmetric time-offset search bound, seconds')
+    ap.add_argument('--method',choices=METHODS,default=CONFIG['method'],
+                    help='Default joint_static_soft requires same-record static data; joint_reference_fixed '
+                         'explicitly assumes reference gyro bias zero; joint_free is experimental')
+    ap.add_argument('--dt-bound',type=float,default=CONFIG['dt_bound_s'],help='Symmetric time-offset search bound, seconds')
     for i in (0,1):
         ap.add_argument(f'--accel-scale{i}',type=float,default=1.,help='Multiply incoming acceleration to obtain m/s²; use 9.80665 for g')
         ap.add_argument(f'--gyro-scale{i}',type=float,default=1.,help='Multiply incoming gyro to obtain rad/s')
@@ -283,7 +364,7 @@ def main():
     if dest.exists():ap.error('Output already exists; select another path')
     if args.imu0==args.imu1:ap.error('Two distinct IMU topics/keys required')
     if not .005<=args.dt_bound<=1:ap.error('--dt-bound must be between 0.005 and 1 seconds')
-    cfg={**CONFIG,'dt_bound_s':args.dt_bound}
+    cfg={**CONFIG,'dt_bound_s':args.dt_bound,'method':args.method}
     def read_scaled(path):
         pair=load_pair(path,args.imu0,args.imu1)
         for i,p in enumerate(pair):
