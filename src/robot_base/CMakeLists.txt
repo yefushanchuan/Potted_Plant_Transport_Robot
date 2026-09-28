@@ -119,6 +119,7 @@ install(
         scripts/linear_calibration.py
         scripts/dual_imu_calib.py
         scripts/imu_chain_calibration.py
+        scripts/dynamic_imu_calibration.py
     DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -128,6 +129,8 @@ if(BUILD_TESTING)
     TIMEOUT 120)
   ament_add_pytest_test(imu_chain_recording test/test_imu_chain_recording.py
     TIMEOUT 30)
+  ament_add_pytest_test(dynamic_imu_calibration test/test_dynamic_imu_calibration.py
+    TIMEOUT 120)
 endif()
 
 ament_package()
