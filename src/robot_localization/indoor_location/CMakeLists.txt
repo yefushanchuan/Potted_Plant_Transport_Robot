@@ -58,8 +58,6 @@ include_directories(
 )
 
 # NanoFLANN 库
-find_package(agrobot_time_sync REQUIRED)
-
 add_library(nanoflann STATIC
         src/nano_flann/nanoflann.cc
         )
@@ -85,7 +83,7 @@ ament_target_dependencies(location_node
         nav_msgs
         )
 target_link_libraries(location_node
-        nanoflann yaml-cpp agrobot_time_sync::agrobot_time_sync
+        nanoflann yaml-cpp
         Sophus::Sophus
         fmt::fmt
         "${cpp_typesupport_target}"
@@ -111,7 +109,5 @@ install(DIRECTORY "include/"
 ament_export_include_directories(include)
 
 ament_export_dependencies(rosidl_default_runtime)
-
-
 
 ament_package()
