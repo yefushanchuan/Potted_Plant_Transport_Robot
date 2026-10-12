@@ -3,7 +3,8 @@
 
 Convention: p0=R01*p1+t01, same physical event stamp0=stamp1+dt.
 Inputs: timestamp seconds, specific force m/s² (gravity retained), gyro rad/s.
-Default: same-record static gyro prior, dynamic initialization, joint refinement.
+Default: static gyro prior and acceleration difference constraint, dynamic R/dt
+initialization, joint refinement. No individual accelerometer bias estimation.
 Reference-zero and unconstrained dynamic methods require explicit selection.
 """
 import argparse
@@ -32,7 +33,8 @@ CONFIG = dict(method='joint_static_soft',grid_s=.01, integration_s=.16, gyro_smo
               quiet_window_s=1.,quiet_step_s=.1,quiet_min_samples=80,
               quiet_gyro_std_norm_max=.01,quiet_gyro_mean_norm_max=.03,
               quiet_accel_std_norm_max=.15,static_prior_floor_rad_s=.001,
-              static_effective_samples=6.)
+              static_effective_samples=6.,static_accel_constraint=True,
+              static_accel_sigma_floor_m_s2=.02)
 SCALES=np.array([.01]*3+[.1]*3+[.01]+[.01]*6+[.1]*3)
 
 def clean_pair(pair):
@@ -124,7 +126,7 @@ def features(pair,ts,R,td,bg0,cfg):
 def static_gyro_prior(pair,cfg):
     """First qualifying low-motion window in this recording, never another session.
 
-    Gravity includes unknown accelerometer bias, so it is diagnostic only.
+    Gravity direction includes unknown accelerometer bias; it never initializes R.
     The effective sample count/floor define an engineering prior, not a CI.
     """
     start=max(p[0,0] for p in pair);stop=min(p[-1,0] for p in pair)
@@ -142,9 +144,46 @@ def static_gyro_prior(pair,cfg):
             samples=[len(p) for p in chunks],gyro_mean_rad_s=bg.tolist(),gyro_std_rad_s=gs.tolist(),
             prior_sigma_rad_s=sigma.tolist(),accel_mean_m_s2=am.tolist(),accel_std_m_s2=ac.tolist(),
             specific_force_direction=(am/np.linalg.norm(am,axis=1)[:,None]).tolist(),
-            independently_confirmed_static=False,gravity_used_for_rotation_or_accel_bias=False)
+            independently_confirmed_static=False,gravity_used_for_rotation_initialization=False,
+            estimates_individual_accel_biases=False)
     raise ValueError('No qualifying static window in this recording; record a stationary interval '
                      'before/after three-axis motion. No automatic zero-bias or free-bias fallback.')
+
+
+def static_accel_window(pair,cfg):
+    """Find a quiet plateau covering every candidate lag, with a fixed inner grid.
+
+    The reference gyro window is not reused as an independent second gyro prior.
+    This adds only three acceleration-mean residuals, not one per interpolant.
+    """
+    margin=cfg['dt_bound_s']+cfg['grid_s']
+    support_cfg={**cfg,'quiet_window_s':cfg['quiet_window_s']+2*margin}
+    try:
+        _,_,info=static_gyro_prior(pair,support_cfg)
+    except ValueError as e:
+        raise ValueError('No lag-safe static acceleration window; record a longer stationary '
+                         'interval or explicitly disable the static acceleration constraint.') from e
+    start=max(p[0,0] for p in pair)+info['window_seconds_from_common_start'][0]+margin
+    ts=start+np.arange(0,cfg['quiet_window_s'],cfg['grid_s'])
+    for a in pair:
+        if not all(valid_at(ts+shift,a,cfg['max_gap_s']).all() for shift in (-margin,0,margin)):
+            raise ValueError('Static acceleration window has insufficient timestamp support')
+    mean0=interp(ts,pair[0])[:,:3].mean(0)
+    # Isotropic, rotation-invariant engineering uncertainty from both streams.
+    sigma=max(cfg['static_accel_sigma_floor_m_s2'],
+              float(np.sqrt(np.sum(np.square(info['accel_std_m_s2']))/cfg['static_effective_samples'])))
+    info.pop('prior_sigma_rad_s')  # This plateau is not an additional gyro-bias prior.
+    info.update(mean_residual_sigma_m_s2=sigma,time_margin_s=margin,
+                inner_window_seconds_from_common_start=[float(start-max(p[0,0] for p in pair)),
+                    float(start-max(p[0,0] for p in pair)+cfg['quiet_window_s'])],
+                estimates_individual_accel_biases=False,rotation_initialization='dynamic_gyro')
+    return dict(ts=ts,mean0=mean0,sigma=sigma,info=info)
+
+
+def static_accel_residual(pair,window,R,td,bdiff):
+    """R maps IMU1 to IMU0; bdiff=R*ba1-ba0. Re-evaluate at current R/dt."""
+    mean1=interp(window['ts']-td,pair[1])[:,:3].mean(0)
+    return R@mean1-window['mean0']-bdiff
 
 
 def initialize(pair,ts,use,cfg,bg=None):
@@ -182,6 +221,11 @@ def calibrate(raw_pair,config=None):
     if sv[-1]<cfg['gyro_excitation_min_rad_s'] or sv[-1]/sv[0]<cfg['gyro_excitation_ratio_min']:
         raise ValueError(f'Insufficient multi-axis excitation: singular values {sv}; record nonparallel rotations')
     R0,center=initialize(pair,ts,use,cfg,bg)
+    # Keep the dynamic initialization/staged baseline unchanged. Static acceleration
+    # constrains only the joint refinement, never a standalone roll/pitch estimate.
+    accel_static=None
+    if method in ('joint_static_soft','joint_fixed_bg') and cfg['static_accel_constraint']:
+        accel_static=static_accel_window(pair,cfg)
     h=int(round(cfg['integration_s']/(2*cfg['grid_s'])));mask=use[h:-h]
     if method in ('joint_fixed_bg','staged'):free=np.r_[0:7,13:16]
     elif method=='joint_reference_fixed':free=np.r_[0:10,13:16]
@@ -204,7 +248,10 @@ def calibrate(raw_pair,config=None):
         extra=[]
         if method=='joint_static_soft':
             R,_,_,c,b0,_=decode(z)
-            extra=((np.array([b0,R.T@(b0-c)])-bg)/sigma).ravel()
+            extra.extend(((np.array([b0,R.T@(b0-c)])-bg)/sigma).ravel())
+        if accel_static is not None:
+            R,_,td,_,_,bdiff=decode(z)
+            extra.extend(static_accel_residual(pair,accel_static,R,td,bdiff)/accel_static['sigma'])
         return np.r_[np.sqrt(cfg['grid_s']/cfg['integration_s'])*robust,extra]
     z0=np.zeros(len(free));initial=pack(*decode(z0));opt=None
     if method=='staged':
@@ -235,7 +282,17 @@ def calibrate(raw_pair,config=None):
     if bg is not None:
         prior_deviation=(np.array([est[f'gyro_bias{i}_rad_s'] for i in (0,1)])-bg)/sigma
         if np.max(np.abs(prior_deviation))>5:failures.append('gyro_bias_inconsistent_with_static_prior')
-    return dict(schema_version=2,status='fit_passed_needs_independent_validation' if not failures else 'rejected',
+    accel_static_diagnostics=None
+    if accel_static is not None:
+        R,_,td,_,_,bdiff=decode(z)
+        r=static_accel_residual(pair,accel_static,R,td,bdiff)
+        accel_static_diagnostics=dict(**accel_static['info'],residual_m_s2=r.tolist(),
+            residual_sigma=(r/accel_static['sigma']).tolist(),
+            aligned_accel_mean0_m_s2=accel_static['mean0'].tolist(),
+            aligned_accel_mean1_m_s2=interp(accel_static['ts']-td,pair[1])[:,:3].mean(0).tolist())
+        if np.max(np.abs(r/accel_static['sigma']))>5:
+            failures.append('accel_difference_inconsistent_with_static_window')
+    return dict(schema_version=3,status='fit_passed_needs_independent_validation' if not failures else 'rejected',
         quality_failures=failures,config=cfg,method=method,estimate=est,
         initialization=initial,staged_baseline=dict(estimate=initial,training=predict(raw_pair,initial,cfg)),
         assumptions=dict(reference_gyro_bias_fixed_zero=method=='joint_reference_fixed',
@@ -244,10 +301,11 @@ def calibrate(raw_pair,config=None):
         scope='Rigid relative IMU calibration only; no wheel-axle origin, individual accelerometer biases, scales, or misalignment intrinsics',
         diagnostics=dict(no_static_information=bg is None,static_priors=method=='joint_static_soft',
             static_info=quiet,static_prior_deviation_sigma=None if prior_deviation is None else prior_deviation.tolist(),
+            static_accel_constraint=accel_static_diagnostics,rotation_initialization='dynamic_gyro',
             gravity_direction_input=False,
             active_s=active_s,samples=int(mask.sum()),gyro_excitation_singular_values_rad_s=sv.tolist(),
             scaled_jacobian_singular_values=js.tolist(),scaled_condition=condition,
-            conditioning_includes_static_prior=method=='joint_static_soft',
+            conditioning_includes_static_prior=method=='joint_static_soft' or accel_static is not None,
             optimizer_success=None if opt is None else bool(opt.success),nfev=0 if opt is None else opt.nfev,
             termination='staged_only' if opt is None else opt.message,
             optimality=None if opt is None else float(opt.optimality),training=metrics))
@@ -355,6 +413,8 @@ def main():
                     help='Default joint_static_soft requires same-record static data; joint_reference_fixed '
                          'explicitly assumes reference gyro bias zero; joint_free is experimental')
     ap.add_argument('--dt-bound',type=float,default=CONFIG['dt_bound_s'],help='Symmetric time-offset search bound, seconds')
+    ap.add_argument('--no-static-accel-constraint',action='store_true',
+                    help='Explicit ablation: retain gyro static priors but use dynamic acceleration only')
     for i in (0,1):
         ap.add_argument(f'--accel-scale{i}',type=float,default=1.,help='Multiply incoming acceleration to obtain m/s²; use 9.80665 for g')
         ap.add_argument(f'--gyro-scale{i}',type=float,default=1.,help='Multiply incoming gyro to obtain rad/s')
@@ -364,7 +424,8 @@ def main():
     if dest.exists():ap.error('Output already exists; select another path')
     if args.imu0==args.imu1:ap.error('Two distinct IMU topics/keys required')
     if not .005<=args.dt_bound<=1:ap.error('--dt-bound must be between 0.005 and 1 seconds')
-    cfg={**CONFIG,'dt_bound_s':args.dt_bound,'method':args.method}
+    cfg={**CONFIG,'dt_bound_s':args.dt_bound,'method':args.method,
+         'static_accel_constraint':not args.no_static_accel_constraint}
     def read_scaled(path):
         pair=load_pair(path,args.imu0,args.imu1)
         for i,p in enumerate(pair):

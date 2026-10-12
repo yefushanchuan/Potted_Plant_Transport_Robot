@@ -1,4 +1,4 @@
-"""Dynamic-only analytic checks with unequal clocks/rates and independent records."""
+"""Rigid IMU analytic checks with unequal clocks/rates and independent records."""
 import copy
 import importlib.util
 import json
@@ -145,6 +145,56 @@ class StaticConstrainedCalibrationTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'No qualifying static window'):
             cal.calibrate(fixture()[0])
 
+    def test_static_accel_difference_sign_and_rotation_dependence(self):
+        pair=cal.clean_pair(self.pair);window=cal.static_accel_window(pair,cal.CONFIG)
+        R=np.array(self.truth['R']);bd=np.array(self.truth['accel_difference_bias_m_s2'])
+        residual=cal.static_accel_residual(pair,window,R,self.truth['td_s'],bd)
+        np.testing.assert_allclose(residual,0,atol=1e-10)
+        delta=np.array([.1,-.2,.3])
+        np.testing.assert_allclose(cal.static_accel_residual(pair,window,R,self.truth['td_s'],bd+delta),-delta,atol=1e-10)
+        wrong_R=Rotation.from_euler('x',2,degrees=True).as_matrix()@R
+        self.assertGreater(np.linalg.norm(cal.static_accel_residual(pair,window,wrong_R,self.truth['td_s'],bd)),.3)
+
+    def test_static_accel_is_added_without_changing_dynamic_initialization(self):
+        old=cal.calibrate(self.pair,{'static_accel_constraint':False})
+        self.assertEqual(old['initialization'],self.fit['initialization'])
+        self.assertIsNone(old['diagnostics']['static_accel_constraint'])
+        diagnostic=self.fit['diagnostics']['static_accel_constraint']
+        self.assertFalse(diagnostic['estimates_individual_accel_biases'])
+        self.assertEqual(diagnostic['rotation_initialization'],'dynamic_gyro')
+        self.assertLess(max(abs(x) for x in diagnostic['residual_m_s2']),.002)
+
+    def test_static_accel_constraint_changes_fit_when_dynamic_accel_is_biased(self):
+        pair=[p.copy() for p in self.pair]
+        # Simulate an unmodelled dynamic-only acceleration offset; static observations
+        # must affect the objective, rather than merely appear in output diagnostics.
+        elapsed=pair[1][:,0]-pair[1][0,0]
+        pair[1][elapsed>6,1:4]+=[.04,-.03,.02]
+        constrained=cal.calibrate(pair)
+        dynamic_only=cal.calibrate(pair,{'static_accel_constraint':False})
+        cleaned=cal.clean_pair(pair);window=cal.static_accel_window(cleaned,cal.CONFIG)
+        def error(fit):
+            e=fit['estimate']
+            return np.linalg.norm(cal.static_accel_residual(cleaned,window,np.array(e['R']),
+                                  e['td_s'],np.array(e['accel_difference_bias_m_s2'])))
+        self.assertLess(error(constrained),error(dynamic_only))
+
+    def test_static_accel_requires_time_margin_around_short_stop(self):
+        pair=[p[(p[:,0]-p[0,0])>=3.0].copy() for p in self.pair]
+        cleaned=cal.clean_pair(pair)
+        cal.static_gyro_prior(cleaned,cal.CONFIG)
+        with self.assertRaisesRegex(ValueError,'lag-safe'):
+            cal.static_accel_window(cleaned,cal.CONFIG)
+
+    def test_static_accel_supports_both_lag_signs_near_search_bound(self):
+        for td in [-.29,.29]:
+            pair=[p.copy() for p in self.pair]
+            pair[1][:,0]+=self.truth['td_s']-td
+            pair=cal.clean_pair(pair);window=cal.static_accel_window(pair,cal.CONFIG)
+            residual=cal.static_accel_residual(pair,window,np.array(self.truth['R']),td,
+                                             np.array(self.truth['accel_difference_bias_m_s2']))
+            np.testing.assert_allclose(residual,0,atol=1e-10)
+
     def test_static_does_not_fix_unobservable_planar_geometry(self):
         with self.assertRaisesRegex(ValueError,'multi-axis'):
             cal.calibrate(fixture(static=True,planar=True)[0])
@@ -188,5 +238,13 @@ class StaticConstrainedCalibrationTest(unittest.TestCase):
             saved=json.loads((root/'fit.json').read_text())
             self.assertEqual(saved['method'],'joint_static_soft')
             self.assertTrue(saved['diagnostics']['static_priors'])
+            self.assertIsNotNone(saved['diagnostics']['static_accel_constraint'])
+            disabled=subprocess.run([sys.executable,str(SCRIPT),'--input',str(root/'pair.npz'),
+                '--imu0','imu0','--imu1','imu1','--no-static-accel-constraint',
+                '--output',str(root/'ablation.json')],capture_output=True,text=True)
+            self.assertEqual(disabled.returncode,0,disabled.stderr)
+            ablation=json.loads((root/'ablation.json').read_text())
+            self.assertIsNone(ablation['diagnostics']['static_accel_constraint'])
+            self.assertEqual(ablation['initialization'],saved['initialization'])
 
 if __name__=='__main__':unittest.main()
