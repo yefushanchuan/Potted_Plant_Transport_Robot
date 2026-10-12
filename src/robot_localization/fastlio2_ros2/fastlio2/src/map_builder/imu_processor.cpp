@@ -1,4 +1,5 @@
 #include "imu_processor.h"
+#include "timed_motion.h"
 #include <rclcpp/rclcpp.hpp>
 #include <sstream>
 
@@ -14,17 +15,16 @@ IMUProcessor::IMUProcessor(Config &config, std::shared_ptr<IESKF> kf): m_config(
     // 可针对Z轴调低na：
     m_Q(5, 5) *= 5.0;   // 增加Z轴线加速度噪声，让其不信任z轴的噪声
 
-    m_last_acc.setZero();   // 上一次的加速度
-    m_last_gyro.setZero();  // 上一次的角速度
     m_imu_cache.clear();    // 清空IMU缓存
-    m_poses_cache.clear();  // 清空姿态缓存
 }
-
 
 bool IMUProcessor::initialize(SyncPackage &package)
 {
     // 累积IMU数据用于初始估计
-    m_imu_cache.insert(m_imu_cache.end(), package.imus.begin(), package.imus.end());
+    for (const auto &imu : package.imus)
+        if (imu.time <= package.cloud_end_time &&
+            (m_imu_cache.empty() || imu.time > m_imu_cache.back().time))
+            m_imu_cache.push_back(imu);
 
     // 未满初始化所需IMU数量，不初始化
     if (m_imu_cache.size() < static_cast<size_t>(m_config.imu_init_num))
@@ -105,208 +105,70 @@ bool IMUProcessor::initialize(SyncPackage &package)
                "[IMU初始化] ================= 初始化完成 =================");
     // 设置初始状态协方差矩阵
     m_kf->P().setIdentity();
-    m_kf->P().block<3, 3>(6, 6)   = M3D::Identity() * 0.00001; // 初始速度不确定性
-    m_kf->P().block<3, 3>(9, 9)   = M3D::Identity() * 0.00001; // 初始位置不确定性
-    m_kf->P().block<3, 3>(15, 15) = M3D::Identity() * 0.0001;  // ba bias不确定性
-    m_kf->P().block<3, 3>(18, 18) = M3D::Identity() * 0.0001;  // bg bias不确定性
+    m_kf->P().block<3, 3>(6, 6)   = M3D::Identity() * 0.00001; // 外参旋转不确定性
+    m_kf->P().block<3, 3>(9, 9)   = M3D::Identity() * 0.00001; // 外参平移不确定性
+    m_kf->P().block<3, 3>(15, 15) = M3D::Identity() * 0.0001;  // 陀螺仪偏置不确定性
+    m_kf->P().block<3, 3>(18, 18) = M3D::Identity() * 0.0001;  // 加速度计偏置不确定性
 
     // 设置上一次使用的IMU和时间戳
-    m_last_imu = m_imu_cache.back();
-    m_last_propagate_end_time = package.cloud_end_time;
+    m_kf->x().time = package.cloud_end_time;
+    m_kf->x().td = m_config.time_offset.initial_td;
+    m_kf->time_options = m_config.time_offset;
+    m_kf->P()(21, 21) = std::pow(m_config.time_offset.initial_td_std, 2);
+
     return true;
 }
 
+bool IMUProcessor::undistort(SyncPackage &package) {
 
-void IMUProcessor::undistort(SyncPackage &package)
-{
-    // 用上一帧的最后一个IMU开始作为本次的起始
-    m_imu_cache.clear();
-    m_imu_cache.push_back(m_last_imu);
-    m_imu_cache.insert(m_imu_cache.end(), package.imus.begin(), package.imus.end());
-
-    // 时间信息
-    const double imu_time_end = m_imu_cache.back().time;
-    const double cloud_time_begin = package.cloud_start_time;
-    const double propagate_time_end = package.cloud_end_time;
-
-    // 初始化姿态缓存：t=0 时刻
-    m_poses_cache.clear();
-    m_poses_cache.emplace_back(
-            0.0, m_last_acc, m_last_gyro,
-            m_kf->x().v, m_kf->x().t_wi, m_kf->x().r_wi
-    );
-
-    V3D acc_val, gyro_val;
-    double dt = 0.0;
-    Input inp;
-    inp.acc = m_imu_cache.back().acc;
-    inp.gyro = m_imu_cache.back().gyro;
-
-    // 对 IMU 数据进行前向预测（预积分）
-    for (auto it_imu = m_imu_cache.begin(); it_imu < (m_imu_cache.end() - 1); it_imu++)
-    {
-        IMUData &head = *it_imu;
-        IMUData &tail = *(it_imu + 1);
-
-        // 跳过已经处理过的IMU
-        if (tail.time < m_last_propagate_end_time)
-            continue;
-
-        // 线性插值获取中间值（IMU积分常用方法）
-        gyro_val = 0.5 * (head.gyro + tail.gyro);
-        acc_val  = 0.5 * (head.acc + tail.acc);
-
-        // 计算时间间隔
-        if (head.time < m_last_propagate_end_time)
-            dt = tail.time - m_last_propagate_end_time;
-        else
-            dt = tail.time - head.time;
-        //std::cout<< "acc_val.norm() :"  << acc_val.norm() << std::endl;
-
-        // 调用 ESKF predict 更新状态
-        inp.acc = acc_val;
-        inp.gyro = gyro_val;
-        m_kf->predict(inp, dt, m_Q);//IMU 预积分的值是通过 m_kf->predict(inp, dt, m_Q) 更新到 m_kf->x() 的
-
-        // 更新最新加速度（补偿bias + 旋转到世界系 + 加重力）
-        m_last_gyro = gyro_val - m_kf->x().bg;
-        m_last_acc = m_kf->x().r_wi * (acc_val - m_kf->x().ba) + m_kf->x().g;
-        
-        // IMU 详细监控日志：每隔一定时间输出关键指标
-        static int imu_log_counter = 0;
-        static double max_acc_norm = 0.0, max_gyro_norm = 0.0;
-        static double acc_sum = 0.0, gyro_sum = 0.0;
-        static int sample_count = 0;
-        
-        // 累积统计信息
-        double current_acc_norm = acc_val.norm();
-        double current_gyro_norm = gyro_val.norm();
-        max_acc_norm = std::max(max_acc_norm, current_acc_norm);
-        max_gyro_norm = std::max(max_gyro_norm, current_gyro_norm);
-        acc_sum += current_acc_norm;
-        gyro_sum += current_gyro_norm;
-        sample_count++;
-        
-        if (m_config.enable_debug_logs && ++imu_log_counter % m_config.imu_log_interval == 0) {
-            double avg_acc = acc_sum / sample_count;
-            double avg_gyro = gyro_sum / sample_count;
-            
-            RCLCPP_INFO(rclcpp::get_logger("imu_processor"), 
-                       "[IMU监控] ===== IMU状态报告 (第%d帧) =====", imu_log_counter);
-            RCLCPP_INFO(rclcpp::get_logger("imu_processor"), 
-                       "[IMU监控] 积分步长: %.2fms | 原始加速度=[%.6f,%.6f,%.6f]m/s² | 处理后=[%.6f,%.6f,%.6f]m/s²",
-                       dt * 1000, acc_val.x(), acc_val.y(), acc_val.z(),
-                       m_last_acc.x(), m_last_acc.y(), m_last_acc.z());
-            RCLCPP_INFO(rclcpp::get_logger("imu_processor"), 
-                       "[IMU监控] 角速度: 原始=[%.6f,%.6f,%.6f]rad/s | 补偿后=[%.6f,%.6f,%.6f]rad/s",
-                       gyro_val.x(), gyro_val.y(), gyro_val.z(),
-                       m_last_gyro.x(), m_last_gyro.y(), m_last_gyro.z());
-            RCLCPP_INFO(rclcpp::get_logger("imu_processor"), 
-                       "[IMU监控] 传感器零偏: 陀螺仪=[%.5f,%.5f,%.5f]rad/s | 加速度计=[%.5f,%.5f,%.5f]m/s²",
-                       m_kf->x().bg.x(), m_kf->x().bg.y(), m_kf->x().bg.z(),
-                       m_kf->x().ba.x(), m_kf->x().ba.y(), m_kf->x().ba.z());
-            RCLCPP_INFO(rclcpp::get_logger("imu_processor"), 
-                       "[IMU监控] 统计数据: 加速度 平均/最大=[%.3f/%.3f]m/s² | 角速度 平均/最大=[%.4f/%.4f]rad/s",
-                       avg_acc, max_acc_norm, avg_gyro, max_gyro_norm);
-            RCLCPP_INFO(rclcpp::get_logger("imu_processor"), 
-                       "[IMU监控] 载体状态: 速度=[%.3f,%.3f,%.3f]m/s | 位置=[%.2f,%.2f,%.2f]m | 速率=%.2fm/s",
-                       m_kf->x().v.x(), m_kf->x().v.y(), m_kf->x().v.z(),
-                       m_kf->x().t_wi.x(), m_kf->x().t_wi.y(), m_kf->x().t_wi.z(), m_kf->x().v.norm());
-            
-            // 状态健康检查和异常检测
-            bool has_warning = false;
-            if (current_acc_norm > 50.0) {
-                RCLCPP_WARN(rclcpp::get_logger("imu_processor"), 
-                           "[IMU健康] 警告: 加速度过大 %.2f m/s² (>50)，传感器可能故障！", current_acc_norm);
-                has_warning = true;
-            }
-            if (current_gyro_norm > 10.0) {
-                RCLCPP_WARN(rclcpp::get_logger("imu_processor"), 
-                           "[IMU健康] 警告: 角速度过大 %.2f rad/s (>10)，检测到快速旋转！", current_gyro_norm);
-                has_warning = true;
-            }
-            if (m_kf->x().bg.norm() > 0.2) {
-                RCLCPP_WARN(rclcpp::get_logger("imu_processor"), 
-                           "[IMU健康] 警告: 陀螺仪零偏漂移过大 %.4f rad/s (>0.2)，可能是热漂移或标定问题！", m_kf->x().bg.norm());
-                has_warning = true;
-            }
-            if (m_kf->x().ba.norm() > 2.0) {
-                RCLCPP_WARN(rclcpp::get_logger("imu_processor"), 
-                           "[IMU健康] 警告: 加速度计零偏漂移过大 %.4f m/s² (>2.0)，可能需要重新标定！", m_kf->x().ba.norm());
-                has_warning = true;
-            }
-            
-            if (!has_warning) {
-                RCLCPP_INFO(rclcpp::get_logger("imu_processor"), "[IMU健康] 所有参数均在正常范围内");
-            }
-            
-            // 重置统计变量
-            max_acc_norm = max_gyro_norm = 0.0;
-            acc_sum = gyro_sum = 0.0;
-            sample_count = 0;
-        }
-
-        // 姿态缓存中记录此时状态（用于后续插值畸变点云）
-        double offset = tail.time - cloud_time_begin;
-        m_poses_cache.emplace_back(
-                offset, m_last_acc, m_last_gyro, m_kf->x().v, m_kf->x().t_wi, m_kf->x().r_wi
-        );
+    // Keep the anchor on the IMU clock, independent of the current td estimate.
+    fast_time::Trajectory check;
+    auto &x = m_kf->x();
+    const double end = package.cloud_end_time;
+    if (end < x.time || end - x.time > 1. ||
+        !check.build(x, package.imus, std::min(x.time, package.cloud_start_time + x.td),
+                     std::max(end, end + x.td), m_config.time_offset.max_imu_gap)) {
+        m_kf->report = TimeOffsetReport();
+        m_kf->report.reason = "imu_coverage";
+        return false;
     }
-
-    // 最后一段时间没有IMU数据，继续外推
-    dt = propagate_time_end - imu_time_end;
-    m_kf->predict(inp, dt, m_Q);
-
-    // 更新状态
-    m_last_imu = m_imu_cache.back();
-    m_last_propagate_end_time = propagate_time_end;
-
-    // 当前状态（用于变换到雷达系）
-    M3D cur_r_wi = m_kf->x().r_wi;
-    V3D cur_t_wi = m_kf->x().t_wi;
-    M3D cur_r_il = m_kf->x().r_il;
-    V3D cur_t_il = m_kf->x().t_il;
-
-    auto it_pcl = package.cloud->points.end() - 1;
-
-    // 遍历所有姿态段，进行时间插值补偿点云畸变
-    for (auto it_kp = m_poses_cache.end() - 1; it_kp != m_poses_cache.begin(); it_kp--)
-    {
-        auto head = it_kp - 1;
-        auto tail = it_kp;
-
-        M3D imu_r_wi = head->rot;
-        V3D imu_t_wi = head->trans;
-        V3D imu_vel = head->vel;
-        V3D imu_acc = tail->acc;
-        V3D imu_gyro = tail->gyro;
-
-        // 将点云从末尾向前补偿（按时间对齐 IMU pose）
-        for (; it_pcl->curvature / 1000.0 > head->offset; it_pcl--)
-        {
-            dt = it_pcl->curvature / 1000.0 - head->offset;
-            V3D point(it_pcl->x, it_pcl->y, it_pcl->z);
-
-            // 角速度外推：旋转扰动项
-            M3D point_rot = imu_r_wi * Sophus::SO3d::exp(imu_gyro * dt).matrix();
-
-            // 平移扰动项：位移估计
-            V3D point_pos = imu_t_wi + imu_vel * dt + 0.5 * imu_acc * dt * dt;
-
-            // 点云从当前雷达系转换到当前帧中心位置（去畸变核心）
-            V3D p_compensate = cur_r_il.transpose() * (
-                    cur_r_wi.transpose() * (point_rot * (cur_r_il * point + cur_t_il) + point_pos - cur_t_wi)
-                    - cur_t_il
-            );
-
-            // 替换点坐标
-            it_pcl->x = p_compensate(0);
-            it_pcl->y = p_compensate(1);
-            it_pcl->z = p_compensate(2);
-
-            // 如果已经到头，退出
-            if (it_pcl == package.cloud->points.begin())
-                break;
-        }
+    std::vector<double> targets;
+    for (const auto &imu : package.imus)
+        if (imu.time > x.time && imu.time < end)
+            targets.push_back(imu.time);
+    targets.push_back(end);
+    for (double target : targets) {
+        IMUData a, b;
+        fast_time::interpolate(package.imus, x.time, m_config.time_offset.max_imu_gap, a);
+        fast_time::interpolate(package.imus, target, m_config.time_offset.max_imu_gap, b);
+        Input inp;
+        inp.acc = .5 * (a.acc + b.acc);
+        inp.gyro = .5 * (a.gyro + b.gyro);
+        m_kf->predict(inp, target - x.time, m_Q);
+        x.time = target;
     }
+    V3D a = V3D::Zero(), w = a;
+    int count = 0;
+    for (const auto &imu : package.imus)
+        if (imu.time >= end - .5 && imu.time <= end) {
+            a += imu.acc;
+            w += imu.gyro;
+            ++count;
+        }
+    double va = 0, vw = 0;
+    if (count > 1) {
+        a /= count;
+        w /= count;
+        for (const auto &imu : package.imus)
+            if (imu.time >= end - .5 && imu.time <= end) {
+                va += (imu.acc - a).squaredNorm();
+                vw += (imu.gyro - w).squaredNorm();
+            }
+    }
+    m_kf->time_excited =
+        count > 1 && (std::sqrt(va / count) >= m_config.time_offset.min_accel_std ||
+                      std::sqrt(vw / count) >= m_config.time_offset.min_gyro_std);
+    package.raw_cloud.reset(new CloudType(*package.cloud));
+    return deskewNative(x, package.imus, *package.raw_cloud, package.cloud_start_time,
+                        *package.cloud, m_config.time_offset.max_imu_gap);
 }

@@ -14,7 +14,7 @@ class Utils
 {
 public:
     // 从 ROS2 消息的 Header 中提取时间戳（单位：秒）
-    static double getSec(std_msgs::msg::Header &header);
+    static double getSec(const std_msgs::msg::Header &header);
 
     // 将 Livox 点云（PointCloud2 格式）转换为 PCL 点云（带强度和法向量），
     // 同时根据滤波数量、最小/最大范围、Z轴范围、旋转矩阵 R 和平移向量 t 进行处理

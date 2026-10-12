@@ -1,0 +1,17 @@
+cube_len: 100
+det_range: 20
+effect_feat_num: 5
+ieskf_max_iter: 10
+ieskf_rotation_threshold_deg: 0.05
+ieskf_translation_threshold_cm: 0.5
+imu_init_num: 200
+lidar_cov_inv: 1000.0
+lidar_max_range: 40.0
+lidar_min_range: 0.5
+map_resolution: 0.1
+move_thresh: 0.8
+near_search_radius: 1
+plane_fitting_tolerance: 0.1
+scan_down_sampling_rate: 0.2
+time_offset:
+  td_noise: 0.001

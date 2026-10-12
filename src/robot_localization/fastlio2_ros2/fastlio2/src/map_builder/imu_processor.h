@@ -18,16 +18,12 @@ public:
     bool initialize(SyncPackage &package);
 
     // 点云去畸变：利用 IMU 数据对同步包中的点云进行去畸变
-    void undistort(SyncPackage &package);
+    bool undistort(SyncPackage &package);
 
-private:
+  private:
+
     Config m_config;                        // 系统配置参数
     std::shared_ptr<IESKF> m_kf;            // IESKF 状态估计器（共享指针）
-    double m_last_propagate_end_time;       // 上一次 IMU 预测结束的时间戳
     Vec<IMUData> m_imu_cache;               // IMU 数据缓存（用于插值/去畸变）
-    Vec<Pose> m_poses_cache;                // 位姿缓存（存储 IMU 传播出来的轨迹）
-    V3D m_last_acc;                         // 上一次加速度观测
-    V3D m_last_gyro;                        // 上一次角速度观测
     M12D m_Q;                               // IMU 噪声协方差矩阵（12x12，过程噪声）
-    IMUData m_last_imu;                     // 上一次 IMU 原始数据（完整保存）
 };

@@ -12,6 +12,7 @@
 
 // ROS2核心库和消息类型
 #include <rclcpp/rclcpp.hpp>       // ROS2 C++客户端库
+#include <std_msgs/msg/string.hpp>
 #include <sensor_msgs/msg/imu.hpp> // IMU传感器消息类型
 
 // 项目内部头文件
@@ -86,6 +87,8 @@ public:
 
         // 加载配置参数
         loadParameters();
+        if (m_builder_config.esti_il)
+            throw std::invalid_argument("Online time-offset estimation requires esti_il: false");
 
         // 根据雷达类型创建对应的订阅器
         if (m_node_config.lidar_type == "livox")
@@ -103,6 +106,7 @@ public:
                 std::bind(&LIONode::lidarCB, this, std::placeholders::_1));
         }
 
+        m_time_pub = create_publisher<std_msgs::msg::String>("time_offset", 10);
         // 创建IMU数据订阅器
         m_imu_sub = this->create_subscription<sensor_msgs::msg::Imu>(m_node_config.imu_topic, 200, std::bind(&LIONode::imuCB, this, std::placeholders::_1));
 
@@ -121,6 +125,10 @@ public:
 
         // 创建卡尔曼滤波器和地图构建器
         m_kf = std::make_shared<IESKF>();                                 // 误差状态卡尔曼滤波器
+        m_kf->time_options = m_builder_config.time_offset;
+        m_kf->x().td = m_builder_config.time_offset.initial_td;
+        m_kf->P()(21, 21) = std::pow(m_builder_config.time_offset.initial_td_std, 2);
+        m_kf->setMaxIter(m_builder_config.ieskf_max_iter);
         m_builder = std::make_shared<MapBuilder>(m_builder_config, m_kf); // 地图构建器
 
         // 启动独立处理线程（专注于数据同步和建图处理）
@@ -209,6 +217,9 @@ public:
         m_builder_config.esti_il = config["esti_il"].as<bool>();              // 是否估计IMU-LiDAR外参
 
         // 加载IMU-LiDAR外参（旋转矩阵和平移向量）
+        m_builder_config.time_offset.load(config["time_offset"]);
+        m_builder_config.imu_accel_scale =
+            config["imu_accel_scale"] ? config["imu_accel_scale"].as<double>() : 1.;
         std::vector<double> r_il_vec = config["r_il"].as<std::vector<double>>();
         std::vector<double> t_il_vec = config["t_il"].as<std::vector<double>>();
         m_builder_config.r_il << r_il_vec[0], r_il_vec[1], r_il_vec[2], r_il_vec[3], r_il_vec[4], r_il_vec[5], r_il_vec[6], r_il_vec[7], r_il_vec[8];
@@ -316,7 +327,7 @@ public:
         if (timestamp < m_state_data.last_imu_time)
         {
             RCLCPP_WARN(this->get_logger(), "IMU Message is out of order");
-            std::deque<IMUData>().swap(m_state_data.imu_buffer);
+            return; // Do not bridge a clock rollback with an old filter state; restart the node.
         }
 
         // 读取原始IMU数据
@@ -331,25 +342,14 @@ public:
         acc = m_builder_config.imu_to_baselink_r_il * acc;
         gyro = m_builder_config.imu_to_baselink_r_il * gyro;
 
-        // 单位转换：如果z > 5认为是m/s²，转换为g
-        if (acc.z() > 5.0)
-        {
-            acc = acc / 9.81;
-        }
-        else if (acc.z() < 0)
-        {
-            // 速腾airy 96线雷达特殊处理
-            acc = Eigen::Vector3d(-acc.y(), -acc.x(), -acc.z());
-            gyro = Eigen::Vector3d(-gyro.y(), -gyro.x(), -gyro.z());
-        }
-
-        // 最终缓存数据：乘以10统一单位为m/s²
-        m_state_data.imu_buffer.emplace_back(
-            acc * 10.0, // 线加速度
-            gyro,       // 角速度
-            timestamp   // 时间戳
-        );
-
+        if (!acc.allFinite() || !gyro.allFinite() || timestamp <= m_state_data.last_imu_time)
+            return;
+        m_state_data.imu_buffer.emplace_back(acc * m_builder_config.imu_accel_scale, gyro,
+                                             timestamp);
+        // Keep three seconds plus the preceding interpolation sample.
+        while (m_state_data.imu_buffer.size() > 2 &&
+               timestamp - m_state_data.imu_buffer[1].time > 3.)
+            m_state_data.imu_buffer.pop_front();
         // 更新最新的IMU时间戳
         m_state_data.last_imu_time = timestamp;
     }
@@ -372,8 +372,8 @@ public:
         // 步骤1：点云处理（在回调线程中完成，不阻塞）
         pcl::PointCloud<pcl::PointXYZINormal>::Ptr cloud = Utils::convertAndComputeNormals(
             *msg, m_builder_config.lidar_filter_num, m_builder_config.lidar_min_range,
-            m_builder_config.lidar_max_range, m_builder_config.lidar_z_min, m_builder_config.lidar_z_max,
-            m_builder_config.laser_to_baselink_r_il, m_builder_config.laser_to_baselink_t_il);
+            m_builder_config.lidar_max_range, m_builder_config.lidar_z_min,
+            m_builder_config.lidar_z_max, m_builder_config.laser_to_baselink_r_il, m_builder_config.laser_to_baselink_t_il);
 
         // 步骤2：加入同步队列
         {
@@ -412,8 +412,8 @@ public:
         // 步骤1：点云处理（在回调线程中完成，不阻塞）
         CloudType::Ptr cloud = Utils::livox2PCL(
             *msg, m_builder_config.lidar_filter_num, m_builder_config.lidar_min_range,
-            m_builder_config.lidar_max_range, m_builder_config.lidar_z_min, m_builder_config.lidar_z_max,
-            m_builder_config.laser_to_baselink_r_il, m_builder_config.laser_to_baselink_t_il);
+            m_builder_config.lidar_max_range, m_builder_config.lidar_z_min,
+            m_builder_config.lidar_z_max, m_builder_config.laser_to_baselink_r_il, m_builder_config.laser_to_baselink_t_il);
 
         // 步骤2：加入同步队列
         {
@@ -437,6 +437,7 @@ public:
     // 同步IMU和激光雷达数据包，确保时间对齐
     bool syncPackage()
     {
+        std::scoped_lock lock(m_state_data.imu_mutex, m_state_data.lidar_mutex);
         // 如果 IMU 缓冲区或激光雷达缓冲区为空，则无法同步数据包
         if (m_state_data.imu_buffer.empty() || m_state_data.lidar_buffer.empty())
             return false;
@@ -447,6 +448,10 @@ public:
             // 取出当前帧雷达点云
             m_package.cloud = m_state_data.lidar_buffer.front().second;
 
+            if (m_package.cloud->empty()) {
+                m_state_data.lidar_buffer.pop_front();
+                return false;
+            }
             // 按照点的曲率（curvature）排序
             std::sort(m_package.cloud->points.begin(), m_package.cloud->points.end(), [](PointType &p1, PointType &p2)
                       { return p1.curvature < p2.curvature; });
@@ -462,20 +467,11 @@ public:
             m_state_data.lidar_pushed = true;
         }
 
-        // 如果最新的 IMU 时间还没有覆盖到当前点云的结束时间，则等待更多的 IMU 数据
-        if (m_state_data.last_imu_time < m_package.cloud_end_time)
+        // Retain a rolling IMU interval including interpolation endpoints on both sides.
+        if (m_state_data.last_imu_time <
+            m_package.cloud_end_time + m_builder_config.time_offset.requiredFuture(m_kf->x().td))
             return false;
-
-        // 清空上一帧打包的 IMU 数据
-        Vec<IMUData>().swap(m_package.imus);
-
-        // 将所有时间 < 点云结束时间的 IMU 数据打包进 m_package.imus
-        while (!m_state_data.imu_buffer.empty() && m_state_data.imu_buffer.front().time < m_package.cloud_end_time)
-        {
-            m_package.imus.emplace_back(m_state_data.imu_buffer.front());
-            m_state_data.imu_buffer.pop_front(); // 从队列中弹出已使用的 IMU 数据
-        }
-
+        m_package.imus.assign(m_state_data.imu_buffer.begin(), m_state_data.imu_buffer.end());
         // 移除已处理的雷达数据帧
         m_state_data.lidar_buffer.pop_front();
         m_state_data.lidar_pushed = false;
@@ -659,9 +655,14 @@ public:
                             data_delay, data_delay * 1000.0, build_time_ms, m_package.imus.size());
             }
 
+            std_msgs::msg::String timing;
+            timing.data =
+                m_kf->report.json(m_package.cloud_end_time, m_kf->x().td, m_kf->P()(21, 21));
+            m_time_pub->publish(timing);
             // === 步骤3: 发布结果 ===
             // 只有在建图状态下才发布结果
-            if (m_builder->status() != BuilderStatus::MAPPING)
+            if (m_builder->status() != BuilderStatus::MAPPING ||
+                m_kf->report.reason == "imu_coverage")
                 continue;
 
             // 广播TF变换（世界坐标系到机体坐标系）
@@ -691,32 +692,35 @@ public:
     }
 
 private:
-    // ROS2订阅器和发布器
-    std::shared_ptr<void> m_lidar_sub;                                // 激光雷达数据订阅器（泛型指针）
-    rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr m_imu_sub; // IMU数据订阅器
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr m_time_pub;
+  // ROS2订阅器和发布器
+  std::shared_ptr<void> m_lidar_sub; // 激光雷达数据订阅器（泛型指针）
+  rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr m_imu_sub; // IMU数据订阅器
 
-    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr m_body_cloud_pub;  // 机体坐标系点云发布器
-    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr m_world_cloud_pub; // 世界坐标系点云发布器
-    rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr m_path_pub;                  // 轨迹路径发布器
-    rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr m_odom_pub;              // 里程计发布器
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
+      m_body_cloud_pub; // 机体坐标系点云发布器
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
+      m_world_cloud_pub;                                        // 世界坐标系点云发布器
+  rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr m_path_pub; // 轨迹路径发布器
+  rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr m_odom_pub; // 里程计发布器
 
-    // 数据管理
-    StateData m_state_data; // 传感器数据状态管理
-    SyncPackage m_package;  // 同步后的数据包
+  // 数据管理
+  StateData m_state_data; // 传感器数据状态管理
+  SyncPackage m_package;  // 同步后的数据包
 
-    // 多线程处理相关
-    std::thread m_process_thread;         // 独立处理线程
-    std::mutex m_process_mutex;           // 处理线程同步互斥锁
-    std::condition_variable m_process_cv; // 条件变量，用于唤醒处理线程
+  // 多线程处理相关
+  std::thread m_process_thread;         // 独立处理线程
+  std::mutex m_process_mutex;           // 处理线程同步互斥锁
+  std::condition_variable m_process_cv; // 条件变量，用于唤醒处理线程
 
-    // 配置参数
-    NodeConfig m_node_config; // 节点配置参数
-    Config m_builder_config;  // 地图构建器配置参数
+  // 配置参数
+  NodeConfig m_node_config; // 节点配置参数
+  Config m_builder_config;  // 地图构建器配置参数
 
-    // 核心算法模块
-    std::shared_ptr<IESKF> m_kf;                                     // 误差状态卡尔曼滤波器
-    std::shared_ptr<MapBuilder> m_builder;                           // 地图构建器
-    std::shared_ptr<tf2_ros::TransformBroadcaster> m_tf_broadcaster; // TF变换广播器
+  // 核心算法模块
+  std::shared_ptr<IESKF> m_kf;                                     // 误差状态卡尔曼滤波器
+  std::shared_ptr<MapBuilder> m_builder;                           // 地图构建器
+  std::shared_ptr<tf2_ros::TransformBroadcaster> m_tf_broadcaster; // TF变换广播器
 };
 
 int main(int argc, char **argv)

@@ -1,0 +1,41 @@
+{
+  "model": "full_state_dynamic_deskew",
+  "baseline_commit": "524a78bd60765ae45309eb4c6e7387e1993d3f08",
+  "build": "ROS 2 Humble colcon build, BUILD_TESTING=ON",
+  "tests": {
+    "fastlio_time_model": "passed",
+    "fastlio_time_filter": "passed"
+  },
+  "dataset": "TIERS IndoorOffice1, first 658 scans",
+  "gt_query": "published_state_timestamp - injected_imu_shift",
+  "alignment": "whole-trajectory SE3, no scale or time optimization",
+  "absolute_native_dt_certified": false,
+  "cases": [
+    {
+      "name": "full_20",
+      "injected_ms": 20.0,
+      "scans": 658,
+      "poses": 647,
+      "tail10s_td_median_ms": 23.73385804461018,
+      "trajectory_rmse_m": 0.023756828302331265,
+      "no_ack_frames": [],
+      "binary_sha256": "5ef662a2fe62cf927ab5a8f880c80e6bd58a4bc1ea46652dac289b779eaca16c"
+    },
+    {
+      "name": "full_minus20",
+      "injected_ms": -20.0,
+      "scans": 658,
+      "poses": 648,
+      "tail10s_td_median_ms": -16.28667608327731,
+      "trajectory_rmse_m": 0.024529510052262088,
+      "no_ack_frames": [],
+      "binary_sha256": "5ef662a2fe62cf927ab5a8f880c80e6bd58a4bc1ea46652dac289b779eaca16c"
+    }
+  ],
+  "package_tree_sha256": "502d41b7b13af1d43f5ddf36846b5314a9cb3ff06b9a6643e087de3de45fb403",
+  "plus20_comparison_to_tested_full_version": {
+    "max_position_delta_m": 0.0013962785270965853,
+    "tail_td_delta_ms": 0.00046359210860558164
+  },
+  "existing_calibration_preserved": true
+}

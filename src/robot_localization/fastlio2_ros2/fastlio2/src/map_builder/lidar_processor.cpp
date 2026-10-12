@@ -1,4 +1,9 @@
 #include "lidar_processor.h"
+#include "timed_motion.h"
+#include <set>
+#include <map>
+#include <limits>
+#include <tuple>
 #include <rclcpp/rclcpp.hpp>
 
 //初始化点云处理器，创建必要的数据结构，并将滤波器配置好
@@ -23,47 +28,46 @@ LidarProcessor::LidarProcessor(Config &config, std::shared_ptr<IESKF> kf) : m_co
     // 设置滤波器的代价项函数和迭代停止准则
     m_kf->setLossFunction([&](State &s, SharedState &d)
                           { updateLossFunc(s, d); });
-    m_kf->setStopFunction([&](const V21D &delta) -> bool
-                          { 
-                            V3D rot_delta = delta.block<3, 1>(0, 0);
-                            V3D t_delta = delta.block<3, 1>(3, 0);
-                            
-                            static int iter_count = 0;
-                            iter_count++;
-                            
-                            double rot_deg = rot_delta.norm() * 57.3;
-                            double t_cm = t_delta.norm() * 100.0;
-                            bool converged = (rot_deg < m_config.ieskf_rotation_threshold_deg) && 
-                                           (t_cm < m_config.ieskf_translation_threshold_cm);
-                            
-                            // 每次迭代都记录，用于分析收敛过程
-                            if (m_config.enable_debug_logs && (iter_count % 5 == 0 || converged)) {
-                                RCLCPP_INFO(rclcpp::get_logger("lidar_processor"),
-                                           "[IESKF迭代 %d] 增量: 旋转=%.4f°(阈值=%.2f°), 平移=%.2fcm(阈值=%.1fcm) %s",
-                                           iter_count, rot_deg, m_config.ieskf_rotation_threshold_deg,
-                                           t_cm, m_config.ieskf_translation_threshold_cm,
-                                           converged ? "已收敛" : "继续迭代...");
-                            }
-                            
-                            // 检查收敛异常
-                            if (iter_count > 20 && !converged) {
-                                if (m_config.enable_debug_logs) {
-                                    RCLCPP_WARN(rclcpp::get_logger("lidar_processor"),
-                                               "[IESKF警告] 收敛缓慢，已迭代%d次，增量: %.4f°/%.2fcm",
-                                               iter_count, rot_deg, t_cm);
-                                }
-                            }
-                            
-                            if (converged) {
-                                if (m_config.enable_debug_logs) {
-                                    RCLCPP_INFO(rclcpp::get_logger("lidar_processor"),
-                                               "[IESKF成功] 在%d次迭代后收敛", iter_count);
-                                }
-                                iter_count = 0; // 重置计数器
-                            }
-                            
-                            return converged;
-                          });
+    m_kf->setStopFunction([&](const V22D &delta) -> bool {
+        V3D rot_delta = delta.block<3, 1>(0, 0);
+        V3D t_delta = delta.block<3, 1>(3, 0);
+
+        static int iter_count = 0;
+        iter_count++;
+
+        double rot_deg = rot_delta.norm() * 57.3;
+        double t_cm = t_delta.norm() * 100.0;
+        bool converged = (rot_deg < m_config.ieskf_rotation_threshold_deg) &&
+                         (t_cm < m_config.ieskf_translation_threshold_cm);
+
+        // 每次迭代都记录，用于分析收敛过程
+        if (m_config.enable_debug_logs && (iter_count % 5 == 0 || converged)) {
+            RCLCPP_INFO(rclcpp::get_logger("lidar_processor"),
+                        "[IESKF迭代 %d] 增量: 旋转=%.4f°(阈值=%.2f°), 平移=%.2fcm(阈值=%.1fcm) %s",
+                        iter_count, rot_deg, m_config.ieskf_rotation_threshold_deg, t_cm,
+                        m_config.ieskf_translation_threshold_cm,
+                        converged ? "已收敛" : "继续迭代...");
+        }
+
+        // 检查收敛异常
+        if (iter_count > 20 && !converged) {
+            if (m_config.enable_debug_logs) {
+                RCLCPP_WARN(rclcpp::get_logger("lidar_processor"),
+                            "[IESKF警告] 收敛缓慢，已迭代%d次，增量: %.4f°/%.2fcm", iter_count,
+                            rot_deg, t_cm);
+            }
+        }
+
+        if (converged) {
+            if (m_config.enable_debug_logs) {
+                RCLCPP_INFO(rclcpp::get_logger("lidar_processor"), "[IESKF成功] 在%d次迭代后收敛",
+                            iter_count);
+            }
+            iter_count = 0; // 重置计数器
+        }
+
+        return converged;
+    });
 }
 //地图裁剪
 void LidarProcessor::trimCloudMap()
@@ -230,18 +234,37 @@ void LidarProcessor::initCloudMap(PointVec &point_vec)//用已有点云初始化
 void LidarProcessor::process(SyncPackage &package)
 {
     auto start_time = std::chrono::high_resolution_clock::now();
-    
-    // 雷达数据预处理和降采样
-    int original_size = package.cloud->size();
-    if (m_config.scan_down_sampling_rate > 0.0)
-    {
-        m_scan_filter.setInputCloud(package.cloud);
-        m_scan_filter.filter(*m_cloud_down_lidar);
+
+    int original_size = package.raw_cloud->size();
+    m_package = &package;
+    m_motion_anchor = m_kf->x();
+    m_scan_filter.setSaveLeafLayout(true);
+    m_scan_filter.setInputCloud(package.cloud);
+    m_scan_filter.filter(*m_cloud_down_lidar);
+    m_groups.assign(m_cloud_down_lidar->size(),{});
+    for(size_t i=0;i<package.cloud->size();++i) {
+        const int k=m_scan_filter.getCentroidIndex((*package.cloud)[i]);
+        if(k<0 || k>=int(m_groups.size())) throw std::runtime_error("Voxel membership mismatch");
+        m_groups[k].push_back(i);
     }
-    else
-    {
-        pcl::copyPointCloud(*package.cloud, *m_cloud_down_lidar);
+    for(const auto& group:m_groups) if(group.empty()) throw std::runtime_error("Empty voxel");
+    m_query_begin=package.cloud_end_time;m_query_end=package.cloud_start_time;
+    for(const auto& p:*package.raw_cloud) {
+        const double t=package.cloud_start_time+p.curvature*.001;
+        m_query_begin=std::min(m_query_begin,t);m_query_end=std::max(m_query_end,t);
     }
+    fast_time::Trajectory prior_trajectory;
+    if(!prior_trajectory.build(m_motion_anchor,package.imus,m_query_begin+m_motion_anchor.td,
+                              m_query_end+m_motion_anchor.td,m_config.time_offset.max_imu_gap))
+        throw std::runtime_error("Missing prior trajectory");
+    m_prior_world.resize(package.raw_cloud->size());
+    for(size_t i=0;i<package.raw_cloud->size();++i) {
+        const auto& p=(*package.raw_cloud)[i];
+        if(!prior_trajectory.point({Eigen::Vector3d(p.x,p.y,p.z),package.cloud_start_time+p.curvature*.001},
+                                  m_motion_anchor.td,m_prior_world[i])) throw std::runtime_error("Missing prior point");
+    }
+    m_nearest_points.resize(m_cloud_down_lidar->size());
+    m_cloud_down_world->resize(m_cloud_down_lidar->size());
     int processed_size = m_cloud_down_lidar->size();
     
     // 地图裁剪
@@ -251,12 +274,34 @@ void LidarProcessor::process(SyncPackage &package)
     
     // IESKF 更新
     auto kf_start = std::chrono::high_resolution_clock::now();
-    m_kf->update();
+    const bool accepted = m_kf->update();
     auto kf_end = std::chrono::high_resolution_clock::now();
     
     // 地图增量更新
     auto map_start = std::chrono::high_resolution_clock::now();
-    incrCloudMap();
+    // The same PCL voxel members are used in observation and map insertion.
+    State deskew_anchor=m_kf->x();
+    fast_time::Trajectory final_trajectory;
+    const bool covered=final_trajectory.build(deskew_anchor,package.imus,
+        m_query_begin+deskew_anchor.td,m_query_end+deskew_anchor.td,
+        m_config.time_offset.max_imu_gap);
+    if(accepted && covered) {
+        for(size_t i=0;i<m_groups.size();++i) {
+            Eigen::Vector3d world_mean=Eigen::Vector3d::Zero();
+            for(size_t k:m_groups[i]) {
+                const auto& p=(*package.raw_cloud)[k];Eigen::Vector3d world;
+                if(!final_trajectory.point({Eigen::Vector3d(p.x,p.y,p.z),package.cloud_start_time+p.curvature*.001},deskew_anchor.td,world))
+                    throw std::runtime_error("Missing final point");
+                world_mean+=world;
+            }
+            world_mean/=double(m_groups[i].size());
+            const Eigen::Vector3d local=deskew_anchor.r_il.transpose()*(deskew_anchor.r_wi.transpose()*(world_mean-deskew_anchor.t_wi)-deskew_anchor.t_il);
+            auto& p=(*m_cloud_down_lidar)[i];p.x=local.x();p.y=local.y();p.z=local.z();
+        }
+        incrCloudMap();
+    }
+    deskewNative(deskew_anchor,package.imus,*package.raw_cloud,package.cloud_start_time,
+                 *package.cloud,m_config.time_offset.max_imu_gap);
     auto map_end = std::chrono::high_resolution_clock::now();
     
     // 计算各模块耗时
@@ -333,159 +378,63 @@ inline double huberWeight(double r, double delta = 0.1)
     return (abs_r <= delta) ? 1.0 : delta / abs_r;
 }
 
-void LidarProcessor::updateLossFunc(State &state, SharedState &share_data) // 点到平面约束 + 鲁棒核
-{
-    int size = m_cloud_down_lidar->size();
-    // RCLCPP_INFO(rclcpp::get_logger("lidar_processor"), "cloud size: %d", size);
-
-#ifdef MP_EN
-    omp_set_num_threads(MP_PROC_NUM);
-#pragma omp parallel for
-#endif
-    for (int i = 0; i < size; i++)
-    {
-        PointType &point_body = m_cloud_down_lidar->points[i];
-        PointType &point_world = m_cloud_down_world->points[i];
-
-        // body -> world
-        Eigen::Vector3d pb(point_body.x, point_body.y, point_body.z);
-        Eigen::Vector3d pw = state.r_wi * (state.r_il * pb + state.t_il) + state.t_wi;
-
-        point_world.x = pw(0);
-        point_world.y = pw(1);
-        point_world.z = pw(2);
-        point_world.intensity = point_body.intensity;
-
-        // 最近邻搜索
-        std::vector<float> point_sq_dist(m_config.near_search_num);
-        auto &points_near = m_nearest_points[i];
-        m_ikdtree->Nearest_Search(point_world, m_config.near_search_num, points_near, point_sq_dist);
-
-        if (static_cast<int>(points_near.size()) < m_config.near_search_num || point_sq_dist[m_config.near_search_num - 1] > m_config.near_search_radius)
-        {
-            m_point_selected_flag[i] = false;
-            continue;
-        }
-
-        // 使用 esti_plane 函数拟合平面（更高效且稳定）
-        Eigen::Vector4d pabcd;
-        if (!esti_plane(points_near, m_config.plane_fitting_tolerance, pabcd))
-        {
-            m_point_selected_flag[i] = false;
-            continue;
-        }
-        
-        // 提取法向量和距离参数
-        Eigen::Vector3d n(pabcd(0), pabcd(1), pabcd(2));
-        double d = pabcd(3);
-
-        // 保存平面参数
-        m_point_selected_flag[i] = true;
-        m_norm_vec->points[i].x = n(0);
-        m_norm_vec->points[i].y = n(1);
-        m_norm_vec->points[i].z = n(2);
-        m_norm_vec->points[i].intensity = d;
-    }
-
-    // 汇总有效点
-    int effect_feat_num = 0;
-    for (int i = 0; i < size; i++)
-    {
-        if (!m_point_selected_flag[i]) continue;
-        m_effect_cloud_lidar->points[effect_feat_num] = m_cloud_down_lidar->points[i];
-        m_effect_norm_vec->points[effect_feat_num] = m_norm_vec->points[i];
-        effect_feat_num++;
-    }
-
-    // IESKF 特征匹配质量监控
-    static int ieskf_log_counter = 0;
-    static int insufficient_feature_count = 0;
-    static double feature_ratio_sum = 0.0;
-    static double min_feature_ratio = 100.0;
-    
-    double feature_ratio = (size > 0) ? (double)effect_feat_num / size * 100.0 : 0.0;
-    feature_ratio_sum += feature_ratio;
-    min_feature_ratio = std::min(min_feature_ratio, feature_ratio);
-    
-    if (m_config.enable_debug_logs && ++ieskf_log_counter % m_config.feature_log_interval == 0) {
-        double avg_feature_ratio = feature_ratio_sum / m_config.feature_log_interval;
-        RCLCPP_INFO(rclcpp::get_logger("lidar_processor"), 
-                   "[特征监控] ===== 特征匹配报告 (第%d帧) =====", ieskf_log_counter);
-        RCLCPP_INFO(rclcpp::get_logger("lidar_processor"), 
-                   "[特征监控] 当前帧: %d/%d (%.1f%%) 有效特征点，最少要求: %d", 
-                   effect_feat_num, size, feature_ratio, m_config.effect_feat_num);
-        RCLCPP_INFO(rclcpp::get_logger("lidar_processor"), 
-                       "[特征监控] 统计数据: 平均=%.1f%%, 最小=%.1f%%, 不足特征帧数=%d/%d",
-                   avg_feature_ratio, min_feature_ratio, insufficient_feature_count, m_config.feature_log_interval);
-        
-        // 警告条件检查
-        if (avg_feature_ratio < 30.0) {
-            RCLCPP_WARN(rclcpp::get_logger("lidar_processor"), 
-                       "[特征监控] 警告: 平均特征匹配率过低 %.1f%% (<30%%)，环境几何特征不足！", avg_feature_ratio);
-        }
-        if (insufficient_feature_count > m_config.feature_log_interval / 3) {
-            RCLCPP_WARN(rclcpp::get_logger("lidar_processor"), 
-                       "[特征监控] 警告: 频繁出现特征不足 (%d/%d 帧)，检查激光雷达状态或环境！", 
-                       insufficient_feature_count, m_config.feature_log_interval);
-        }
-        
-        // 重置统计变量
-        feature_ratio_sum = 0.0;
-        min_feature_ratio = 100.0;
-        insufficient_feature_count = 0;
-    }
-    
-    if (effect_feat_num < m_config.effect_feat_num)
-    {
-        insufficient_feature_count++;
-        share_data.valid = false;
-        RCLCPP_WARN(rclcpp::get_logger("lidar_processor"), 
-                   "[特征错误] 特征点不足: %d < %d (%.1f%%)，扫描质量可能较差", 
-                   effect_feat_num, m_config.effect_feat_num, feature_ratio);
-        RCLCPP_WARN(rclcpp::get_logger("lidar_processor"), 
-                   "[特征错误] 可能原因: 点密度低、几何特征差、运动过快、遮挡严重");
+void LidarProcessor::updateLossFunc(State &state, SharedState &obs) {
+    obs.reason = "poor_match";
+    obs.valid = false;
+    obs.H.setZero();
+    obs.b.setZero();
+    obs.count = 0;
+    obs.res = 0;
+    if (!m_package || m_cloud_down_lidar->empty())
         return;
+    // Rebuild motion from the current pose, velocity and biases at every iteration.
+    // Keep voxel membership fixed while averaging raw points and their Jacobians.
+    fast_time::Trajectory trajectory;
+    if(!trajectory.build(state,m_package->imus,m_query_begin+state.td,
+                         m_query_end+state.td,m_config.time_offset.max_imu_gap)) {
+        obs.reason="trajectory_coverage";return;
     }
-
-    share_data.valid = true;
-    share_data.H.setZero();
-    share_data.b.setZero();
-
-    // 点到平面约束
-    Eigen::Matrix<double, 1, 12> J;
-    Eigen::Matrix3d R = state.r_wi * state.r_il;
-    for (int i = 0; i < effect_feat_num; i++)
-    {
-        J.setZero();
-        const PointType &laser_p = m_effect_cloud_lidar->points[i];
-        const PointType &plane   = m_effect_norm_vec->points[i];
-
-        Eigen::Vector3d lp(laser_p.x, laser_p.y, laser_p.z);
-        Eigen::Vector3d pw = state.r_wi * (state.r_il * lp + state.t_il) + state.t_wi;
-
-        Eigen::Vector3d n(plane.x, plane.y, plane.z);
-        double d = plane.intensity;
-
-        double res = n.dot(pw) + d; // 残差
-
-        // 雅可比
-        J.block<1,3>(0,0) = n.transpose() * (-R * Sophus::SO3d::hat(lp));
-        J.block<1,3>(0,3) = n.transpose();
-        if (m_config.esti_il)
-        {
-            J.block<1,3>(0,6) = n.transpose() * (-state.r_wi * state.r_il * Sophus::SO3d::hat(lp));
-            J.block<1,3>(0,9) = n.transpose() * state.r_wi;
+    std::vector<Eigen::Vector3d> worlds(m_prior_world.size());
+    std::vector<Eigen::Matrix<double,3,22>> jacobians(m_prior_world.size());
+    for(size_t k=0;k<m_prior_world.size();++k) {
+        const auto& p=(*m_package->raw_cloud)[k];
+        if(!trajectory.point({Eigen::Vector3d(p.x,p.y,p.z),m_package->cloud_start_time+p.curvature*.001},
+                             state.td,worlds[k],&jacobians[k])) {
+            obs.reason="point_coverage";return;
         }
-
-        // 鲁棒权重
-        double w = huberWeight(res, 0.1);
-
-        // 累积 H, b
-        share_data.H.noalias() += w * J.transpose() * m_config.lidar_cov_inv * J;//H —— Hessian 矩阵近似（二阶信息，正定对称矩阵)
-        share_data.b.noalias() += w * J.transpose() * m_config.lidar_cov_inv * Eigen::Matrix<double,1,1>(res);//b —— 残差向量在当前点的一阶梯度方向。
     }
+    for(size_t i=0;i<m_groups.size();++i) {
+        Eigen::Vector3d world=Eigen::Vector3d::Zero();
+        Eigen::Matrix<double,3,22> jp=Eigen::Matrix<double,3,22>::Zero();
+        for(size_t k:m_groups[i]) {world+=worlds[k];jp+=jacobians[k];}
+        world/=double(m_groups[i].size());jp/=double(m_groups[i].size());
+        PointType pw;
+        pw.x = world.x();
+        pw.y = world.y();
+        pw.z = world.z();
+        auto &near = m_nearest_points[i];
+        std::vector<float> distances(m_config.near_search_num);
+        m_ikdtree->Nearest_Search(pw, m_config.near_search_num, near, distances);
+        if (int(near.size()) < m_config.near_search_num ||
+            distances.back() > m_config.near_search_radius)
+            continue;
+        Eigen::Vector4d plane;
+        if (!esti_plane(near, m_config.plane_fitting_tolerance, plane))
+            continue;
+        const double residual = plane.head<3>().dot(world) + plane(3);
+        Eigen::Matrix<double, 1, 22> h = plane.head<3>().transpose() * jp;
+        if (!m_config.esti_il)
+            h.segment<6>(6).setZero();
+        const double weight = huberWeight(residual) * m_config.lidar_cov_inv;
+        obs.H.noalias() += weight * h.transpose() * h;
+        obs.b.noalias() += weight * h.transpose() * residual;
+        obs.res += residual * residual;
+        ++obs.count;
+    }
+    obs.fitness = double(obs.count) / m_cloud_down_lidar->size();
+    obs.res = std::sqrt(obs.res / std::max(1, obs.count));
+    obs.valid = obs.count >= m_config.effect_feat_num && obs.H.allFinite() && obs.b.allFinite();
 }
-
 
 //将点云 inp 通过旋转矩阵 r 和位移向量 t 转换成世界坐标系下的新点云
 CloudType::Ptr LidarProcessor::transformCloud(CloudType::Ptr inp, const M3D &r, const V3D &t)

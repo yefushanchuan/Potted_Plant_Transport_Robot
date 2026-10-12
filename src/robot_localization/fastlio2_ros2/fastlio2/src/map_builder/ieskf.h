@@ -5,11 +5,11 @@
 #include <rclcpp/rclcpp.hpp>
 // 类型别名，简化矩阵/向量类型书写（基于 double 精度）
 using M12D = Eigen::Matrix<double, 12, 12>;   // 12x12 矩阵类型别名
-using M21D = Eigen::Matrix<double, 21, 21>;   // 21x21 矩阵类型别名
+using M22D = Eigen::Matrix<double, 22, 22>;   // 22x22 矩阵类型别名
 
 using V12D = Eigen::Matrix<double, 12, 1>;    // 12x1 向量类型别名
-using V21D = Eigen::Matrix<double, 21, 1>;    // 21x1 向量类型别名
-using M21X12D = Eigen::Matrix<double, 21, 12>; // 21x12 矩阵类型别名
+using V22D = Eigen::Matrix<double, 22, 1>;    // 22x1 向量类型别名
+using M22X12D = Eigen::Matrix<double, 22, 12>; // 22x12 矩阵类型别名
 
 M3D Jr(const V3D &inp);                    // 声明：返回左雅可比的转置（或称 Jr），inp 为 so(3) 向量
 M3D JrInv(const V3D &inp);                 // 声明：返回左雅可比逆的转置（或称 JrInv），inp 为 so(3) 向量
@@ -18,12 +18,15 @@ M3D JrInv(const V3D &inp);                 // 声明：返回左雅可比逆的�
 struct SharedState
 {
 public:
-    EIGEN_MAKE_ALIGNED_OPERATOR_NEW      // Eigen 对齐宏，确保 SSE/AVX 对齐安全
-    M12D H;                              // 观测雅可比组成的信息矩阵（12x12）
-    V12D b;                              // 观测信息向量（12x1）
-    double res = 1e10;                   // 残差值（初始化为一个很大的数）
-    bool valid = false;                  // 标记当前 shared 数据是否有效
-    size_t iter_num = 0;                 // 记录迭代次数（或用于其它计数）
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW // Eigen 对齐宏，确保 SSE/AVX 对齐安全
+      M22D H;                     // 观测雅可比组成的信息矩阵（22x22）
+  V22D b;                         // 观测信息向量（22x1）
+  std::string reason = "poor_match";
+  int count = 0;
+  double fitness = 0;
+  double res = 1e10;   // 残差值（初始化为一个很大的数）
+  bool valid = false;  // 标记当前 shared 数据是否有效
+  size_t iter_num = 0; // 记录迭代次数（或用于其它计数）
 };    
 
 // IMU 输入结构体，包含加速度与角速度
@@ -44,9 +47,10 @@ public:
 // 状态结构体：包含 IMU-LiDAR 的位姿、速度、偏置以及重力方向
 struct State
 {
+    double td = 0, time = 0;
     static double gravity;               // 静态重力常量（用于统一重力大小）
-    M3D r_wi = M3D::Identity();          // 世界到IMU的旋转矩阵（3x3，默认单位阵）
-    V3D t_wi = V3D::Zero();              // 世界到IMU的平移（位置）
+    M3D r_wi = M3D::Identity();          // IMU/body 到世界的旋转矩阵
+    V3D t_wi = V3D::Zero();              // IMU/body 在世界系中的位置
     M3D r_il = M3D::Identity();          // LiDAR 到 IMU 的旋转矩阵（外参旋转）
     V3D t_il = V3D::Zero();              // LiDAR 到 IMU 的平移（外参平移）
     V3D v = V3D::Zero();                 // IMU 在世界系中的速度
@@ -62,9 +66,9 @@ struct State
         // 输出初始化后的重力向量（便于调试）
     }
 
-    void operator+=(const V21D &delta); // 声明：状态加法运算（在 cpp 中实现）
+    void operator+=(const V22D &delta); // 声明：状态加法运算（在 cpp 中实现）
 
-    V21D operator-(const State &other) const; // 声明：状态差运算（在 cpp 中实现）
+    V22D operator-(const State &other) const; // 声明：状态差运算（在 cpp 中实现）
 
     friend std::ostream &operator<<(std::ostream &os, const State &state); 
     // 声明：友元输出操作符（用于打印状态，实现在 cpp）
@@ -73,7 +77,7 @@ struct State
 // 函数类型别名：损失函数与停止条件函数
 using loss_func = std::function<void(State &, SharedState &)>;  
 // loss_func：接受当前状态与 SharedState 引用，填充观测相关的 H, b, res, valid 等
-using stop_func = std::function<bool(const V21D &)>;           
+using stop_func = std::function<bool(const V22D &)>;
 // stop_func：接受当前增量（delta），返回是否应停止迭代（true 表示停止）
 
 // IESKF 类：迭代式扩展卡尔曼滤波器（或类似结构）
@@ -94,18 +98,21 @@ public:
     void predict(const Input &inp, double dt, const M12D &Q);  
     // 预测步骤：基于 IMU 输入、时间间隔和过程噪声 Q 更新状态和协方差
 
-    void update();                        // 更新步骤：基于观测（通过 m_loss_func 提供）做迭代优化
+    bool update();
+    TimeOffsetOptions time_options;
+    TimeOffsetReport report;
+    bool time_excited = false; // 更新步骤：基于观测（通过 m_loss_func 提供）做迭代优化
 
     State &x() { return m_x; }            // 访问当前状态（可读写）
 
-    M21D &P() { return m_P; }             // 访问/修改当前协方差矩阵
+    M22D &P() { return m_P; } // 访问/修改当前协方差矩阵
 
-private:
+  private:
     size_t m_max_iter = 10;               // 最大迭代次数，默认 10
-    State m_x;                            // 当前状态（21 维）
-    M21D m_P;                             // 当前状态协方差矩阵（21x21）
+    State m_x;                            // 当前状态（22 维）
+    M22D m_P = M22D::Identity();                             // 当前状态协方差矩阵（22x22）
     loss_func m_loss_func;                // 损失函数回调（由外部设置）
     stop_func m_stop_func;                // 停止条件回调（由外部设置）
-    M21D m_F;                             // 状态转移矩阵（21x21）
-    M21X12D m_G;                          // 过程噪声矩阵（21x12）
+    M22D m_F;                             // 状态转移矩阵（22x22）
+    M22X12D m_G;                          // 过程噪声矩阵（22x12）
 };

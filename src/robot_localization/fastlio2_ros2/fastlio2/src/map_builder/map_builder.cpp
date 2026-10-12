@@ -39,7 +39,8 @@ void MapBuilder::process(SyncPackage &package)
     }
 
     // 如果已经完成 IMU 初始化，就开始对当前 LiDAR 数据进行运动畸变去除
-    m_imu_processor->undistort(package);
+    if (!m_imu_processor->undistort(package))
+        return;
 
     // 如果当前状态是地图初始化
     if (m_status == BuilderStatus::MAP_INIT)
@@ -54,6 +55,8 @@ void MapBuilder::process(SyncPackage &package)
 
         // 状态切换到建图中
         m_status = BuilderStatus::MAPPING;
+        m_kf->report = TimeOffsetReport();
+        m_kf->report.reason = "map_initialized";
         return;
     }
     
@@ -117,8 +120,8 @@ void MapBuilder::process(SyncPackage &package)
                    total_distance, avg_speed);
         
         // 获取 IESKF 状态协方差信息（位置不确定性）
-        M21D cov = m_kf->P();
-        V3D pos_std = V3D(std::sqrt(cov(9,9)), std::sqrt(cov(10,10)), std::sqrt(cov(11,11)));
+        M22D cov = m_kf->P();
+        V3D pos_std = V3D(std::sqrt(cov(3,3)), std::sqrt(cov(4,4)), std::sqrt(cov(5,5)));
         V3D att_std = V3D(std::sqrt(cov(0,0)), std::sqrt(cov(1,1)), std::sqrt(cov(2,2))) * 57.3; // 转为度
         
         RCLCPP_INFO(rclcpp::get_logger("map_builder"), 

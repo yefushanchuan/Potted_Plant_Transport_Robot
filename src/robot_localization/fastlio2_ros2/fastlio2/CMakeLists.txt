@@ -67,6 +67,13 @@ install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
 
 
 if(BUILD_TESTING)
+  foreach(test_name time_model time_filter)
+    add_executable(test_${test_name} test/test_${test_name}.cpp src/map_builder/ieskf.cpp)
+    target_include_directories(test_${test_name} PRIVATE src)
+    ament_target_dependencies(test_${test_name} rclcpp pcl_conversions)
+    target_link_libraries(test_${test_name} yaml-cpp ${PCL_LIBRARIES} Sophus::Sophus)
+    add_test(NAME fastlio_${test_name} COMMAND test_${test_name})
+  endforeach()
   find_package(ament_lint_auto REQUIRED)
   # the following line skips the linter which checks for copyrights
   # comment the line when a copyright and license is added to all source files

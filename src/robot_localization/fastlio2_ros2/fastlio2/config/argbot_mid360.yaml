@@ -71,3 +71,19 @@ imu_log_interval: 100            # IMU日志输出间隔（预积分次数）
 lidar_log_interval: 15           # LiDAR日志输出间隔（帧数）
 system_log_interval: 25          # 系统日志输出间隔（帧数）
 feature_log_interval: 10         # 特征日志输出间隔（帧数）
+
+# Acceleration conversion to m/s^2: 1.0 for SI input, 9.81 for input in g.
+# The raw MID360 Livox IMU topic uses g; do not infer units from sample values.
+imu_accel_scale: 9.81
+# Convention: t_imu = t_lidar + td. Time values are seconds.
+# Keep esti_il false: this implementation uses fixed calibrated extrinsics.
+time_offset:
+  initial_td: 0.0
+  initial_td_std: 0.02
+  td_noise: 0.001  # s/sqrt(s); preserves adaptation during ambiguous initialization
+  max_abs_td: 0.1
+  max_td_step: 0.005
+  max_imu_gap: 0.05
+  min_gyro_std: 0.03
+  min_accel_std: 0.5
+  min_td_information: 1.0

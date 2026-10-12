@@ -1,0 +1,73 @@
+FAST-LIO2 完整状态在线时间偏移估计
+================================
+
+本分支接入完整状态方案。每次 IESKF 观测迭代都从当前位姿、速度、
+陀螺仪偏置、加速度计偏置重建帧内 IMU 轨迹，按 t_point + td 重新计算
+原始点的世界坐标。直接观测雅可比包含上述运动状态与 td；没有固定
+帧内运动的备选分支，也没有实验环境变量开关。
+
+状态与时间约定
+--------------
+22 维误差状态顺序：旋转、位置、外参旋转、外参平移、速度、陀螺仪偏置、
+加速度计偏置、td。当前实现要求 esti_il: false，使用已标定外参。
+
+时间关系：t_IMU = t_LiDAR + td；td、标准差、步长、间隙参数单位均为秒。
+主状态锚点为雷达帧结束时间的数值，位于 IMU 时间轴，独立于当前 td。
+主状态从上一锚点预测到本次锚点；观测通过前后积分查询 t_point + td。
+改变 td 不会对主状态重复累加历史积分。
+
+IMU 回调保留最近约 3 秒数据及窗口前一个插值样本。处理雷达帧前，
+等待最新 IMU 覆盖：帧末 + max(0, min(max_abs_td, td + max_td_step))。
+例如帧末 10.10 s、td=0.05 s、单帧上限 0.005 s，需要 IMU 到 10.155 s。
+数据包复制缓存，不消费历史样本。缺少前后覆盖、时间戳重复/倒退、
+积分区间内部间隙超过 max_imu_gap 时拒绝对应积分。时间戳发生回跳后
+应重启节点，不跨越时钟回跳继续使用原滤波状态。
+
+点云先按预测去畸变后的坐标确定 PCL 体素成员。本帧各次迭代保持成员
+关系不变，但重新计算每个原始点的位置及雅可比，再求每个体素的均值。
+最终入图与发布点云也使用后验完整状态去畸变。滤波每帧只更新一次后验
+协方差；迭代使用同一个预测先验。无有效观测时不更新地图。
+
+配置与启动
+----------
+编译：
+  source /opt/ros/humble/setup.bash
+  colcon build --packages-select fastlio2 --cmake-args -DBUILD_TESTING=ON
+  source install/setup.bash
+  ctest --test-dir build/fastlio2 -R '^fastlio_time_' --output-on-failure
+
+常用启动沿用：
+  ros2 launch fastlio2 argbot_mid360.launch.py
+  ros2 topic echo /fastlio2/time_offset
+
+argbot_mid360.yaml 中提供 time_offset 配置，默认 td_noise=0.001 s/sqrt(s)。
+预测方差增量为 td_noise² × 积分时长。初始标准差 0.02 s，最大绝对偏移
+0.1 s，每帧最大变化 0.005 s，最大 IMU 间隙 0.05 s。
+报告包含 td_ms、td_std_ms、td_updated、td_limited、匹配数量、残差和 reason。
+
+原始时间戳直接用于时序计算；Livox PointCloud2 的 timestamp 要求为绝对
+纳秒，header 为同一 LiDAR 时间基准。其他雷达时间字段沿用原适配器，
+本次数据回归仅覆盖 MID360。输入角速度要求 rad/s，加速度通过
+imu_accel_scale 显式转换为 m/s²，不再根据加速度 z 值猜测单位或翻转轴。
+仓库 Livox 驱动直接发布 g，故 argbot 的 /livox/imu 配置为 9.81；已转为
+SI 单位的数据或外部 IMU 应设置为 1.0。旋转、平移标定必须匹配实际输入。
+其他已有平台 YAML 没有显式设置时按 SI 单位处理，迁移时需核对。
+
+config/tiers_indoor_office_dt_overrides.yaml 是 TIERS 回归时覆盖基础配置的
+部分参数，不可独立当作节点完整配置启动。回归另将 IMU 设置为 SI 单位，
+使用数据集对应的坐标变换和静态外参。实车默认匹配设置未替换为数据集设置。
+
+已知限制与已有证据
+------------------
+此版本采用局部迭代滤波，没有多帧多候选时间偏移初始化。周期运动可能
+产生多个局部极小值；局部后验标准差很小不代表全局时间偏移正确。
+较大的 td_noise 保持适应能力，同时会增加抖动，不能保证任何数据都快速
+收敛。2026-10-03 TIERS IndoorOffice1 完整版 +20 ms 注入试验中：
+  td_noise=0.00002：末 10 秒 td 中位数约 4.05 ms；
+  td_noise=0.001：末 10 秒 td 中位数 23.733394 ms，轨迹 RMSE 2.376618 cm。
+原始数据的绝对时间偏移未经独立标定，约 3–4 ms 公共偏差不能解释成
+绝对亚毫秒精度。此前备选版五组偏移结果不能直接作为本完整版的测试结果。
+
+GT 评估以 published_state_timestamp - injected_IMU_shift 查询真值，整段
+一次 SE3 对齐，不优化尺度或时间，也不使用估计 td 修改 GT 查询时刻。
+本次合入后的编译与回放结果见 fastlio2_dt_validation_20261012.json。

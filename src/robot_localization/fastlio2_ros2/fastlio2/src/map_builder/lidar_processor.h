@@ -53,22 +53,27 @@ public:
     V3D t_wl() { return m_kf->x().t_wi + m_kf->x().r_wi * m_kf->x().t_il; }
 
 private:
-    Config m_config;                          // 系统配置参数
-    LocalMap m_local_map;                     // 局部地图管理
-    std::shared_ptr<IESKF> m_kf;              // IESKF 状态估计器
-    std::shared_ptr<KD_TREE<PointType>> m_ikdtree; // 局部地图 KD-Tree（用于最近邻搜索）
+  State m_motion_anchor;
+  double m_query_begin=0,m_query_end=0;
+  std::vector<std::vector<size_t>> m_groups;
+  std::vector<Eigen::Vector3d> m_prior_world;
+  SyncPackage *m_package = nullptr;
+  Config m_config;                               // 系统配置参数
+  LocalMap m_local_map;                          // 局部地图管理
+  std::shared_ptr<IESKF> m_kf;                   // IESKF 状态估计器
+  std::shared_ptr<KD_TREE<PointType>> m_ikdtree; // 局部地图 KD-Tree（用于最近邻搜索）
 
-    CloudType::Ptr m_cloud_lidar;             // 当前帧原始 LiDAR 点云
-    CloudType::Ptr m_cloud_down_lidar;        // 下采样后的 LiDAR 点云（雷达坐标系）
-    CloudType::Ptr m_cloud_down_world;        // 下采样后的 LiDAR 点云（世界坐标系）
+  CloudType::Ptr m_cloud_lidar;      // 当前帧原始 LiDAR 点云
+  CloudType::Ptr m_cloud_down_lidar; // 下采样后的 LiDAR 点云（雷达坐标系）
+  CloudType::Ptr m_cloud_down_world; // 下采样后的 LiDAR 点云（世界坐标系）
 
-    std::vector<bool> m_point_selected_flag;  // 点是否被选中用于匹配的标志位
+  std::vector<bool> m_point_selected_flag; // 点是否被选中用于匹配的标志位
 
-    CloudType::Ptr m_norm_vec;                // 法向量集合（估计出的平面法向）
-    CloudType::Ptr m_effect_cloud_lidar;      // 有效点（参与优化的点）
-    CloudType::Ptr m_effect_norm_vec;         // 有效点对应的法向量
+  CloudType::Ptr m_norm_vec;           // 法向量集合（估计出的平面法向）
+  CloudType::Ptr m_effect_cloud_lidar; // 有效点（参与优化的点）
+  CloudType::Ptr m_effect_norm_vec;    // 有效点对应的法向量
 
-    std::vector<PointVec> m_nearest_points;   // 每个点的最近邻点集合（用于平面拟合）
+  std::vector<PointVec> m_nearest_points; // 每个点的最近邻点集合（用于平面拟合）
 
-    pcl::VoxelGrid<PointType> m_scan_filter;  // PCL 体素滤波器（下采样用）
+  pcl::VoxelGrid<PointType> m_scan_filter; // PCL 体素滤波器（下采样用）
 };

@@ -33,7 +33,9 @@ bool esti_plane(PointVec &points, const double &thresh, V4D &out)
     // 使用最小二乘解 A*[a,b,c]^T = b，得到平面法向量 [a,b,c]
     // Eigen 采用列主元 Householder QR 分解求解
 
-    double norm = normvec.norm();  
+    double norm = normvec.norm();
+    if (!normvec.allFinite() || norm < 1e-8)
+        return false;
     // 计算法向量的模长（归一化用）
 
     out[0] = normvec(0) / norm;  

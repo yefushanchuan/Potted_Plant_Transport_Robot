@@ -51,6 +51,7 @@ pcl::PointCloud<pcl::PointXYZINormal>::Ptr Utils::livox2PCL(const sensor_msgs::m
 
     // 获取点的总数
     int point_num = input_cloud.size();
+    filter_num = std::max(1, filter_num);
 
     // 预分配内存，加快 push_back 速度
     cloud->reserve(point_num / filter_num + 1);
@@ -69,9 +70,13 @@ pcl::PointCloud<pcl::PointXYZINormal>::Ptr Utils::livox2PCL(const sensor_msgs::m
             // 构造 PCL 点
             pcl::PointXYZINormal p_new;
 
-            // 计算相对时间（转换为纳秒）
-            double rel_time = (input_cloud.points[i].timestamp - input_cloud.points[0].timestamp) * 1e-6; // 原始livox的时间是纳秒为单位的
-            p_new.curvature = rel_time;                                                                   // 使用秒为单位的相对时间
+            // 点时间戳为绝对纳秒；转换成相对帧头的毫秒
+            double rel_time = (input_cloud.points[i].timestamp - (Utils::getSec(msg.header) * 1e9)) *
+                              1e-6; // 原始livox的时间是纳秒为单位的
+            if (!std::isfinite(rel_time) || rel_time < -.001 || rel_time > 500. ||
+                !std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z))
+                continue;
+            p_new.curvature = rel_time;                                                                   // 使用毫秒为单位的相对时间
             p_new.intensity = input_cloud.points[i].intensity;                                            // 点的反射强度
 
             // 空间变换
@@ -94,7 +99,8 @@ pcl::PointCloud<pcl::PointXYZINormal>::Ptr Utils::livox2PCL(const sensor_msgs::m
 
             // std::cout << "curvature: " << p_new.curvature << std::endl;
 
-            // 加入点云
+            // Retain the original static calibration transform. The point timestamp
+            // is kept so the native filter can evaluate motion at t_point + td.
             cloud->push_back(p_new);
         }
     }
@@ -103,8 +109,7 @@ pcl::PointCloud<pcl::PointXYZINormal>::Ptr Utils::livox2PCL(const sensor_msgs::m
     return cloud;
 }
 
-double Utils::getSec(std_msgs::msg::Header &header)
-{
+double Utils::getSec(const std_msgs::msg::Header &header) {
     return static_cast<double>(header.stamp.sec) + static_cast<double>(header.stamp.nanosec) * 1e-9;
 }
 builtin_interfaces::msg::Time Utils::getTime(const double &sec)
@@ -154,7 +159,6 @@ pcl::PointCloud<pcl::PointXYZINormal>::Ptr Utils::convertAndComputeNormals(const
         if (dist2 < min_range * min_range || dist2 > max_range * max_range || p_new.z < z_min || p_new.z > z_max)
             continue;
 
-        // 加入点云
         cloud->push_back(p_new);
     }
 

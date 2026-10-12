@@ -1,5 +1,6 @@
 #pragma once
 #include <Eigen/Eigen>
+#include "time_offset_options.h"
 #include <pcl/point_types.h>
 #include <pcl/point_cloud.h>
 
@@ -29,6 +30,8 @@ float sq_dist(const PointType &p1, const PointType &p2);
 
 struct Config
 {
+    TimeOffsetOptions time_offset;
+    double imu_accel_scale = 1.;
     int lidar_filter_num = 0;
     double lidar_min_range = 0.0;
     double lidar_max_range = 0.0;
@@ -105,6 +108,7 @@ struct SyncPackage
 {
     Vec<IMUData> imus;
     CloudType::Ptr cloud;
+    CloudType::Ptr raw_cloud;
     double cloud_start_time = 0.0;
     double cloud_end_time = 0.0;
 };
