@@ -233,7 +233,7 @@ bool IESKF::update() {
         m_x += delta;
 
         report.iterations = i + 1;
-        if (m_stop_func(delta) && std::abs(delta(21)) < 1e-6)
+        if (m_stop_func(delta) && std::abs(delta(21)) < time_options.td_convergence_threshold)
             break;
     }
     m_loss_func(m_x, obs);

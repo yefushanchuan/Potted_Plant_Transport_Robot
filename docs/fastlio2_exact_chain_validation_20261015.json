@@ -1,0 +1,37 @@
+{
+  "date": "2026-10-15",
+  "change": "Associate point chain Jacobian as (H*F)*Phi instead of H*(F*Phi); retain full current-state motion and dt derivative",
+  "report": "/home/descfly/dt_exact_20261015/report.html",
+  "tested_shifts_ms": [
+    0,
+    20,
+    -20,
+    50,
+    -50
+  ],
+  "scan_and_map_voxel_m": 0.1,
+  "input_stride": 1,
+  "dt_increment_stop_s": 5e-05,
+  "max_iterations": 10,
+  "motion_linearization_cache": false,
+  "all_five_passed_relative_response_5ms": true,
+  "tail_max_response_error_ms": 0.8626469112896089,
+  "mean_processing_ms_range": [
+    75.17395553095974,
+    88.87071994590417
+  ],
+  "functional_tests": [
+    "time_model",
+    "time_filter",
+    "motion_cache",
+    "point_chain"
+  ],
+  "test_container": "agrobot-validation-restored-20260930",
+  "test_workspace": "/tmp/dt-exact-20261015",
+  "limits": [
+    "single-run timings compared with prior matching baseline",
+    "no certified native absolute dt truth",
+    "not yet rerun on five-lap IILABS",
+    "existing Docker image not rebuilt"
+  ]
+}

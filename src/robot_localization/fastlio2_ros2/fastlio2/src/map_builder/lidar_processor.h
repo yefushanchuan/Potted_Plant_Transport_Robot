@@ -4,7 +4,8 @@
 #include "commons.h"      
 // 公共定义（Config、PointType、CloudType、Vec 等）
 
-#include "ieskf.h"        
+#include "ieskf.h"
+#include "time_point_linearization.h"
 // IESKF 滤波器，用于状态估计
 
 #include "ikd_Tree.h"     
@@ -56,7 +57,9 @@ private:
   State m_motion_anchor;
   double m_query_begin=0,m_query_end=0;
   std::vector<std::vector<size_t>> m_groups;
-  std::vector<Eigen::Vector3d> m_prior_world;
+  State m_linearization_anchor;
+  bool m_linearization_valid = false;
+  std::vector<fast_time::TimePointLinearization> m_time_points;
   SyncPackage *m_package = nullptr;
   Config m_config;                               // 系统配置参数
   LocalMap m_local_map;                          // 局部地图管理

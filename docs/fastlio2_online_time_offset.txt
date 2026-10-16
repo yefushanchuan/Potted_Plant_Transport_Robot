@@ -1,10 +1,18 @@
-FAST-LIO2 完整状态在线时间偏移估计
-================================
+FAST-LIO2 帧内时间一阶补偿
+=========================
 
-本分支接入完整状态方案。每次 IESKF 观测迭代都从当前位姿、速度、
-陀螺仪偏置、加速度计偏置重建帧内 IMU 轨迹，按 t_point + td 重新计算
-原始点的世界坐标。直接观测雅可比包含上述运动状态与 td；没有固定
-帧内运动的备选分支，也没有实验环境变量开关。
+2026-10-15 当前实现：每帧先用预测状态、基准 td0 建立 IMU 轨迹，
+计算各原始点在参考雷达坐标系的去畸变位置 u0 和时间导数 du。
+帧内使用 u = u0 + du * (td - td0)，不因小幅 td 更新重新逐点积分。
+每轮用当前位姿、外参计算世界点及其几何雅可比，重新匹配平面。
+速度和 IMU 零偏仍通过滤波器交叉协方差更新，与原版固定帧内去畸变
+的更新方式一致；不保留完整模型的逐点速度、零偏直接观测列。
+所以这是观测模型近似，不是与完整模型数值等价的矩阵乘法优化。
+
+当 abs(td-td0)>0.0025 秒时，按当前完整状态重新建立去畸变基准与 du；
+缓存不跨帧。2.5 ms 是线性化刷新范围，不是停止阈值或精度承诺。
+time_offset.cache_motion_linearization 是历史兼容字段，当前前端不使用它
+选择模型；没有新增算法开关。历史完整模型及二进制保留在实验目录。
 
 状态与时间约定
 --------------
@@ -24,7 +32,8 @@ IMU 回调保留最近约 3 秒数据及窗口前一个插值样本。处理雷�
 应重启节点，不跨越时钟回跳继续使用原滤波状态。
 
 点云先按预测去畸变后的坐标确定 PCL 体素成员。本帧各次迭代保持成员
-关系不变，但重新计算每个原始点的位置及雅可比，再求每个体素的均值。
+关系不变；在建立基准时平均成员点的 u0、du，帧内补偿体素均值。
+由于补偿与当前刚体变换对点线性，这与补偿所有成员后求均值一致。
 最终入图与发布点云也使用后验完整状态去畸变。滤波每帧只更新一次后验
 协方差；迭代使用同一个预测先验。无有效观测时不更新地图。
 
@@ -34,7 +43,7 @@ IMU 回调保留最近约 3 秒数据及窗口前一个插值样本。处理雷�
   source /opt/ros/humble/setup.bash
   colcon build --packages-select fastlio2 --cmake-args -DBUILD_TESTING=ON
   source install/setup.bash
-  ctest --test-dir build/fastlio2 -R '^fastlio_time_' --output-on-failure
+  ctest --test-dir build/fastlio2 -R '^fastlio_' --output-on-failure
 
 常用启动沿用：
   ros2 launch fastlio2 argbot_mid360.launch.py
@@ -70,4 +79,7 @@ config/tiers_indoor_office_dt_overrides.yaml 是 TIERS 回归时覆盖基础配�
 
 GT 评估以 published_state_timestamp - injected_IMU_shift 查询真值，整段
 一次 SE3 对齐，不优化尺度或时间，也不使用估计 td 修改 GT 查询时刻。
-本次合入后的编译与回放结果见 fastlio2_dt_validation_20261012.json。
+历史完整模型编译与回放结果见 fastlio2_dt_validation_20261012.json。
+当前时间一阶补偿版结果见 fastlio2_dt_firstorder_validation_20261015.json。
+config/argbot_mid360_dt_firstorder.yaml 提供 50 us 停止阈值和 0.1 m 体素，
+保留机器人话题和外参；TIERS 测试需使用实验目录中的数据集覆盖配置。

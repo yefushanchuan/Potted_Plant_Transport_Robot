@@ -178,8 +178,18 @@ inline bool Trajectory::evaluate(double t, NativeState &state, Matrix *sensitivi
 inline bool Trajectory::point(const TimedPoint &p, double td, Eigen::Vector3d &world,
                               Eigen::Matrix<double, 3, 22> *jac) const {
     NativeState s;
-    Matrix phi;
-    if (!p.point.allFinite() || !evaluate(p.time + td, s, jac ? &phi : nullptr))
+    const double t = p.time + td;
+    if (!p.point.allFinite() || knots_.empty() || !std::isfinite(t) ||
+        t < knots_.front().state.time || t > knots_.back().state.time)
+        return false;
+    auto it = std::upper_bound(knots_.begin(), knots_.end(), t,
+                               [](double v, const Knot &k) { return v < k.state.time; });
+    if (it == knots_.begin())
+        return false;
+    --it;
+    s = it->state;
+    Matrix f;
+    if (!motionStep(s, *imu_, t, max_gap_, f))
         return false;
     const Eigen::Vector3d q = s.r_il * p.point + s.t_il;
     world = s.r_wi * q + s.t_wi;
@@ -189,7 +199,11 @@ inline bool Trajectory::point(const TimedPoint &p, double td, Eigen::Vector3d &w
         h.block<3, 3>(0, 0) = -s.r_wi * skew(q);
         h.block<3, 3>(0, 6) = -s.r_wi * s.r_il * skew(p.point);
         h.block<3, 3>(0, 9) = s.r_wi;
-        *jac = h * phi;
+        // Chain rule with a narrow intermediate: (3x22 * 22x22) * 22x22.
+        // This retains every state column while avoiding per-point f * phi (22x22).
+        // Both f and the knot sensitivity are evaluated from this iteration's state.
+        const Eigen::Matrix<double, 3, 22> local = h * f;
+        jac->noalias() = local * it->phi;
         Imu sample;
         if (!interpolate(*imu_, p.time + td, max_gap_, sample))
             return false;

@@ -1,0 +1,44 @@
+{
+  "date": "2026-10-15",
+  "report": "/home/descfly/dt_cost_20261015/report.html",
+  "dataset": "TIERS IndoorOffice1 first 658 scans",
+  "scan_voxels_m": [
+    0.2,
+    0.1
+  ],
+  "shifts_ms": [
+    0,
+    20,
+    -20,
+    50,
+    -50
+  ],
+  "selection": {
+    "cache_motion_linearization": false,
+    "td_convergence_threshold": 5e-05,
+    "ieskf_max_iter": 10,
+    "rotation_threshold_deg": 0.05,
+    "translation_threshold_cm": 0.5
+  },
+  "native_absolute_dt_certified": false,
+  "all_selected_cases_final_10s_response_below_5ms": true,
+  "production_default_threshold_unchanged_s": 1e-06,
+  "robot_profile": "config/argbot_mid360_dt_full.yaml",
+  "limits": [
+    "Not a realtime guarantee; mean 90-106ms/frame at 0.1m scan voxel",
+    "Not yet rerun on IILABS five laps",
+    "Robot profile retains robot calibration/topics, which were not the dataset calibration used in these tests"
+  ],
+  "tests": [
+    "fastlio_time_model passed",
+    "fastlio_time_filter passed",
+    "fastlio_motion_cache passed"
+  ],
+  "release_check": {
+    "reference": "experimental zero-injection run, voxel0.1",
+    "release_tail_response_max_ms": 0.7572751678536349,
+    "release_tail_response_median_ms": -0.07484129897204639,
+    "max_dt_difference_from_experimental_ms": 9.30714990319914,
+    "passes_final_10s_5ms": true
+  }
+}

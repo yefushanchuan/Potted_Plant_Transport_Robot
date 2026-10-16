@@ -342,15 +342,23 @@ public:
         acc = m_builder_config.imu_to_baselink_r_il * acc;
         gyro = m_builder_config.imu_to_baselink_r_il * gyro;
 
-        if (!acc.allFinite() || !gyro.allFinite() || timestamp <= m_state_data.last_imu_time)
+        // 1. 无效数据、重复或倒退的时间戳不进入缓存。
+        if (!acc.allFinite() || !gyro.allFinite() || timestamp <= m_state_data.last_imu_time) {
             return;
+        }
+
+        // 2. 将本条 IMU 数据加入队尾，加速度统一转换为 m/s²。
         m_state_data.imu_buffer.emplace_back(acc * m_builder_config.imu_accel_scale, gyro,
                                              timestamp);
-        // Keep three seconds plus the preceding interpolation sample.
+
+        // 3. 保留最近约 3 秒数据，并保留窗口起点之前的一个插值样本。
+        // [1] 是第二个样本；它也早于窗口起点时，才删除队首样本。
         while (m_state_data.imu_buffer.size() > 2 &&
-               timestamp - m_state_data.imu_buffer[1].time > 3.)
+               timestamp - m_state_data.imu_buffer[1].time > 3.) {
             m_state_data.imu_buffer.pop_front();
-        // 更新最新的IMU时间戳
+        }
+
+        // 4. 循环结束后，记录最新收到的有效 IMU 时间，不代表积分进度。
         m_state_data.last_imu_time = timestamp;
     }
 
@@ -655,6 +663,7 @@ public:
                             data_delay, data_delay * 1000.0, build_time_ms, m_package.imus.size());
             }
 
+            m_kf->report.processing_ms = build_time_ms;
             std_msgs::msg::String timing;
             timing.data =
                 m_kf->report.json(m_package.cloud_end_time, m_kf->x().td, m_kf->P()(21, 21));

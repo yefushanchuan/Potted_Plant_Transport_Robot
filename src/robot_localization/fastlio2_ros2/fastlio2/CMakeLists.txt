@@ -67,7 +67,7 @@ install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
 
 
 if(BUILD_TESTING)
-  foreach(test_name time_model time_filter)
+  foreach(test_name time_model time_filter motion_cache point_chain time_point)
     add_executable(test_${test_name} test/test_${test_name}.cpp src/map_builder/ieskf.cpp)
     target_include_directories(test_${test_name} PRIVATE src)
     ament_target_dependencies(test_${test_name} rclcpp pcl_conversions)

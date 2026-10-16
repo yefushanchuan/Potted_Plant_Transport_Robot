@@ -4,6 +4,7 @@
 #include <map>
 #include <limits>
 #include <tuple>
+#include <atomic>
 #include <rclcpp/rclcpp.hpp>
 
 //初始化点云处理器，创建必要的数据结构，并将滤波器配置好
@@ -253,16 +254,7 @@ void LidarProcessor::process(SyncPackage &package)
         const double t=package.cloud_start_time+p.curvature*.001;
         m_query_begin=std::min(m_query_begin,t);m_query_end=std::max(m_query_end,t);
     }
-    fast_time::Trajectory prior_trajectory;
-    if(!prior_trajectory.build(m_motion_anchor,package.imus,m_query_begin+m_motion_anchor.td,
-                              m_query_end+m_motion_anchor.td,m_config.time_offset.max_imu_gap))
-        throw std::runtime_error("Missing prior trajectory");
-    m_prior_world.resize(package.raw_cloud->size());
-    for(size_t i=0;i<package.raw_cloud->size();++i) {
-        const auto& p=(*package.raw_cloud)[i];
-        if(!prior_trajectory.point({Eigen::Vector3d(p.x,p.y,p.z),package.cloud_start_time+p.curvature*.001},
-                                  m_motion_anchor.td,m_prior_world[i])) throw std::runtime_error("Missing prior point");
-    }
+    m_linearization_valid = false; // Cache is never carried across scans.
     m_nearest_points.resize(m_cloud_down_lidar->size());
     m_cloud_down_world->resize(m_cloud_down_lidar->size());
     int processed_size = m_cloud_down_lidar->size();
@@ -387,27 +379,45 @@ void LidarProcessor::updateLossFunc(State &state, SharedState &obs) {
     obs.res = 0;
     if (!m_package || m_cloud_down_lidar->empty())
         return;
-    // Rebuild motion from the current pose, velocity and biases at every iteration.
-    // Keep voxel membership fixed while averaging raw points and their Jacobians.
-    fast_time::Trajectory trajectory;
-    if(!trajectory.build(state,m_package->imus,m_query_begin+state.td,
-                         m_query_end+state.td,m_config.time_offset.max_imu_gap)) {
-        obs.reason="trajectory_coverage";return;
-    }
-    std::vector<Eigen::Vector3d> worlds(m_prior_world.size());
-    std::vector<Eigen::Matrix<double,3,22>> jacobians(m_prior_world.size());
-    for(size_t k=0;k<m_prior_world.size();++k) {
-        const auto& p=(*m_package->raw_cloud)[k];
-        if(!trajectory.point({Eigen::Vector3d(p.x,p.y,p.z),m_package->cloud_start_time+p.curvature*.001},
-                             state.td,worlds[k],&jacobians[k])) {
-            obs.reason="point_coverage";return;
+    // Rebuild once per scan, or when time moves outside the local trust interval.
+    // No full-state Jacobian is cached: pose/extrinsic columns are recomputed below.
+    if (!m_linearization_valid || std::abs(state.td-m_linearization_anchor.td)>0.0025) {
+        fast_time::Trajectory trajectory;
+        if(!trajectory.build(state,m_package->imus,m_query_begin+state.td,
+                             m_query_end+state.td,m_config.time_offset.max_imu_gap)) {
+            obs.reason="trajectory_coverage";return;
         }
+        ++m_kf->report.motion_relinearizations;
+        m_linearization_valid=false;
+        m_time_points.assign(m_groups.size(),fast_time::TimePointLinearization{});
+        std::atomic<bool> points_covered{true};
+#pragma omp parallel for num_threads(MP_PROC_NUM) schedule(static) if(m_groups.size()>512)
+        for(int i=0;i<int(m_groups.size());++i) {
+            for(size_t k:m_groups[i]) {
+                const auto& p=(*m_package->raw_cloud)[k];
+                fast_time::TimePointLinearization point;
+                if(!fast_time::linearizeTimePoint(trajectory,state,m_package->imus,
+                    {Eigen::Vector3d(p.x,p.y,p.z),m_package->cloud_start_time+p.curvature*.001},
+                    m_config.time_offset.max_imu_gap,point)) {
+                    points_covered.store(false,std::memory_order_relaxed);break;
+                }
+                m_time_points[i].point+=point.point;
+                m_time_points[i].rate+=point.rate;
+            }
+            m_time_points[i].point/=double(m_groups[i].size());
+            m_time_points[i].rate/=double(m_groups[i].size());
+        }
+        if(!points_covered.load(std::memory_order_relaxed)) {obs.reason="point_coverage";return;}
+        m_linearization_anchor=state;m_linearization_valid=true;
     }
-    for(size_t i=0;i<m_groups.size();++i) {
-        Eigen::Vector3d world=Eigen::Vector3d::Zero();
-        Eigen::Matrix<double,3,22> jp=Eigen::Matrix<double,3,22>::Zero();
-        for(size_t k:m_groups[i]) {world+=worlds[k];jp+=jacobians[k];}
-        world/=double(m_groups[i].size());jp/=double(m_groups[i].size());
+    const double delta_td=state.td-m_linearization_anchor.td;
+    std::vector<Eigen::Matrix<double,1,22>> rows(m_groups.size());
+    std::vector<double> residuals(m_groups.size());
+    std::vector<unsigned char> selected(m_groups.size(),0);
+#pragma omp parallel for num_threads(MP_PROC_NUM) schedule(static) if(m_groups.size()>512)
+    for(int i=0;i<int(m_groups.size());++i) {
+        Eigen::Matrix<double,3,22> jp;
+        const Eigen::Vector3d world=m_time_points[i].world(state,delta_td,&jp);
         PointType pw;
         pw.x = world.x();
         pw.y = world.y();
@@ -425,6 +435,12 @@ void LidarProcessor::updateLossFunc(State &state, SharedState &obs) {
         Eigen::Matrix<double, 1, 22> h = plane.head<3>().transpose() * jp;
         if (!m_config.esti_il)
             h.segment<6>(6).setZero();
+        rows[i]=h;residuals[i]=residual;selected[i]=1;
+    }
+    // Keep the reduction order deterministic; only independent point work is parallel.
+    for(size_t i=0;i<m_groups.size();++i) {
+        if(!selected[i])continue;
+        const auto& h=rows[i];const double residual=residuals[i];
         const double weight = huberWeight(residual) * m_config.lidar_cov_inv;
         obs.H.noalias() += weight * h.transpose() * h;
         obs.b.noalias() += weight * h.transpose() * residual;

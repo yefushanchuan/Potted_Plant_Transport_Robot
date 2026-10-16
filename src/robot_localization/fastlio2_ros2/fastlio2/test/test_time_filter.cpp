@@ -27,6 +27,22 @@ int main() {
     TimeOffsetOptions options;
     if(std::abs(options.requiredFuture(.05)-.055)>1e-12 || options.requiredFuture(-.05)!=0)return 4;
     try{options.load(YAML::Load("max_td_step: -1"));return 5;}catch(const std::invalid_argument&){}
+    // The configured threshold changes stopping, not the allowed absolute td.
+    for (const auto *value : {"0", "-1", ".nan", ".inf"}) {
+        try {
+            TimeOffsetOptions bad;
+            bad.load(YAML::Load(std::string("td_convergence_threshold: ") + value));
+            return 6;
+        } catch (const std::invalid_argument &) {}
+    }
+    IESKF strict, loose;
+    configure(strict, 20e-6); configure(loose, 20e-6);
+    strict.setStopFunction([](const V22D &) { return true; });
+    loose.setStopFunction([](const V22D &) { return true; });
+    loose.time_options.load(YAML::Load("td_convergence_threshold: 0.00005"));
+    if (!strict.update() || !loose.update() || strict.report.iterations != 2 ||
+        loose.report.iterations != 1 ||
+        std::abs(strict.x().td - loose.x().td) > 1e-12) return 7;
     std::cout<<"timing bounds, covariance preservation, rollback and future coverage passed\n";
     return 0;
 }
