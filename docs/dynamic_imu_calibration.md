@@ -2,7 +2,7 @@
 
 适用于外部 IMU 与 MID360 内部 IMU 刚性固定、可抱起整个底盘或整个刚性传感器组件做三轴运动的情况。输入是两路原始 IMU。默认流程为：**同次录制的静止零偏约束 → 三轴动态初始化 → 联合精修 → 独立记录验证**。
 
-脚本 `src/robot_base/scripts/dynamic_imu_calibration.py` 可离线运行，也注册到 robot_base 安装入口。文件名保留兼容，默认方法已由无约束纯动态改为 `joint_static_soft`，JSON schema 为 3。旧的平面底盘标定脚本独立保留。
+脚本 `src/robot_base/scripts/dynamic_imu_calibration.py` 可离线运行，也注册到 robot_base 安装入口。文件名保留兼容，默认方法已由无约束纯动态改为 `joint_static_soft`，JSON schema 为 3。旧的平面底盘标定脚本及其遗留单轴 SVD 脚本已移除。
 
 ## 算法流程
 
@@ -68,7 +68,7 @@ python3 -m venv .venv_imu_calib
 .venv_imu_calib/bin/python -m pip install -r src/robot_base/config/dynamic_imu_requirements.txt
 ```
 
-仓库原有配置 `imu_chain_calibration.yaml` 对外部 IMU 使用 SI 单位，对原始 MID360 加速度使用 g→m/s² 换算。因此当前接线/驱动的示例命令是：
+单位约定与本仓库既有配置一致：外部 IMU（`/imu`）使用 SI 单位；原始 MID360 驱动加速度为 g，需乘 9.80665 换算为 m/s²。因此当前接线/驱动的示例命令是：
 
 ```bash
 OPENBLAS_NUM_THREADS=1 .venv_imu_calib/bin/python \
